@@ -1,0 +1,2133 @@
+{
+ "tables": {
+  "_probe": {
+   "columns": {
+    "n": {
+     "description": "",
+     "type": "BIGINT"
+    }
+   },
+   "description": "",
+   "meta": {}
+  },
+  "agg_trips_zone_hourly": {
+   "columns": {
+    "cbd_congestion_fee_usd_sum": {
+     "description": "Total congestion relief zone tolls.",
+     "type": "DOUBLE"
+    },
+    "driver_pay_usd_sum": {
+     "description": "Total driver pay, app trips only.",
+     "type": "DOUBLE"
+    },
+    "fare_usd_sum": {
+     "description": "Total paid by riders before tips. For taxis, total minus tip.",
+     "type": "DOUBLE"
+    },
+    "file_month": {
+     "description": "Month of the TLC files.",
+     "type": "DATE"
+    },
+    "pickup_date": {
+     "description": "Pickup date in New York.",
+     "type": "DATE"
+    },
+    "pickup_hour": {
+     "description": "Pickup hour in New York.",
+     "type": "TINYINT"
+    },
+    "pickup_zone_id": {
+     "description": "Pickup taxi zone.",
+     "type": "SMALLINT"
+    },
+    "service": {
+     "description": "uber, lyft, via, juno, yellow or green.",
+     "type": "VARCHAR"
+    },
+    "tips_usd_sum": {
+     "description": "Total tips. Taxi cash tips are not recorded.",
+     "type": "DOUBLE"
+    },
+    "trip_miles_sum": {
+     "description": "Total miles.",
+     "type": "DOUBLE"
+    },
+    "trip_minutes_sum": {
+     "description": "Total minutes.",
+     "type": "DOUBLE"
+    },
+    "trips": {
+     "description": "Trips.",
+     "type": "BIGINT"
+    },
+    "trips_charged_cbd_fee": {
+     "description": "Trips that paid the congestion relief zone toll.",
+     "type": "BIGINT"
+    },
+    "trips_with_wait": {
+     "description": "Trips with a known wait. Divide wait_minutes_sum by this.",
+     "type": "BIGINT"
+    },
+    "wait_minutes_sum": {
+     "description": "Total rider wait, app trips only.",
+     "type": "DOUBLE"
+    }
+   },
+   "description": "Taxi and app trips per pickup zone per local hour, by service, since January 2024. Built from plausible trips only. Measures are sums and counts so they can be added across rows; for an average divide a sum by its count, for example wait_minutes_sum / trips_with_wait.",
+   "meta": {
+    "domain": "rideshare_taxi",
+    "grain": "one row per service per zone per local hour",
+    "local_date_column": "pickup_date",
+    "partition_column": "file_month"
+   }
+  },
+  "dim_bike_station": {
+   "columns": {
+    "boro_code": {
+     "description": "Borough. Empty in New Jersey.",
+     "type": "TINYINT"
+    },
+    "community_district": {
+     "description": "Community district.",
+     "type": "SMALLINT"
+    },
+    "dock_count": {
+     "description": "Number of docks.",
+     "type": "SMALLINT"
+    },
+    "first_seen_at": {
+     "description": "First time the station appeared in the live feed after capture began.",
+     "type": "TIMESTAMP WITH TIME ZONE"
+    },
+    "has_charging": {
+     "description": "True where e-bikes charge while docked.",
+     "type": "BOOLEAN"
+    },
+    "is_new_jersey": {
+     "description": "True for Jersey City and Hoboken stations.",
+     "type": "BOOLEAN"
+    },
+    "last_seen_at": {
+     "description": "Latest time it appeared.",
+     "type": "TIMESTAMP WITH TIME ZONE"
+    },
+    "latitude": {
+     "description": "Latitude.",
+     "type": "DOUBLE"
+    },
+    "longitude": {
+     "description": "Longitude.",
+     "type": "DOUBLE"
+    },
+    "nta_code": {
+     "description": "Neighborhood.",
+     "type": "VARCHAR"
+    },
+    "region": {
+     "description": "NYC District, Bronx, JC District or Hoboken District.",
+     "type": "VARCHAR"
+    },
+    "station_id": {
+     "description": "Station id used by the live station status.",
+     "type": "VARCHAR"
+    },
+    "station_name": {
+     "description": "Station name, usually two cross streets.",
+     "type": "VARCHAR"
+    },
+    "station_number": {
+     "description": "Station number, for example 5506.14. Trips use this as start_station_number and end_station_number.",
+     "type": "VARCHAR"
+    },
+    "taxi_zone_id": {
+     "description": "TLC taxi zone, for comparing bikes with taxi and app trips.",
+     "type": "SMALLINT"
+    }
+   },
+   "description": "Citi Bike stations, including those in Jersey City and Hoboken.",
+   "meta": {
+    "domain": "bike",
+    "grain": "one row per station"
+   }
+  },
+  "dim_borough": {
+   "columns": {
+    "boro_code": {
+     "description": "Borough code: 1 Manhattan, 2 Bronx, 3 Brooklyn, 4 Queens, 5 Staten Island.",
+     "type": "TINYINT"
+    },
+    "borough": {
+     "description": "Borough name.",
+     "type": "VARCHAR"
+    },
+    "land_area_sq_mi": {
+     "description": "Land area in square miles.",
+     "type": "DOUBLE"
+    }
+   },
+   "description": "The five boroughs.",
+   "meta": {
+    "domain": "geography",
+    "grain": "one row per borough"
+   }
+  },
+  "dim_community_district": {
+   "columns": {
+    "boro_code": {
+     "description": "Borough code.",
+     "type": "TINYINT"
+    },
+    "borough": {
+     "description": "Borough name.",
+     "type": "VARCHAR"
+    },
+    "community_district": {
+     "description": "Borough code times 100 plus the district number. 305 is Brooklyn Community District 5.",
+     "type": "SMALLINT"
+    },
+    "district_name": {
+     "description": "Readable name, for example Brooklyn Community District 5.",
+     "type": "VARCHAR"
+    },
+    "district_number": {
+     "description": "District number within the borough.",
+     "type": "TINYINT"
+    },
+    "is_joint_interest_area": {
+     "description": "True for parks and airports outside the numbered districts.",
+     "type": "BOOLEAN"
+    },
+    "land_area_sq_mi": {
+     "description": "Area in square miles.",
+     "type": "DOUBLE"
+    }
+   },
+   "description": "Community districts, the 59 local areas each with a community board, plus joint interest areas for large parks and airports. 311 and many city reports are organized by these.",
+   "meta": {
+    "domain": "geography",
+    "grain": "one row per community district"
+   }
+  },
+  "dim_date": {
+   "columns": {
+    "date": {
+     "description": "The calendar date.",
+     "type": "DATE"
+    },
+    "day_name": {
+     "description": "Weekday name, for example Saturday.",
+     "type": "VARCHAR"
+    },
+    "day_of_month": {
+     "description": "Day of the month.",
+     "type": "TINYINT"
+    },
+    "day_of_week": {
+     "description": "ISO weekday: 1 Monday to 7 Sunday.",
+     "type": "TINYINT"
+    },
+    "holiday_name": {
+     "description": "Name of the holiday, when there is one.",
+     "type": "VARCHAR"
+    },
+    "is_holiday": {
+     "description": "True on observed US federal holidays.",
+     "type": "BOOLEAN"
+    },
+    "is_weekend": {
+     "description": "True on Saturday and Sunday.",
+     "type": "BOOLEAN"
+    },
+    "is_workday": {
+     "description": "True on weekdays that are not federal holidays.",
+     "type": "BOOLEAN"
+    },
+    "month": {
+     "description": "Month number, 1 to 12.",
+     "type": "TINYINT"
+    },
+    "month_name": {
+     "description": "Month name, for example June.",
+     "type": "VARCHAR"
+    },
+    "month_start": {
+     "description": "First day of the month. Handy for grouping by month.",
+     "type": "DATE"
+    },
+    "quarter": {
+     "description": "Calendar quarter, 1 to 4.",
+     "type": "TINYINT"
+    },
+    "week_start": {
+     "description": "Monday of the week the date falls in.",
+     "type": "DATE"
+    },
+    "year": {
+     "description": "Calendar year.",
+     "type": "SMALLINT"
+    }
+   },
+   "description": "One row per calendar day from 2024 through 2027, with weekday, weekend and federal holiday flags.",
+   "meta": {
+    "domain": "calendar",
+    "grain": "one row per date"
+   }
+  },
+  "dim_neighborhood": {
+   "columns": {
+    "boro_code": {
+     "description": "Borough code.",
+     "type": "TINYINT"
+    },
+    "borough": {
+     "description": "Borough name.",
+     "type": "VARCHAR"
+    },
+    "cdta_code": {
+     "description": "Community District Tabulation Area containing the NTA.",
+     "type": "VARCHAR"
+    },
+    "cdta_name": {
+     "description": "Name of that area, which includes the community district it matches.",
+     "type": "VARCHAR"
+    },
+    "centroid_latitude": {
+     "description": "Latitude of the area's center.",
+     "type": "DOUBLE"
+    },
+    "centroid_longitude": {
+     "description": "Longitude of the area's center.",
+     "type": "DOUBLE"
+    },
+    "is_residential": {
+     "description": "True for ordinary residential neighborhoods.",
+     "type": "BOOLEAN"
+    },
+    "land_area_sq_mi": {
+     "description": "Area in square miles.",
+     "type": "DOUBLE"
+    },
+    "nta_abbrev": {
+     "description": "Short label used on maps.",
+     "type": "VARCHAR"
+    },
+    "nta_code": {
+     "description": "NTA code, for example BK0101. Facts that carry a location have this column.",
+     "type": "VARCHAR"
+    },
+    "nta_kind": {
+     "description": "residential, park, cemetery, airport, special_use or jail.",
+     "type": "VARCHAR"
+    },
+    "nta_name": {
+     "description": "Neighborhood name, for example Greenpoint or Midtown-Times Square.",
+     "type": "VARCHAR"
+    }
+   },
+   "description": "Neighborhoods, as the city's 2020 Neighborhood Tabulation Areas (NTAs). 262 areas that nest inside community districts and boroughs. Use nta_name to match a neighborhood a person names, and nta_kind to leave out parks, cemeteries and airports when comparing rates.",
+   "meta": {
+    "domain": "geography",
+    "grain": "one row per NTA"
+   }
+  },
+  "dim_subway_complex": {
+   "columns": {
+    "boro_code": {
+     "description": "Borough code.",
+     "type": "TINYINT"
+    },
+    "borough": {
+     "description": "Borough.",
+     "type": "VARCHAR"
+    },
+    "complex_id": {
+     "description": "Complex id. Joins to fct_subway_ridership_hourly.complex_id.",
+     "type": "VARCHAR"
+    },
+    "complex_name": {
+     "description": "Names of the stations in the complex.",
+     "type": "VARCHAR"
+    },
+    "daytime_routes": {
+     "description": "All daytime routes serving the complex.",
+     "type": "VARCHAR[]"
+    },
+    "is_accessible": {
+     "description": "True when any station in the complex is accessible.",
+     "type": "BOOLEAN"
+    },
+    "latitude": {
+     "description": "Average latitude of its stations.",
+     "type": "DOUBLE"
+    },
+    "longitude": {
+     "description": "Average longitude of its stations.",
+     "type": "DOUBLE"
+    },
+    "nta_code": {
+     "description": "Neighborhood of the complex.",
+     "type": "VARCHAR"
+    },
+    "station_count": {
+     "description": "Stations in the complex.",
+     "type": "BIGINT"
+    }
+   },
+   "description": "Station complexes, the unit ridership is counted by. A complex is one station or several joined ones.",
+   "meta": {
+    "domain": "subway",
+    "grain": "one row per complex"
+   }
+  },
+  "dim_subway_route": {
+   "columns": {
+    "is_shuttle": {
+     "description": "True for the 42 St (GS), Franklin Av (FS) and Rockaway Park (H) shuttles.",
+     "type": "BOOLEAN"
+    },
+    "route_color": {
+     "description": "Hex color of the route bullet.",
+     "type": "VARCHAR"
+    },
+    "route_description": {
+     "description": "Where and when the route runs.",
+     "type": "VARCHAR"
+    },
+    "route_id": {
+     "description": "Route id as riders know it: A, C, E, 1, 7, L, GS, FS, H, SI and so on.",
+     "type": "VARCHAR"
+    },
+    "route_long_name": {
+     "description": "Line name, for example 8 Avenue Express.",
+     "type": "VARCHAR"
+    },
+    "route_short_name": {
+     "description": "Name shown on the route bullet.",
+     "type": "VARCHAR"
+    },
+    "route_sort_order": {
+     "description": "Order the MTA lists routes in.",
+     "type": "SMALLINT"
+    }
+   },
+   "description": "Subway routes in the current schedule, such as the A, the 7 or the 42 St Shuttle (GS).",
+   "meta": {
+    "domain": "subway",
+    "grain": "one row per route"
+   }
+  },
+  "dim_subway_station": {
+   "columns": {
+    "accessibility": {
+     "description": "ADA accessibility: none, full or partial.",
+     "type": "VARCHAR"
+    },
+    "boro_code": {
+     "description": "Borough code.",
+     "type": "TINYINT"
+    },
+    "borough": {
+     "description": "Borough.",
+     "type": "VARCHAR"
+    },
+    "community_district": {
+     "description": "Community district the station is in.",
+     "type": "SMALLINT"
+    },
+    "complex_id": {
+     "description": "Station complex. Joins to dim_subway_complex and to ridership.",
+     "type": "VARCHAR"
+    },
+    "council_district": {
+     "description": "Council district the station is in.",
+     "type": "TINYINT"
+    },
+    "daytime_routes": {
+     "description": "Routes that stop here during the day, as a list.",
+     "type": "VARCHAR[]"
+    },
+    "daytime_routes_text": {
+     "description": "The same routes as text, for example 'N W'. Use with LIKE or contains().",
+     "type": "VARCHAR"
+    },
+    "division": {
+     "description": "Historical division: IRT, BMT or IND.",
+     "type": "VARCHAR"
+    },
+    "in_congestion_zone": {
+     "description": "True inside the Manhattan congestion relief zone.",
+     "type": "BOOLEAN"
+    },
+    "is_accessible": {
+     "description": "True when the station is fully or partly accessible.",
+     "type": "BOOLEAN"
+    },
+    "latitude": {
+     "description": "Latitude.",
+     "type": "DOUBLE"
+    },
+    "line": {
+     "description": "Line the station is on, for example Astoria or Lexington Av.",
+     "type": "VARCHAR"
+    },
+    "longitude": {
+     "description": "Longitude.",
+     "type": "DOUBLE"
+    },
+    "north_direction_label": {
+     "description": "Where northbound trains are signed to.",
+     "type": "VARCHAR"
+    },
+    "nta_code": {
+     "description": "Neighborhood the station is in.",
+     "type": "VARCHAR"
+    },
+    "police_precinct": {
+     "description": "Police precinct the station is in.",
+     "type": "SMALLINT"
+    },
+    "south_direction_label": {
+     "description": "Where southbound trains are signed to.",
+     "type": "VARCHAR"
+    },
+    "station_id": {
+     "description": "Station id in the schedule, for example R01. Platform ids add N or S.",
+     "type": "VARCHAR"
+    },
+    "station_name": {
+     "description": "Station name, for example Times Sq-42 St.",
+     "type": "VARCHAR"
+    },
+    "structure": {
+     "description": "Subway, Elevated, At Grade, Open Cut, Embankment or Viaduct.",
+     "type": "VARCHAR"
+    }
+   },
+   "description": "Subway stations from the MTA station list. Arrival facts use station_id. Stations joined by passageways share a complex_id, and ridership is counted per complex.",
+   "meta": {
+    "domain": "subway",
+    "grain": "one row per station"
+   }
+  },
+  "dim_taxi_zone": {
+   "columns": {
+    "borough": {
+     "description": "Borough. EWR for Newark Airport; empty for the placeholder zones 264 and 265.",
+     "type": "VARCHAR"
+    },
+    "centroid_latitude": {
+     "description": "Latitude of the zone's center.",
+     "type": "DOUBLE"
+    },
+    "centroid_longitude": {
+     "description": "Longitude of the zone's center.",
+     "type": "DOUBLE"
+    },
+    "centroid_nta_code": {
+     "description": "Neighborhood at the zone's center. Zones and neighborhoods do not line up exactly.",
+     "type": "VARCHAR"
+    },
+    "is_airport": {
+     "description": "True for JFK, LaGuardia and Newark.",
+     "type": "BOOLEAN"
+    },
+    "is_yellow_zone": {
+     "description": "True inside the Yellow Zone, roughly Manhattan below 96th Street and the airports.",
+     "type": "BOOLEAN"
+    },
+    "service_zone": {
+     "description": "Yellow Zone (where yellow cabs take street hails), Boro Zone, Airports or EWR.",
+     "type": "VARCHAR"
+    },
+    "zone_id": {
+     "description": "TLC zone id, 1 to 265.",
+     "type": "SMALLINT"
+    },
+    "zone_kind": {
+     "description": "nyc, newark_airport, unknown (264) or outside_nyc (265).",
+     "type": "VARCHAR"
+    },
+    "zone_name": {
+     "description": "Zone name, for example JFK Airport or Upper East Side South.",
+     "type": "VARCHAR"
+    }
+   },
+   "description": "TLC taxi zones, the 263 areas taxi and app trips are recorded by, plus two placeholder ids. Trip facts use pickup_zone_id and dropoff_zone_id, which join to zone_id here.",
+   "meta": {
+    "domain": "rideshare_taxi",
+    "grain": "one row per zone"
+   }
+  },
+  "dim_traffic_link": {
+   "columns": {
+    "borough": {
+     "description": "Borough.",
+     "type": "VARCHAR"
+    },
+    "community_district": {
+     "description": "Community district at the middle of the link.",
+     "type": "SMALLINT"
+    },
+    "last_reading_at": {
+     "description": "Latest reading for the link.",
+     "type": "TIMESTAMP WITH TIME ZONE"
+    },
+    "latitude": {
+     "description": "Latitude of the middle of the link.",
+     "type": "DOUBLE"
+    },
+    "length_mi": {
+     "description": "Length in miles.",
+     "type": "DOUBLE"
+    },
+    "link_id": {
+     "description": "Link id. Joins to fct_traffic_speed.",
+     "type": "VARCHAR"
+    },
+    "link_name": {
+     "description": "DOT description: road, direction and end points, for example BQE N ATLANTIC AVE - BKN BRIDGE MANHATTAN.",
+     "type": "VARCHAR"
+    },
+    "longitude": {
+     "description": "Longitude of the middle of the link.",
+     "type": "DOUBLE"
+    },
+    "nta_code": {
+     "description": "Neighborhood at the middle of the link.",
+     "type": "VARCHAR"
+    },
+    "taxi_zone_id": {
+     "description": "Taxi zone at the middle of the link.",
+     "type": "SMALLINT"
+    }
+   },
+   "description": "Road links with DOT speed sensors, mostly highways and major arterials.",
+   "meta": {
+    "domain": "traffic",
+    "grain": "one row per link"
+   }
+  },
+  "fct_bike_station_status": {
+   "columns": {
+    "bikes_available": {
+     "description": "Bikes ready to rent.",
+     "type": "SMALLINT"
+    },
+    "bikes_disabled": {
+     "description": "Broken or reserved bikes in docks.",
+     "type": "SMALLINT"
+    },
+    "classic_bikes_available": {
+     "description": "Classic bikes ready to rent.",
+     "type": "SMALLINT"
+    },
+    "docks_available": {
+     "description": "Empty docks.",
+     "type": "SMALLINT"
+    },
+    "docks_disabled": {
+     "description": "Docks out of service.",
+     "type": "SMALLINT"
+    },
+    "ebikes_available": {
+     "description": "Electric bikes ready to rent, included in bikes_available.",
+     "type": "SMALLINT"
+    },
+    "is_empty": {
+     "description": "No bikes to rent while renting.",
+     "type": "BOOLEAN"
+    },
+    "is_full": {
+     "description": "No docks free while accepting returns.",
+     "type": "BOOLEAN"
+    },
+    "is_installed": {
+     "description": "Station physically in place.",
+     "type": "BOOLEAN"
+    },
+    "is_renting": {
+     "description": "Renting bikes.",
+     "type": "BOOLEAN"
+    },
+    "is_returning": {
+     "description": "Accepting returns.",
+     "type": "BOOLEAN"
+    },
+    "reported_at": {
+     "description": "When the station reported. Filter time ranges on this column.",
+     "type": "TIMESTAMP WITH TIME ZONE"
+    },
+    "reported_at_local": {
+     "description": "Report time in New York.",
+     "type": "TIMESTAMP"
+    },
+    "reported_date": {
+     "description": "Report date.",
+     "type": "DATE"
+    },
+    "reported_hour": {
+     "description": "Report hour.",
+     "type": "TINYINT"
+    },
+    "station_id": {
+     "description": "Station. Joins to dim_bike_station.",
+     "type": "VARCHAR"
+    }
+   },
+   "description": "Bikes and docks at each Citi Bike station, one row each time they changed, since capture began in October 2026. A row holds until the next row for the same station.",
+   "meta": {
+    "domain": "bike",
+    "grain": "one row per station per change",
+    "time_column": "reported_at"
+   }
+  },
+  "fct_bike_trip": {
+   "columns": {
+    "bike_type": {
+     "description": "classic_bike or electric_bike.",
+     "type": "VARCHAR"
+    },
+    "duration_minutes": {
+     "description": "Minutes from unlock to return.",
+     "type": "DOUBLE"
+    },
+    "end_boro_code": {
+     "description": "Borough at the end.",
+     "type": "TINYINT"
+    },
+    "end_latitude": {
+     "description": "Latitude at the end.",
+     "type": "DOUBLE"
+    },
+    "end_longitude": {
+     "description": "Longitude at the end.",
+     "type": "DOUBLE"
+    },
+    "end_nta_code": {
+     "description": "Neighborhood at the end.",
+     "type": "VARCHAR"
+    },
+    "end_station_name": {
+     "description": "Station name at the end.",
+     "type": "VARCHAR"
+    },
+    "end_station_number": {
+     "description": "Station number at the end.",
+     "type": "VARCHAR"
+    },
+    "end_taxi_zone_id": {
+     "description": "Taxi zone at the end.",
+     "type": "SMALLINT"
+    },
+    "ended_at": {
+     "description": "End instant.",
+     "type": "TIMESTAMP WITH TIME ZONE"
+    },
+    "file_month": {
+     "description": "Month of the published file.",
+     "type": "DATE"
+    },
+    "is_round_trip": {
+     "description": "Returned to the station it started from.",
+     "type": "BOOLEAN"
+    },
+    "ride_id": {
+     "description": "Ride id.",
+     "type": "VARCHAR"
+    },
+    "rider_type": {
+     "description": "member (annual) or casual.",
+     "type": "VARCHAR"
+    },
+    "start_at_local": {
+     "description": "Start in New York time.",
+     "type": "TIMESTAMP"
+    },
+    "start_boro_code": {
+     "description": "Borough at the start.",
+     "type": "TINYINT"
+    },
+    "start_date": {
+     "description": "Start date.",
+     "type": "DATE"
+    },
+    "start_hour": {
+     "description": "Start hour.",
+     "type": "TINYINT"
+    },
+    "start_latitude": {
+     "description": "Latitude at the start.",
+     "type": "DOUBLE"
+    },
+    "start_longitude": {
+     "description": "Longitude at the start.",
+     "type": "DOUBLE"
+    },
+    "start_nta_code": {
+     "description": "Neighborhood at the start.",
+     "type": "VARCHAR"
+    },
+    "start_station_name": {
+     "description": "Station name at the start.",
+     "type": "VARCHAR"
+    },
+    "start_station_number": {
+     "description": "Station number at the start. Joins to dim_bike_station.station_number.",
+     "type": "VARCHAR"
+    },
+    "start_taxi_zone_id": {
+     "description": "Taxi zone at the start.",
+     "type": "SMALLINT"
+    },
+    "started_at": {
+     "description": "Start instant. Filter time ranges on this column.",
+     "type": "TIMESTAMP WITH TIME ZONE"
+    },
+    "straight_line_miles": {
+     "description": "Distance between start and end as the crow flies. Not the route ridden.",
+     "type": "DOUBLE"
+    }
+   },
+   "description": "Citi Bike rides since January 2024, one row per ride.",
+   "meta": {
+    "domain": "bike",
+    "grain": "one row per ride",
+    "local_date_column": "start_date",
+    "partition_column": "file_month",
+    "time_column": "started_at"
+   }
+  },
+  "fct_collision": {
+   "columns": {
+    "boro_code": {
+     "description": "Borough the location falls in.",
+     "type": "TINYINT"
+    },
+    "borough": {
+     "description": "Borough, from NYPD or from the coordinates.",
+     "type": "VARCHAR"
+    },
+    "collision_id": {
+     "description": "Crash id.",
+     "type": "BIGINT"
+    },
+    "community_district": {
+     "description": "Community district.",
+     "type": "SMALLINT"
+    },
+    "contributing_factor_2": {
+     "description": "Contributing factor for the second vehicle.",
+     "type": "VARCHAR"
+    },
+    "council_district": {
+     "description": "Council district.",
+     "type": "TINYINT"
+    },
+    "crash_at_local": {
+     "description": "Crash time in New York.",
+     "type": "TIMESTAMP"
+    },
+    "crash_date": {
+     "description": "Crash date.",
+     "type": "DATE"
+    },
+    "crash_hour": {
+     "description": "Crash hour.",
+     "type": "TINYINT"
+    },
+    "crashed_at": {
+     "description": "Crash instant. Filter time ranges on this column.",
+     "type": "TIMESTAMP WITH TIME ZONE"
+    },
+    "cross_street_name": {
+     "description": "Nearest cross street.",
+     "type": "VARCHAR"
+    },
+    "cyclists_injured": {
+     "description": "Cyclists injured.",
+     "type": "SMALLINT"
+    },
+    "cyclists_killed": {
+     "description": "Cyclists killed.",
+     "type": "SMALLINT"
+    },
+    "has_fatality": {
+     "description": "At least one person killed.",
+     "type": "BOOLEAN"
+    },
+    "has_injury": {
+     "description": "At least one person injured.",
+     "type": "BOOLEAN"
+    },
+    "involves_cyclist_harm": {
+     "description": "A cyclist was hurt or killed.",
+     "type": "BOOLEAN"
+    },
+    "involves_pedestrian_harm": {
+     "description": "A pedestrian was hurt or killed.",
+     "type": "BOOLEAN"
+    },
+    "latitude": {
+     "description": "Latitude.",
+     "type": "DOUBLE"
+    },
+    "longitude": {
+     "description": "Longitude.",
+     "type": "DOUBLE"
+    },
+    "motorists_injured": {
+     "description": "Vehicle occupants injured.",
+     "type": "SMALLINT"
+    },
+    "motorists_killed": {
+     "description": "Vehicle occupants killed.",
+     "type": "SMALLINT"
+    },
+    "nta_code": {
+     "description": "Neighborhood.",
+     "type": "VARCHAR"
+    },
+    "on_street_name": {
+     "description": "Street of the crash.",
+     "type": "VARCHAR"
+    },
+    "pedestrians_injured": {
+     "description": "Pedestrians injured.",
+     "type": "SMALLINT"
+    },
+    "pedestrians_killed": {
+     "description": "Pedestrians killed.",
+     "type": "SMALLINT"
+    },
+    "persons_injured": {
+     "description": "Everyone injured.",
+     "type": "SMALLINT"
+    },
+    "persons_killed": {
+     "description": "Everyone killed.",
+     "type": "SMALLINT"
+    },
+    "police_precinct": {
+     "description": "Police precinct.",
+     "type": "SMALLINT"
+    },
+    "primary_factor": {
+     "description": "Contributing factor for the first vehicle, for example 'Driver Inattention/Distraction'. 'Unspecified' is common.",
+     "type": "VARCHAR"
+    },
+    "taxi_zone_id": {
+     "description": "Taxi zone.",
+     "type": "SMALLINT"
+    },
+    "vehicle_type_1": {
+     "description": "First vehicle type, free text.",
+     "type": "VARCHAR"
+    },
+    "vehicle_type_2": {
+     "description": "Second vehicle type, free text.",
+     "type": "VARCHAR"
+    },
+    "zip_code": {
+     "description": "ZIP code as recorded.",
+     "type": "VARCHAR"
+    }
+   },
+   "description": "Motor vehicle crashes reported by NYPD since January 2024, one row per crash, with people hurt and killed by road user type. NYPD publishes with a delay of up to a few months.",
+   "meta": {
+    "domain": "safety",
+    "grain": "one row per crash",
+    "local_date_column": "crash_date",
+    "time_column": "crashed_at"
+   }
+  },
+  "fct_collision_person": {
+   "columns": {
+    "age": {
+     "description": "Age in years. Empty when unknown.",
+     "type": "SMALLINT"
+    },
+    "bodily_injury": {
+     "description": "Body part injured.",
+     "type": "VARCHAR"
+    },
+    "collision_id": {
+     "description": "Crash. Joins to fct_collision.",
+     "type": "BIGINT"
+    },
+    "contributing_factor": {
+     "description": "Contributing factor recorded for this person.",
+     "type": "VARCHAR"
+    },
+    "crash_at_local": {
+     "description": "Crash time in New York.",
+     "type": "TIMESTAMP"
+    },
+    "crash_date": {
+     "description": "Crash date.",
+     "type": "DATE"
+    },
+    "crash_hour": {
+     "description": "Crash hour.",
+     "type": "TINYINT"
+    },
+    "ejection": {
+     "description": "Whether the person was thrown from the vehicle.",
+     "type": "VARCHAR"
+    },
+    "injury": {
+     "description": "killed, injured or unspecified.",
+     "type": "VARCHAR"
+    },
+    "injury_type": {
+     "description": "Type of injury, for example Complaint of Pain, Fracture.",
+     "type": "VARCHAR"
+    },
+    "pedestrian_action": {
+     "description": "What a pedestrian was doing.",
+     "type": "VARCHAR"
+    },
+    "pedestrian_location": {
+     "description": "Where a pedestrian was.",
+     "type": "VARCHAR"
+    },
+    "person_record_id": {
+     "description": "Person record id.",
+     "type": "BIGINT"
+    },
+    "person_type": {
+     "description": "pedestrian, bicyclist, occupant or other motorized.",
+     "type": "VARCHAR"
+    },
+    "position_in_vehicle": {
+     "description": "Seat position for occupants.",
+     "type": "VARCHAR"
+    },
+    "role": {
+     "description": "Driver, Passenger, Pedestrian, Registrant and so on.",
+     "type": "VARCHAR"
+    },
+    "safety_equipment": {
+     "description": "Belt, helmet or other equipment recorded.",
+     "type": "VARCHAR"
+    },
+    "sex": {
+     "description": "M, F or U.",
+     "type": "VARCHAR"
+    },
+    "was_injured": {
+     "description": "The person was injured.",
+     "type": "BOOLEAN"
+    },
+    "was_killed": {
+     "description": "The person was killed.",
+     "type": "BOOLEAN"
+    }
+   },
+   "description": "People involved in reported crashes, hurt or not, one row per person.",
+   "meta": {
+    "domain": "safety",
+    "grain": "one row per person per crash",
+    "local_date_column": "crash_date"
+   }
+  },
+  "fct_rideshare_trip": {
+   "columns": {
+    "access_a_ride": {
+     "description": "Trip for MTA Access-A-Ride.",
+     "type": "BOOLEAN"
+    },
+    "airport_fee_usd": {
+     "description": "Airport pickup or dropoff fee.",
+     "type": "DOUBLE"
+    },
+    "base_fare_usd": {
+     "description": "Fare before tolls, fees, taxes and tip.",
+     "type": "DOUBLE"
+    },
+    "black_car_fund_usd": {
+     "description": "Black Car Fund surcharge.",
+     "type": "DOUBLE"
+    },
+    "cbd_congestion_fee_usd": {
+     "description": "Congestion relief zone toll passed to the rider. Charged from 5 January 2025.",
+     "type": "DOUBLE"
+    },
+    "company": {
+     "description": "Uber, Lyft, Via or Juno. Almost all trips are Uber or Lyft.",
+     "type": "VARCHAR"
+    },
+    "congestion_surcharge_usd": {
+     "description": "State congestion surcharge for trips through Manhattan below 96th Street.",
+     "type": "DOUBLE"
+    },
+    "driver_pay_usd": {
+     "description": "What the driver was paid, before tips.",
+     "type": "DOUBLE"
+    },
+    "dropoff_at": {
+     "description": "Dropoff instant.",
+     "type": "TIMESTAMP WITH TIME ZONE"
+    },
+    "dropoff_zone_id": {
+     "description": "Dropoff taxi zone.",
+     "type": "SMALLINT"
+    },
+    "file_month": {
+     "description": "Month of the TLC file. Filtering on it also skips files.",
+     "type": "DATE"
+    },
+    "is_plausible": {
+     "description": "False for trips with impossible times, distances or fares. Exclude those from averages.",
+     "type": "BOOLEAN"
+    },
+    "pickup_at": {
+     "description": "Pickup instant. Filter time ranges on this column.",
+     "type": "TIMESTAMP WITH TIME ZONE"
+    },
+    "pickup_at_local": {
+     "description": "Pickup time in New York.",
+     "type": "TIMESTAMP"
+    },
+    "pickup_date": {
+     "description": "Pickup date in New York.",
+     "type": "DATE"
+    },
+    "pickup_hour": {
+     "description": "Pickup hour in New York, 0 to 23.",
+     "type": "TINYINT"
+    },
+    "pickup_zone_id": {
+     "description": "Pickup taxi zone.",
+     "type": "SMALLINT"
+    },
+    "requested_at_local": {
+     "description": "When the rider asked for the ride, New York time.",
+     "type": "TIMESTAMP"
+    },
+    "rider_paid_usd": {
+     "description": "Everything the rider paid except the tip: fare, tolls, taxes and fees.",
+     "type": "DOUBLE"
+    },
+    "sales_tax_usd": {
+     "description": "Sales tax.",
+     "type": "DOUBLE"
+    },
+    "shared_matched": {
+     "description": "Ride was shared.",
+     "type": "BOOLEAN"
+    },
+    "shared_requested": {
+     "description": "Rider asked to share.",
+     "type": "BOOLEAN"
+    },
+    "tips_usd": {
+     "description": "Tip.",
+     "type": "DOUBLE"
+    },
+    "tolls_usd": {
+     "description": "Tolls.",
+     "type": "DOUBLE"
+    },
+    "trip_miles": {
+     "description": "Miles driven with the rider.",
+     "type": "DOUBLE"
+    },
+    "trip_minutes": {
+     "description": "Minutes from pickup to dropoff.",
+     "type": "DOUBLE"
+    },
+    "wait_minutes": {
+     "description": "Minutes from request to pickup: how long the rider waited. Empty when the request time is missing.",
+     "type": "DOUBLE"
+    },
+    "wav_matched": {
+     "description": "Trip was in a wheelchair accessible vehicle.",
+     "type": "BOOLEAN"
+    },
+    "wav_requested": {
+     "description": "Rider asked for a wheelchair accessible vehicle.",
+     "type": "BOOLEAN"
+    }
+   },
+   "description": "Trips by Uber, Lyft and the other app-based for-hire companies, one row per trip, from TLC monthly files since January 2024 (about 20 million a month). Includes what the rider paid, tips, what the driver was paid and how long the rider waited.",
+   "meta": {
+    "domain": "rideshare_taxi",
+    "grain": "one row per trip",
+    "local_date_column": "pickup_date",
+    "partition_column": "file_month",
+    "time_column": "pickup_at"
+   }
+  },
+  "fct_service_request": {
+   "columns": {
+    "agency": {
+     "description": "Agency acronym, for example NYPD, DSNY (Sanitation), HPD (Housing), DOT.",
+     "type": "VARCHAR"
+    },
+    "agency_name": {
+     "description": "Agency full name.",
+     "type": "VARCHAR"
+    },
+    "boro_code": {
+     "description": "Borough the location falls in.",
+     "type": "TINYINT"
+    },
+    "borough": {
+     "description": "Borough as 311 recorded it.",
+     "type": "VARCHAR"
+    },
+    "channel": {
+     "description": "How it was filed: online, phone, mobile, unknown or other.",
+     "type": "VARCHAR"
+    },
+    "closed_at": {
+     "description": "Instant the agency closed it.",
+     "type": "TIMESTAMP WITH TIME ZONE"
+    },
+    "closed_at_local": {
+     "description": "Closing time in New York.",
+     "type": "TIMESTAMP"
+    },
+    "community_district": {
+     "description": "Community district the location falls in.",
+     "type": "SMALLINT"
+    },
+    "complaint_type": {
+     "description": "Top level problem, for example 'Noise - Residential', 'HEAT/HOT WATER', 'Illegal Parking'. Capitalization varies by agency.",
+     "type": "VARCHAR"
+    },
+    "council_district": {
+     "description": "Council district the location falls in.",
+     "type": "TINYINT"
+    },
+    "created_at": {
+     "description": "Instant the request was filed. Filter time ranges on this column.",
+     "type": "TIMESTAMP WITH TIME ZONE"
+    },
+    "created_at_local": {
+     "description": "When the request was filed, New York time.",
+     "type": "TIMESTAMP"
+    },
+    "created_date": {
+     "description": "Date filed, New York time.",
+     "type": "DATE"
+    },
+    "created_hour": {
+     "description": "Hour filed, New York time.",
+     "type": "TINYINT"
+    },
+    "descriptor": {
+     "description": "Detail under the complaint type, for example 'Loud Music/Party' or 'Banging/Pounding'.",
+     "type": "VARCHAR"
+    },
+    "descriptor_2": {
+     "description": "Third level of detail, when used.",
+     "type": "VARCHAR"
+    },
+    "hours_to_close": {
+     "description": "Hours from filing to closing. Empty while open.",
+     "type": "DOUBLE"
+    },
+    "incident_address": {
+     "description": "Address given.",
+     "type": "VARCHAR"
+    },
+    "incident_zip": {
+     "description": "ZIP code as 311 recorded it.",
+     "type": "VARCHAR"
+    },
+    "is_closed": {
+     "description": "True once closed.",
+     "type": "BOOLEAN"
+    },
+    "latitude": {
+     "description": "Latitude.",
+     "type": "DOUBLE"
+    },
+    "location_type": {
+     "description": "Kind of place, for example Residential Building/House, Street/Sidewalk.",
+     "type": "VARCHAR"
+    },
+    "longitude": {
+     "description": "Longitude.",
+     "type": "DOUBLE"
+    },
+    "modzcta": {
+     "description": "ZIP area the location falls in.",
+     "type": "VARCHAR"
+    },
+    "nta_code": {
+     "description": "Neighborhood the location falls in.",
+     "type": "VARCHAR"
+    },
+    "police_precinct": {
+     "description": "Police precinct the location falls in.",
+     "type": "SMALLINT"
+    },
+    "request_id": {
+     "description": "311 request id.",
+     "type": "BIGINT"
+    },
+    "resolution_description": {
+     "description": "Last action reported by the agency.",
+     "type": "VARCHAR"
+    },
+    "status": {
+     "description": "Open, In Progress, Assigned, Pending, Started or Closed.",
+     "type": "VARCHAR"
+    },
+    "street_name": {
+     "description": "Street name given.",
+     "type": "VARCHAR"
+    },
+    "taxi_zone_id": {
+     "description": "Taxi zone the location falls in.",
+     "type": "SMALLINT"
+    }
+   },
+   "description": "311 service requests since January 2024, one row per request in its latest state. Complaints about noise, heat, parking, streets and more, with the agency that handled them.",
+   "meta": {
+    "domain": "city_services",
+    "grain": "one row per request",
+    "local_date_column": "created_date",
+    "time_column": "created_at"
+   }
+  },
+  "fct_subway_alert": {
+   "columns": {
+    "active_periods": {
+     "description": "Periods the alert applies to.",
+     "type": "STRUCT(starts_at TIMESTAMP WITH TIME ZONE, ends_at TIMESTAMP WITH TIME ZONE)[]"
+    },
+    "alert_id": {
+     "description": "Alert id.",
+     "type": "VARCHAR"
+    },
+    "alert_type": {
+     "description": "MTA category, for example Delays, Planned - Part Suspended, Station Notice.",
+     "type": "VARCHAR"
+    },
+    "created_at": {
+     "description": "When the MTA created the alert.",
+     "type": "TIMESTAMP WITH TIME ZONE"
+    },
+    "created_at_local": {
+     "description": "Created, New York time.",
+     "type": "TIMESTAMP"
+    },
+    "description_text": {
+     "description": "Longer description.",
+     "type": "VARCHAR"
+    },
+    "first_active_at": {
+     "description": "Start of the first active period.",
+     "type": "TIMESTAMP WITH TIME ZONE"
+    },
+    "first_seen_at": {
+     "description": "First poll that carried it.",
+     "type": "TIMESTAMP WITH TIME ZONE"
+    },
+    "header_text": {
+     "description": "Headline. Routes appear in brackets, like [E].",
+     "type": "VARCHAR"
+    },
+    "is_planned_work": {
+     "description": "True for planned service changes.",
+     "type": "BOOLEAN"
+    },
+    "last_active_at": {
+     "description": "End of the last active period. Empty means open ended.",
+     "type": "TIMESTAMP WITH TIME ZONE"
+    },
+    "last_seen_at": {
+     "description": "Latest poll that carried it.",
+     "type": "TIMESTAMP WITH TIME ZONE"
+    },
+    "route_ids": {
+     "description": "Routes named in the alert, as a list. Use list_contains(route_ids, 'E').",
+     "type": "VARCHAR[]"
+    },
+    "stop_ids": {
+     "description": "Stations named in the alert, as a list.",
+     "type": "VARCHAR[]"
+    },
+    "updated_at": {
+     "description": "Last change by the MTA.",
+     "type": "TIMESTAMP WITH TIME ZONE"
+    }
+   },
+   "description": "Subway service alerts as the MTA published them, since capture began.",
+   "meta": {
+    "domain": "subway",
+    "grain": "one row per alert",
+    "time_column": "created_at"
+   }
+  },
+  "fct_subway_arrival": {
+   "columns": {
+    "arrival_source": {
+     "description": "vehicle_stopped (train reported standing at the stop, more exact) or last_prediction.",
+     "type": "VARCHAR"
+    },
+    "arrived_at": {
+     "description": "Arrival instant. Filter time ranges on this column.",
+     "type": "TIMESTAMP WITH TIME ZONE"
+    },
+    "arrived_at_local": {
+     "description": "Arrival in New York time.",
+     "type": "TIMESTAMP"
+    },
+    "arrived_date": {
+     "description": "Arrival date in New York.",
+     "type": "DATE"
+    },
+    "arrived_hour": {
+     "description": "Arrival hour in New York.",
+     "type": "TINYINT"
+    },
+    "borough": {
+     "description": "Borough of the station.",
+     "type": "VARCHAR"
+    },
+    "complex_id": {
+     "description": "Station complex.",
+     "type": "VARCHAR"
+    },
+    "delay_seconds": {
+     "description": "Seconds late against the schedule. Negative means early. Empty for unscheduled trains.",
+     "type": "INTEGER"
+    },
+    "departed_at": {
+     "description": "Last predicted departure.",
+     "type": "TIMESTAMP WITH TIME ZONE"
+    },
+    "direction": {
+     "description": "N (uptown and toward the Bronx) or S (downtown and toward Brooklyn).",
+     "type": "VARCHAR"
+    },
+    "feed_version": {
+     "description": "Schedule version used for the match.",
+     "type": "VARCHAR"
+    },
+    "is_scheduled_trip": {
+     "description": "True when the train matched a trip in the regular schedule.",
+     "type": "BOOLEAN"
+    },
+    "nta_code": {
+     "description": "Neighborhood of the station.",
+     "type": "VARCHAR"
+    },
+    "route_id": {
+     "description": "Route.",
+     "type": "VARCHAR"
+    },
+    "scheduled_arrival_at": {
+     "description": "Scheduled arrival.",
+     "type": "TIMESTAMP WITH TIME ZONE"
+    },
+    "service_date": {
+     "description": "Service day the trip belongs to.",
+     "type": "DATE"
+    },
+    "station_id": {
+     "description": "Station. Joins to dim_subway_station.",
+     "type": "VARCHAR"
+    },
+    "station_name": {
+     "description": "Station name.",
+     "type": "VARCHAR"
+    },
+    "stop_id": {
+     "description": "Platform stop id.",
+     "type": "VARCHAR"
+    },
+    "stop_sequence": {
+     "description": "Position of the stop in the scheduled trip.",
+     "type": "SMALLINT"
+    },
+    "trip_id": {
+     "description": "Realtime trip id.",
+     "type": "VARCHAR"
+    },
+    "trip_uid": {
+     "description": "Train trip, service date plus trip id.",
+     "type": "VARCHAR"
+    }
+   },
+   "description": "Observed subway arrivals since capture began in October 2026, one row per train per stop, matched to the schedule. delay_seconds is positive when late. About a quarter of trains are not in the regular schedule (added or rerouted trains), so they have no delay.",
+   "meta": {
+    "domain": "subway",
+    "grain": "one row per train arrival at a stop",
+    "local_date_column": "arrived_date",
+    "time_column": "arrived_at"
+   }
+  },
+  "fct_subway_ridership_hourly": {
+   "columns": {
+    "borough": {
+     "description": "Borough.",
+     "type": "VARCHAR"
+    },
+    "complex_id": {
+     "description": "Station complex. Joins to dim_subway_complex.",
+     "type": "VARCHAR"
+    },
+    "complex_name": {
+     "description": "Complex name with routes, for example 'Times Sq-42 St (N,Q,R,W,S,1,2,3,7)'.",
+     "type": "VARCHAR"
+    },
+    "fare_class": {
+     "description": "Fare category, for example full fare, students, reduced fare.",
+     "type": "VARCHAR"
+    },
+    "hour_at_local": {
+     "description": "Hour in New York.",
+     "type": "TIMESTAMP"
+    },
+    "hour_date": {
+     "description": "Date in New York.",
+     "type": "DATE"
+    },
+    "hour_hour": {
+     "description": "Hour of day, 0 to 23.",
+     "type": "TINYINT"
+    },
+    "hour_start": {
+     "description": "Start of the hour as an instant. Filter time ranges on this column.",
+     "type": "TIMESTAMP WITH TIME ZONE"
+    },
+    "payment_method": {
+     "description": "omny or metrocard.",
+     "type": "VARCHAR"
+    },
+    "riders": {
+     "description": "Estimated entries.",
+     "type": "DOUBLE"
+    },
+    "transfers": {
+     "description": "Entries that were free transfers, included in riders.",
+     "type": "DOUBLE"
+    },
+    "transit_mode": {
+     "description": "subway, staten_island_railway or tram.",
+     "type": "VARCHAR"
+    }
+   },
+   "description": "Estimated subway entries per station complex per hour since January 2024, split by payment method and fare class. Sum riders across rows for totals.",
+   "meta": {
+    "domain": "subway",
+    "grain": "one row per hour per complex per payment method per fare class",
+    "local_date_column": "hour_date",
+    "time_column": "hour_start"
+   }
+  },
+  "fct_subway_stop_event": {
+   "columns": {
+    "arrived_at": {
+     "description": "Arrival instant, for arrived stops.",
+     "type": "TIMESTAMP WITH TIME ZONE"
+    },
+    "arrived_at_local": {
+     "description": "Arrival in New York time.",
+     "type": "TIMESTAMP"
+    },
+    "direction": {
+     "description": "N or S.",
+     "type": "VARCHAR"
+    },
+    "first_predicted_at": {
+     "description": "First arrival prediction seen.",
+     "type": "TIMESTAMP WITH TIME ZONE"
+    },
+    "outcome": {
+     "description": "arrived, skipped (dropped from the trip, often a reroute) or unreached (trip ended first).",
+     "type": "VARCHAR"
+    },
+    "predictions_seen": {
+     "description": "Polls that carried a prediction for the stop.",
+     "type": "SMALLINT"
+    },
+    "recorded_at": {
+     "description": "When the tracker wrote the row.",
+     "type": "TIMESTAMP WITH TIME ZONE"
+    },
+    "route_id": {
+     "description": "Route.",
+     "type": "VARCHAR"
+    },
+    "service_date": {
+     "description": "Service day.",
+     "type": "DATE"
+    },
+    "station_id": {
+     "description": "Station.",
+     "type": "VARCHAR"
+    },
+    "stop_id": {
+     "description": "Platform stop id.",
+     "type": "VARCHAR"
+    },
+    "trip_id": {
+     "description": "Realtime trip id.",
+     "type": "VARCHAR"
+    },
+    "trip_uid": {
+     "description": "Train trip.",
+     "type": "VARCHAR"
+    }
+   },
+   "description": "Every stop outcome the train tracker recorded, including skipped stops and stops never reached.",
+   "meta": {
+    "domain": "subway",
+    "grain": "one row per train per stop",
+    "time_column": "arrived_at"
+   }
+  },
+  "fct_subway_trip": {
+   "columns": {
+    "direction": {
+     "description": "N or S.",
+     "type": "VARCHAR"
+    },
+    "first_seen_at": {
+     "description": "First poll that saw the trip.",
+     "type": "TIMESTAMP WITH TIME ZONE"
+    },
+    "first_seen_at_local": {
+     "description": "First seen, New York time.",
+     "type": "TIMESTAMP"
+    },
+    "last_seen_at": {
+     "description": "Last poll that saw it.",
+     "type": "TIMESTAMP WITH TIME ZONE"
+    },
+    "route_id": {
+     "description": "Route.",
+     "type": "VARCHAR"
+    },
+    "scheduled_start": {
+     "description": "Scheduled departure from the first stop, HH:MM:SS.",
+     "type": "VARCHAR"
+    },
+    "service_date": {
+     "description": "Service day.",
+     "type": "DATE"
+    },
+    "stops_arrived": {
+     "description": "Stops reached.",
+     "type": "SMALLINT"
+    },
+    "stops_skipped": {
+     "description": "Stops dropped on the way.",
+     "type": "SMALLINT"
+    },
+    "stops_tracked": {
+     "description": "All stops the tracker followed for the trip.",
+     "type": "SMALLINT"
+    },
+    "stops_unreached": {
+     "description": "Stops still ahead when it left the feed.",
+     "type": "SMALLINT"
+    },
+    "trip_id": {
+     "description": "Realtime trip id.",
+     "type": "VARCHAR"
+    },
+    "trip_uid": {
+     "description": "Train trip.",
+     "type": "VARCHAR"
+    }
+   },
+   "description": "Train trips the tracker followed from start to finish.",
+   "meta": {
+    "domain": "subway",
+    "grain": "one row per trip",
+    "time_column": "first_seen_at"
+   }
+  },
+  "fct_taxi_trip": {
+   "columns": {
+    "airport_fee_usd": {
+     "description": "Airport fee. Yellow taxis only.",
+     "type": "DOUBLE"
+    },
+    "cbd_congestion_fee_usd": {
+     "description": "Congestion relief zone toll. Charged from 5 January 2025.",
+     "type": "DOUBLE"
+    },
+    "congestion_surcharge_usd": {
+     "description": "State congestion surcharge.",
+     "type": "DOUBLE"
+    },
+    "dropoff_at": {
+     "description": "Dropoff instant.",
+     "type": "TIMESTAMP WITH TIME ZONE"
+    },
+    "dropoff_zone_id": {
+     "description": "Dropoff taxi zone.",
+     "type": "SMALLINT"
+    },
+    "extra_usd": {
+     "description": "Rush hour and overnight surcharges.",
+     "type": "DOUBLE"
+    },
+    "fare_usd": {
+     "description": "Metered fare.",
+     "type": "DOUBLE"
+    },
+    "file_month": {
+     "description": "Month of the TLC file.",
+     "type": "DATE"
+    },
+    "improvement_surcharge_usd": {
+     "description": "Improvement surcharge.",
+     "type": "DOUBLE"
+    },
+    "is_plausible": {
+     "description": "False for trips with impossible times, distances or totals.",
+     "type": "BOOLEAN"
+    },
+    "is_street_hail": {
+     "description": "Green taxis only. True for street hails, false for dispatched trips.",
+     "type": "BOOLEAN"
+    },
+    "mta_tax_usd": {
+     "description": "MTA tax.",
+     "type": "DOUBLE"
+    },
+    "passenger_count": {
+     "description": "Passengers entered by the driver.",
+     "type": "SMALLINT"
+    },
+    "payment_type": {
+     "description": "credit card, cash, no charge, dispute, flex fare, unknown or voided.",
+     "type": "VARCHAR"
+    },
+    "pickup_at": {
+     "description": "Pickup instant. Filter time ranges on this column.",
+     "type": "TIMESTAMP WITH TIME ZONE"
+    },
+    "pickup_at_local": {
+     "description": "Pickup time in New York.",
+     "type": "TIMESTAMP"
+    },
+    "pickup_date": {
+     "description": "Pickup date in New York.",
+     "type": "DATE"
+    },
+    "pickup_hour": {
+     "description": "Pickup hour in New York.",
+     "type": "TINYINT"
+    },
+    "pickup_zone_id": {
+     "description": "Pickup taxi zone.",
+     "type": "SMALLINT"
+    },
+    "rate_type": {
+     "description": "standard, JFK flat fare, Newark, Nassau or Westchester, negotiated, group ride or unknown.",
+     "type": "VARCHAR"
+    },
+    "taxi_type": {
+     "description": "yellow or green.",
+     "type": "VARCHAR"
+    },
+    "tip_usd": {
+     "description": "Tip. Only card tips are recorded, so cash trips show no tip.",
+     "type": "DOUBLE"
+    },
+    "tolls_usd": {
+     "description": "Tolls.",
+     "type": "DOUBLE"
+    },
+    "total_usd": {
+     "description": "Total charged, without cash tips.",
+     "type": "DOUBLE"
+    },
+    "trip_miles": {
+     "description": "Metered miles.",
+     "type": "DOUBLE"
+    },
+    "trip_minutes": {
+     "description": "Minutes from pickup to dropoff.",
+     "type": "DOUBLE"
+    }
+   },
+   "description": "Yellow and green taxi trips, one row per trip, from TLC monthly files since January 2024.",
+   "meta": {
+    "domain": "rideshare_taxi",
+    "grain": "one row per trip",
+    "local_date_column": "pickup_date",
+    "partition_column": "file_month",
+    "time_column": "pickup_at"
+   }
+  },
+  "fct_traffic_speed": {
+   "columns": {
+    "is_valid": {
+     "description": "True for normal readings. Use only these for speed averages.",
+     "type": "BOOLEAN"
+    },
+    "link_id": {
+     "description": "Road link. Joins to dim_traffic_link.",
+     "type": "VARCHAR"
+    },
+    "observed_at": {
+     "description": "Reading instant. Filter time ranges on this column.",
+     "type": "TIMESTAMP WITH TIME ZONE"
+    },
+    "observed_at_local": {
+     "description": "Reading time in New York.",
+     "type": "TIMESTAMP"
+    },
+    "observed_date": {
+     "description": "Reading date.",
+     "type": "DATE"
+    },
+    "observed_hour": {
+     "description": "Reading hour.",
+     "type": "TINYINT"
+    },
+    "speed_mph": {
+     "description": "Average speed over the link, miles per hour.",
+     "type": "DOUBLE"
+    },
+    "status_code": {
+     "description": "DOT status code. 0 is a normal reading.",
+     "type": "SMALLINT"
+    },
+    "travel_time_seconds": {
+     "description": "Seconds to drive the link.",
+     "type": "INTEGER"
+    }
+   },
+   "description": "Speed readings on DOT sensor links, about one per link every five minutes, since January 2024.",
+   "meta": {
+    "domain": "traffic",
+    "grain": "one row per link per reading",
+    "local_date_column": "observed_date",
+    "time_column": "observed_at"
+   }
+  },
+  "fct_weather_alert": {
+   "columns": {
+    "alert_level": {
+     "description": "warning, watch, advisory or statement. Warnings are the most serious.",
+     "type": "VARCHAR"
+    },
+    "boro_code": {
+     "description": "Borough code.",
+     "type": "TINYINT"
+    },
+    "borough": {
+     "description": "Borough.",
+     "type": "VARCHAR"
+    },
+    "captured_from": {
+     "description": "live or archive.",
+     "type": "VARCHAR"
+    },
+    "duration_hours": {
+     "description": "Hours in effect.",
+     "type": "DOUBLE"
+    },
+    "ends_at": {
+     "description": "When it ended or was cancelled.",
+     "type": "TIMESTAMP WITH TIME ZONE"
+    },
+    "ends_at_local": {
+     "description": "End in New York time.",
+     "type": "TIMESTAMP"
+    },
+    "event_key": {
+     "description": "Id of the event across zones.",
+     "type": "VARCHAR"
+    },
+    "event_name": {
+     "description": "Alert name, for example Heat Advisory, Flash Flood Warning, Winter Storm Watch.",
+     "type": "VARCHAR"
+    },
+    "hazard_code": {
+     "description": "Weather Service hazard code, for example HT heat, FF flash flood, WS winter storm, CF coastal flood.",
+     "type": "VARCHAR"
+    },
+    "headline": {
+     "description": "Headline, live alerts only.",
+     "type": "VARCHAR"
+    },
+    "last_action": {
+     "description": "Latest action seen live. Empty for archived alerts.",
+     "type": "VARCHAR"
+    },
+    "severity": {
+     "description": "CAP severity, live alerts only.",
+     "type": "VARCHAR"
+    },
+    "starts_at": {
+     "description": "When the alert took effect.",
+     "type": "TIMESTAMP WITH TIME ZONE"
+    },
+    "starts_at_local": {
+     "description": "Start in New York time.",
+     "type": "TIMESTAMP"
+    },
+    "zone": {
+     "description": "Forecast zone. Queens has two.",
+     "type": "VARCHAR"
+    }
+   },
+   "description": "Weather Service watches, warnings, advisories and statements for NYC, one row per event per forecast zone.",
+   "meta": {
+    "domain": "weather",
+    "grain": "one row per alert event per zone",
+    "time_column": "starts_at"
+   }
+  },
+  "fct_weather_hourly": {
+   "columns": {
+    "boro_code": {
+     "description": "Borough code.",
+     "type": "TINYINT"
+    },
+    "borough": {
+     "description": "Borough.",
+     "type": "VARCHAR"
+    },
+    "cloud_cover_pct": {
+     "description": "Cloud cover, percent.",
+     "type": "DOUBLE"
+    },
+    "condition": {
+     "description": "clear, cloudy, fog, drizzle, rain, snow, thunderstorm or other.",
+     "type": "VARCHAR"
+    },
+    "dew_point_f": {
+     "description": "Dew point in Fahrenheit.",
+     "type": "DOUBLE"
+    },
+    "feels_like_f": {
+     "description": "Feels-like temperature in Fahrenheit, with wind chill and humidity.",
+     "type": "DOUBLE"
+    },
+    "hour_at_local": {
+     "description": "Start of the hour in New York.",
+     "type": "TIMESTAMP"
+    },
+    "hour_date": {
+     "description": "Date in New York.",
+     "type": "DATE"
+    },
+    "hour_hour": {
+     "description": "Hour of day in New York, 0 to 23.",
+     "type": "TINYINT"
+    },
+    "hour_start": {
+     "description": "Start of the hour as an instant.",
+     "type": "TIMESTAMP WITH TIME ZONE"
+    },
+    "is_day": {
+     "description": "Sun up at the start of the hour.",
+     "type": "BOOLEAN"
+    },
+    "is_forecast": {
+     "description": "True for hours that had not happened when the values were fetched.",
+     "type": "BOOLEAN"
+    },
+    "is_heavy_precipitation_hour": {
+     "description": "At least 7.6 mm (0.3 in) in the hour, the Weather Service threshold for heavy rain.",
+     "type": "BOOLEAN"
+    },
+    "is_snow_hour": {
+     "description": "Any new snow in the hour.",
+     "type": "BOOLEAN"
+    },
+    "is_wet_hour": {
+     "description": "At least 0.1 mm of precipitation in the hour: it rained or snowed.",
+     "type": "BOOLEAN"
+    },
+    "precipitation_in": {
+     "description": "Precipitation in the hour, inches.",
+     "type": "DOUBLE"
+    },
+    "precipitation_mm": {
+     "description": "Precipitation in the hour, millimetres.",
+     "type": "DOUBLE"
+    },
+    "pressure_msl_hpa": {
+     "description": "Sea level pressure, hectopascals.",
+     "type": "DOUBLE"
+    },
+    "rain_mm": {
+     "description": "Liquid rain in the hour, millimetres.",
+     "type": "DOUBLE"
+    },
+    "relative_humidity_pct": {
+     "description": "Relative humidity, percent.",
+     "type": "DOUBLE"
+    },
+    "snow_depth_in": {
+     "description": "Snow on the ground, inches.",
+     "type": "DOUBLE"
+    },
+    "snowfall_cm": {
+     "description": "New snow in the hour, centimetres.",
+     "type": "DOUBLE"
+    },
+    "snowfall_in": {
+     "description": "New snow in the hour, inches.",
+     "type": "DOUBLE"
+    },
+    "temperature_c": {
+     "description": "Temperature in Celsius.",
+     "type": "DOUBLE"
+    },
+    "temperature_f": {
+     "description": "Temperature in Fahrenheit.",
+     "type": "DOUBLE"
+    },
+    "values_from": {
+     "description": "archive (settled) or model (recent days and forecast).",
+     "type": "VARCHAR"
+    },
+    "weather_code": {
+     "description": "WMO weather code.",
+     "type": "SMALLINT"
+    },
+    "wind_direction_deg": {
+     "description": "Direction the wind comes from, degrees.",
+     "type": "DOUBLE"
+    },
+    "wind_gust_mph": {
+     "description": "Strongest gust, miles per hour.",
+     "type": "DOUBLE"
+    },
+    "wind_speed_mph": {
+     "description": "Mean wind speed, miles per hour.",
+     "type": "DOUBLE"
+    }
+   },
+   "description": "Hourly weather for one point in each borough since January 2024, from Open-Meteo. Settled archive values for history and model values for the last few days and the next day.",
+   "meta": {
+    "domain": "weather",
+    "grain": "one row per borough per hour",
+    "local_date_column": "hour_date",
+    "time_column": "hour_start"
+   }
+  },
+  "ops_feed_gap": {
+   "columns": {
+    "feed": {
+     "description": "Feed within the source, when the gap affected just one.",
+     "type": "VARCHAR"
+    },
+    "gap_end": {
+     "description": "End of the gap.",
+     "type": "TIMESTAMP WITH TIME ZONE"
+    },
+    "gap_minutes": {
+     "description": "Length in minutes.",
+     "type": "DOUBLE"
+    },
+    "gap_start": {
+     "description": "Start of the gap.",
+     "type": "TIMESTAMP WITH TIME ZONE"
+    },
+    "reason": {
+     "description": "What happened.",
+     "type": "VARCHAR"
+    },
+    "source": {
+     "description": "Live source.",
+     "type": "VARCHAR"
+    }
+   },
+   "description": "Periods a live feed was not captured, or was captured with less precision.",
+   "meta": {
+    "domain": "pipeline_ops",
+    "grain": "one row per gap"
+   }
+  },
+  "ops_source_freshness": {
+   "columns": {
+    "cadence": {
+     "description": "How often the source publishes.",
+     "type": "VARCHAR"
+    },
+    "checked_at": {
+     "description": "When this row was computed.",
+     "type": "TIMESTAMP WITH TIME ZONE"
+    },
+    "coverage_end": {
+     "description": "Latest event time in the table.",
+     "type": "TIMESTAMP WITH TIME ZONE"
+    },
+    "coverage_start": {
+     "description": "Earliest event time in the table.",
+     "type": "TIMESTAMP WITH TIME ZONE"
+    },
+    "domain": {
+     "description": "Domain of the source.",
+     "type": "VARCHAR"
+    },
+    "freshness_sla": {
+     "description": "How old the last successful load may be before the table counts as stale.",
+     "type": "INTERVAL"
+    },
+    "hours_since_latest_event": {
+     "description": "Hours between the latest event in the table and now.",
+     "type": "DOUBLE"
+    },
+    "is_stale": {
+     "description": "True when the last success is older than the SLA.",
+     "type": "BOOLEAN"
+    },
+    "last_error": {
+     "description": "Error of the latest run, if it failed.",
+     "type": "VARCHAR"
+    },
+    "last_loaded_at": {
+     "description": "When a load last wrote to the table.",
+     "type": "TIMESTAMP WITH TIME ZONE"
+    },
+    "last_status": {
+     "description": "Status of the latest run.",
+     "type": "VARCHAR"
+    },
+    "last_success_at": {
+     "description": "When the source last finished a run successfully.",
+     "type": "TIMESTAMP WITH TIME ZONE"
+    },
+    "row_count": {
+     "description": "Rows in the table.",
+     "type": "BIGINT"
+    },
+    "source": {
+     "description": "Ingestion source that fills it.",
+     "type": "VARCHAR"
+    },
+    "table_name": {
+     "description": "Lake table.",
+     "type": "VARCHAR"
+    }
+   },
+   "description": "How current each lake table is. Refreshed every 15 minutes.",
+   "meta": {
+    "domain": "pipeline_ops",
+    "grain": "one row per lake table"
+   }
+  },
+  "us_federal_holidays": {
+   "columns": {
+    "holiday_date": {
+     "description": "Day the holiday is observed. Weekend holidays move to the nearest weekday.",
+     "type": "DATE"
+    },
+    "holiday_name": {
+     "description": "Holiday name.",
+     "type": "VARCHAR"
+    }
+   },
+   "description": "US federal holidays, on the day they are observed, 2024 to 2027.",
+   "meta": {}
+  }
+ }
+}
