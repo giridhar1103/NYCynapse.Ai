@@ -1,0 +1,56 @@
+models:
+  - name: collisions
+    table: gold.fct_collision
+    workspace: safety
+    label: Motor vehicle crashes
+    grain: one row per crash
+    synonyms: [crashes, collisions, accidents, traffic deaths, injuries]
+    time:
+      - {name: crash, instant: crashed_at, local_date: crash_date, local_hour: crash_hour, default: true}
+    entities:
+      - {name: collision, column: collision_id, kind: primary}
+      - {name: neighborhood, column: nta_code}
+      - {name: community_district, column: community_district}
+      - {name: borough, column: boro_code}
+      - {name: crash_date, column: crash_date}
+    dimensions:
+      - {name: borough, column: borough, values: enumerate, geo_level: borough}
+      - {name: primary_factor, column: primary_factor, values: index,
+         synonyms: [cause, contributing factor, reason]}
+      - {name: vehicle_type, column: vehicle_type_1, values: index}
+      - {name: has_injury, column: has_injury, kind: boolean}
+      - {name: has_fatality, column: has_fatality, kind: boolean, synonyms: [fatal, deadly]}
+      - {name: involves_pedestrian_harm, column: involves_pedestrian_harm, kind: boolean}
+      - {name: involves_cyclist_harm, column: involves_cyclist_harm, kind: boolean}
+      - {name: street, column: on_street_name, values: index, synonyms: [road]}
+      - {name: police_precinct, column: police_precinct, kind: numeric, geo_level: police_precinct}
+      - {name: crash_hour, column: crash_hour, kind: numeric}
+    measures:
+      - {name: crashes, expr: "*", agg: count}
+      - {name: persons_injured, expr: persons_injured, agg: sum}
+      - {name: persons_killed, expr: persons_killed, agg: sum}
+      - {name: pedestrians_injured, expr: pedestrians_injured, agg: sum}
+      - {name: pedestrians_killed, expr: pedestrians_killed, agg: sum}
+      - {name: cyclists_injured, expr: cyclists_injured, agg: sum}
+      - {name: cyclists_killed, expr: cyclists_killed, agg: sum}
+      - {name: motorists_injured, expr: motorists_injured, agg: sum}
+      - {name: motorists_killed, expr: motorists_killed, agg: sum}
+
+  - name: collision_people
+    table: gold.fct_collision_person
+    workspace: safety
+    label: People in crashes
+    grain: one row per person per crash
+    entities:
+      - {name: collision, column: collision_id}
+    time:
+      - {name: crash, instant: "timezone('America/New_York', crash_at_local)", local_date: crash_date,
+         local_hour: crash_hour, default: true}
+    dimensions:
+      - {name: person_type, column: person_type, values: enumerate, synonyms: [road user]}
+      - {name: injury, column: injury, values: enumerate}
+      - {name: age, column: age, kind: numeric}
+      - {name: sex, column: sex, values: enumerate}
+      - {name: safety_equipment, column: safety_equipment, values: index, synonyms: [helmet, seat belt]}
+    measures:
+      - {name: people, expr: "*", agg: count}

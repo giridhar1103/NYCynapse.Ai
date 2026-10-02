@@ -1,0 +1,19 @@
+models:
+  - name: calendar
+    table: gold.dim_date
+    workspace: calendar
+    label: Calendar
+    grain: one row per date
+    entities:
+      - {name: date, column: date, kind: primary}
+    dimensions:
+      - {name: date, column: date, kind: identifier}
+      - {name: year, column: year, kind: numeric}
+      - {name: month, column: month_start, kind: categorical, label: Month}
+      - {name: month_name, column: month_name, values: enumerate}
+      - {name: week, column: week_start, kind: categorical, label: Week starting}
+      - {name: day_of_week, column: day_name, values: enumerate, synonyms: [weekday, day]}
+      - {name: is_weekend, column: is_weekend, kind: boolean, synonyms: [weekend]}
+      - {name: is_holiday, column: is_holiday, kind: boolean, synonyms: [holiday]}
+      - {name: holiday, column: holiday_name, values: enumerate}
+      - {name: is_workday, column: is_workday, kind: boolean, synonyms: [business day, weekday]}

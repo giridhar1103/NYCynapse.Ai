@@ -1,0 +1,34 @@
+models:
+  - name: service_requests
+    table: gold.fct_service_request
+    workspace: city_services
+    label: 311 service requests
+    grain: one row per request
+    synonyms: ["311", complaints, service requests, 311 calls]
+    time:
+      - {name: created, instant: created_at, local_date: created_date, local_hour: created_hour, default: true}
+      - {name: closed, instant: closed_at}
+    entities:
+      - {name: neighborhood, column: nta_code}
+      - {name: community_district, column: community_district}
+      - {name: borough, column: boro_code}
+      - {name: taxi_zone, column: taxi_zone_id}
+      - {name: created_date, column: created_date}
+    dimensions:
+      - {name: complaint_type, column: complaint_type, values: index,
+         synonyms: [complaint, problem, issue, category]}
+      - {name: descriptor, column: descriptor, values: index, synonyms: [complaint detail, subtype]}
+      - {name: agency, column: agency, values: enumerate, synonyms: [department]}
+      - {name: agency_name, column: agency_name, values: enumerate}
+      - {name: status, column: status, values: enumerate}
+      - {name: is_closed, column: is_closed, kind: boolean, synonyms: [resolved]}
+      - {name: channel, column: channel, values: enumerate, synonyms: [submitted by, phone, app]}
+      - {name: location_type, column: location_type, values: index}
+      - {name: borough, column: borough, values: enumerate, geo_level: borough}
+      - {name: police_precinct, column: police_precinct, kind: numeric, geo_level: police_precinct, synonyms: [precinct]}
+      - {name: council_district, column: council_district, kind: numeric, geo_level: council_district}
+      - {name: zip_area, column: modzcta, values: none, geo_level: zip_area, synonyms: [zip, zip code]}
+      - {name: created_hour, column: created_hour, kind: numeric}
+    measures:
+      - {name: requests, expr: "*", agg: count}
+      - {name: hours_to_close, expr: hours_to_close, agg: avg}

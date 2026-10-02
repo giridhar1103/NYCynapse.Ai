@@ -1,0 +1,64 @@
+models:
+  - name: bike_trips
+    table: gold.fct_bike_trip
+    workspace: bike
+    label: Citi Bike rides
+    grain: one row per ride
+    synonyms: [Citi Bike, bike rides, bike share, cycling trips]
+    time:
+      - {name: start, instant: started_at, local_date: start_date, local_hour: start_hour, default: true}
+    partition: {column: file_month, granularity: month, time_dimension: start}
+    entities:
+      - {name: start_station, column: start_station_number}
+      - {name: end_station, column: end_station_number}
+      - {name: start_neighborhood, column: start_nta_code}
+      - {name: end_neighborhood, column: end_nta_code}
+      - {name: start_zone, column: start_taxi_zone_id}
+      - {name: start_date, column: start_date}
+    dimensions:
+      - {name: bike_type, column: bike_type, values: enumerate, synonyms: [e-bike, electric, classic]}
+      - {name: rider_type, column: rider_type, values: enumerate, synonyms: [member, casual, subscriber]}
+      - {name: start_station, column: start_station_name, values: index, geo_level: bike_station}
+      - {name: end_station, column: end_station_name, values: index, geo_level: bike_station}
+      - {name: is_round_trip, column: is_round_trip, kind: boolean}
+      - {name: start_hour, column: start_hour, kind: numeric}
+    measures:
+      - {name: rides, expr: "*", agg: count}
+      - {name: duration_minutes, expr: duration_minutes, agg: avg}
+    filters:
+      - {name: normal_length, sql: "duration_minutes between 1 and 240", default: true,
+         description: "Leave out rides under a minute or over four hours, mostly docking errors."}
+
+  - name: bike_station_status
+    table: gold.fct_bike_station_status
+    workspace: bike
+    label: Citi Bike station availability
+    grain: one row per station per change in bikes or docks
+    synonyms: [bikes available, empty stations, full stations, docks]
+    live: true
+    time:
+      - {name: reported, instant: reported_at, local_date: reported_date, local_hour: reported_hour, default: true}
+    entities:
+      - {name: bike_station, column: station_id}
+    dimensions:
+      - {name: is_empty, column: is_empty, kind: boolean, synonyms: [no bikes]}
+      - {name: is_full, column: is_full, kind: boolean, synonyms: [no docks]}
+    measures:
+      - {name: status_changes, expr: "*", agg: count}
+      - {name: bikes_available, expr: bikes_available, agg: avg}
+
+  - name: bike_stations
+    table: gold.dim_bike_station
+    workspace: bike
+    label: Citi Bike stations
+    grain: one row per station
+    entities:
+      - {name: bike_station, column: station_id, kind: primary}
+      - {name: bike_station_number, column: station_number}
+      - {name: neighborhood, column: nta_code}
+      - {name: borough, column: boro_code}
+    dimensions:
+      - {name: station, column: station_name, values: index, geo_level: bike_station}
+      - {name: region, column: region, values: enumerate}
+      - {name: is_new_jersey, column: is_new_jersey, kind: boolean}
+      - {name: dock_count, column: dock_count, kind: numeric, synonyms: [capacity]}

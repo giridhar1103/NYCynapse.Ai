@@ -1,0 +1,132 @@
+models:
+  - name: subway_arrivals
+    table: gold.fct_subway_arrival
+    workspace: subway
+    label: Subway arrivals and delays
+    grain: one row per train arrival at a stop
+    synonyms: [train arrivals, delays, on-time performance, train delays]
+    live: true
+    time:
+      - {name: arrival, instant: arrived_at, local_date: arrived_date, local_hour: arrived_hour, default: true}
+    entities:
+      - {name: subway_route, column: route_id}
+      - {name: subway_station, column: station_id}
+      - {name: subway_complex, column: complex_id}
+      - {name: arrived_date, column: arrived_date}
+    dimensions:
+      - {name: route, column: route_id, values: enumerate, synonyms: [line, train, subway line]}
+      - {name: direction, column: direction, values: enumerate, synonyms: [uptown, downtown, northbound, southbound]}
+      - {name: station, column: station_name, values: index, geo_level: subway_station, synonyms: [stop]}
+      - {name: borough, column: borough, values: enumerate, geo_level: borough}
+      - {name: is_scheduled_trip, column: is_scheduled_trip, kind: boolean}
+      - {name: arrival_source, column: arrival_source, values: enumerate}
+    measures:
+      - {name: arrivals, expr: "*", agg: count}
+      - {name: delay_seconds, expr: delay_seconds, agg: avg}
+    filters:
+      - {name: scheduled, sql: is_scheduled_trip, default: true,
+         description: Only trains that matched the regular schedule. Others have no delay.}
+
+  - name: subway_trips
+    table: gold.fct_subway_trip
+    workspace: subway
+    label: Subway train trips
+    grain: one row per train trip
+    live: true
+    time:
+      - {name: first_seen, instant: first_seen_at, default: true}
+    entities:
+      - {name: subway_route, column: route_id}
+    dimensions:
+      - {name: route, column: route_id, values: enumerate, synonyms: [line, train]}
+      - {name: direction, column: direction, values: enumerate}
+    measures:
+      - {name: trips, expr: "*", agg: count}
+      - {name: stops_skipped, expr: stops_skipped, agg: sum}
+      - {name: stops_arrived, expr: stops_arrived, agg: sum}
+
+  - name: subway_alerts
+    table: gold.fct_subway_alert
+    workspace: subway
+    label: Subway service alerts
+    grain: one row per alert
+    synonyms: [service changes, service alerts, planned work, suspensions]
+    live: true
+    time:
+      - {name: created, instant: created_at, default: true}
+    dimensions:
+      - {name: alert_type, column: alert_type, values: enumerate, synonyms: [alert category]}
+      - {name: is_planned_work, column: is_planned_work, kind: boolean, synonyms: [planned work, weekend work]}
+      - {name: routes, column: route_ids, kind: list, synonyms: [line, train]}
+      - {name: header, column: header_text, kind: text}
+    measures:
+      - {name: alerts, expr: "*", agg: count}
+
+  - name: subway_ridership
+    table: gold.fct_subway_ridership_hourly
+    workspace: subway
+    label: Subway ridership
+    grain: one row per hour per station complex per payment method per fare class
+    synonyms: [ridership, entries, swipes, taps, riders, turnstile]
+    time:
+      - {name: hour, instant: hour_start, local_date: hour_date, local_hour: hour_hour, default: true}
+    entities:
+      - {name: subway_complex, column: complex_id}
+      - {name: hour_date, column: hour_date}
+    dimensions:
+      - {name: station_complex, column: complex_name, values: index, geo_level: subway_complex,
+         synonyms: [station]}
+      - {name: borough, column: borough, values: enumerate, geo_level: borough}
+      - {name: payment_method, column: payment_method, values: enumerate, synonyms: [OMNY, MetroCard]}
+      - {name: fare_class, column: fare_class, values: enumerate}
+      - {name: transit_mode, column: transit_mode, values: enumerate}
+      - {name: hour_of_day, column: hour_hour, kind: numeric}
+    measures:
+      - {name: riders, expr: riders, agg: sum}
+    filters:
+      - {name: subway_only, sql: "transit_mode = 'subway'", default: true,
+         description: Leave out the Staten Island Railway and the Roosevelt Island Tram.}
+
+  - name: subway_routes
+    table: gold.dim_subway_route
+    workspace: subway
+    label: Subway routes
+    grain: one row per route
+    entities:
+      - {name: subway_route, column: route_id, kind: primary}
+    dimensions:
+      - {name: route, column: route_id, values: enumerate, synonyms: [line, train]}
+      - {name: route_name, column: route_long_name, values: enumerate}
+      - {name: is_shuttle, column: is_shuttle, kind: boolean}
+
+  - name: subway_stations
+    table: gold.dim_subway_station
+    workspace: subway
+    label: Subway stations
+    grain: one row per station
+    entities:
+      - {name: subway_station, column: station_id, kind: primary}
+      - {name: subway_complex, column: complex_id}
+      - {name: neighborhood, column: nta_code}
+      - {name: borough, column: boro_code}
+    dimensions:
+      - {name: station, column: station_name, values: index, geo_level: subway_station}
+      - {name: routes, column: daytime_routes, kind: list, synonyms: [lines]}
+      - {name: borough, column: borough, values: enumerate, geo_level: borough}
+      - {name: is_accessible, column: is_accessible, kind: boolean, synonyms: [ADA, elevator, accessible]}
+      - {name: in_congestion_zone, column: in_congestion_zone, kind: boolean}
+      - {name: structure, column: structure, values: enumerate, synonyms: [elevated, underground]}
+
+  - name: subway_complexes
+    table: gold.dim_subway_complex
+    workspace: subway
+    label: Subway station complexes
+    grain: one row per station complex
+    entities:
+      - {name: subway_complex, column: complex_id, kind: primary}
+      - {name: neighborhood, column: nta_code}
+      - {name: borough, column: boro_code}
+    dimensions:
+      - {name: station_complex, column: complex_name, values: index, geo_level: subway_complex}
+      - {name: borough, column: borough, values: enumerate, geo_level: borough}
+      - {name: is_accessible, column: is_accessible, kind: boolean}

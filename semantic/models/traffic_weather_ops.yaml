@@ -1,0 +1,109 @@
+models:
+  - name: traffic_speeds
+    table: gold.fct_traffic_speed
+    workspace: traffic
+    label: Road speeds
+    grain: one row per road link per reading
+    synonyms: [traffic, congestion, road speed, traffic speed]
+    time:
+      - {name: observed, instant: observed_at, local_date: observed_date, local_hour: observed_hour, default: true}
+    entities:
+      - {name: traffic_link, column: link_id}
+    dimensions:
+      - {name: observed_hour, column: observed_hour, kind: numeric}
+    measures:
+      - {name: readings, expr: "*", agg: count}
+      - {name: speed_mph, expr: speed_mph, agg: avg}
+    filters:
+      - {name: valid, sql: is_valid, default: true, description: Normal readings only.}
+
+  - name: traffic_links
+    table: gold.dim_traffic_link
+    workspace: traffic
+    label: Monitored road links
+    grain: one row per road link
+    entities:
+      - {name: traffic_link, column: link_id, kind: primary}
+      - {name: neighborhood, column: nta_code}
+    dimensions:
+      - {name: road, column: link_name, values: index, geo_level: traffic_link,
+         synonyms: [highway, expressway, road segment]}
+      - {name: borough, column: borough, values: enumerate, geo_level: borough}
+      - {name: length_mi, column: length_mi, kind: numeric}
+
+  - name: weather_hourly
+    table: gold.fct_weather_hourly
+    workspace: weather
+    label: Hourly weather by borough
+    grain: one row per borough per hour
+    synonyms: [weather, rain, snow, temperature, heat, precipitation]
+    time:
+      - {name: hour, instant: hour_start, local_date: hour_date, local_hour: hour_hour, default: true}
+    entities:
+      - {name: borough, column: boro_code}
+      - {name: hour_date, column: hour_date}
+    dimensions:
+      - {name: borough, column: borough, values: enumerate, geo_level: borough}
+      - {name: condition, column: condition, values: enumerate, synonyms: [weather type]}
+      - {name: is_wet_hour, column: is_wet_hour, kind: boolean, synonyms: [rainy, raining, wet, precipitation]}
+      - {name: is_heavy_precipitation_hour, column: is_heavy_precipitation_hour, kind: boolean,
+         synonyms: [heavy rain, downpour, storm]}
+      - {name: is_snow_hour, column: is_snow_hour, kind: boolean, synonyms: [snowing, snowy]}
+      - {name: is_forecast, column: is_forecast, kind: boolean}
+      - {name: temperature, column: temperature_f, kind: numeric, label: Temperature (F)}
+    measures:
+      - {name: hours, expr: "*", agg: count}
+      - {name: temperature_f, expr: temperature_f, agg: avg}
+      - {name: precipitation_in, expr: precipitation_in, agg: sum}
+    filters:
+      - {name: observed, sql: "not is_forecast", default: true,
+         description: Leave out forecast hours unless the question is about the forecast.}
+
+  - name: weather_alerts
+    table: gold.fct_weather_alert
+    workspace: weather
+    label: Weather Service alerts
+    grain: one row per alert event per forecast zone
+    synonyms: [weather alerts, warnings, advisories, watches]
+    time:
+      - {name: start, instant: starts_at, default: true}
+    entities:
+      - {name: borough, column: boro_code}
+    dimensions:
+      - {name: event_name, column: event_name, values: enumerate, synonyms: [alert, warning type]}
+      - {name: alert_level, column: alert_level, values: enumerate, synonyms: [severity]}
+      - {name: borough, column: borough, values: enumerate, geo_level: borough}
+    measures:
+      - {name: alert_events, expr: event_key, agg: count_distinct}
+      - {name: duration_hours, expr: duration_hours, agg: avg}
+
+  - name: source_freshness
+    table: gold.ops_source_freshness
+    workspace: pipeline_ops
+    label: Dataset freshness
+    grain: one row per lake table
+    synonyms: [freshness, stale data, latest data, last updated]
+    dimensions:
+      - {name: table_name, column: table_name, values: enumerate}
+      - {name: source, column: source, values: enumerate}
+      - {name: domain, column: domain, values: enumerate}
+      - {name: is_stale, column: is_stale, kind: boolean, synonyms: [stale, out of date, delayed]}
+      - {name: last_status, column: last_status, values: enumerate}
+    measures:
+      - {name: tables, expr: "*", agg: count}
+      - {name: hours_since_latest_event, expr: hours_since_latest_event, agg: max}
+
+  - name: feed_gaps
+    table: gold.ops_feed_gap
+    workspace: pipeline_ops
+    label: Live feed gaps
+    grain: one row per gap
+    time:
+      - {name: gap, instant: gap_start, default: true}
+    dimensions:
+      - {name: source, column: source, values: enumerate}
+      - {name: feed, column: feed, values: enumerate}
+      - {name: reason, column: reason, kind: text}
+    measures:
+      - {name: gaps, expr: "*", agg: count}
+      - {name: gap_minutes, expr: gap_minutes, agg: sum}

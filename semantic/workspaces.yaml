@@ -1,0 +1,94 @@
+version: "2026.10.1"
+
+workspaces:
+  - id: rideshare_taxi
+    label: Taxis and app rides
+    description: >
+      Trips by Uber, Lyft and the other app companies and by yellow and green taxis since
+      January 2024: where and when they started and ended, fares, tips, driver pay, rider waits
+      and the congestion relief zone toll.
+    models: [rideshare_trips, taxi_trips, trips_by_zone_hour]
+    shared: [taxi_zones, boroughs, neighborhoods, calendar]
+    sample_questions:
+      - Which pickup zones had the most Uber and Lyft trips last month?
+      - How long did app riders wait at JFK on weekday evenings?
+      - How many taxi trips paid the congestion toll each week this year?
+
+  - id: subway
+    label: Subway
+    description: >
+      Subway service and use. Train arrivals and delays observed live since October 2026,
+      service alerts, the schedule, stations, and hourly ridership by station since January 2024.
+    models: [subway_arrivals, subway_trips, subway_alerts, subway_ridership, subway_routes,
+             subway_stations, subway_complexes]
+    shared: [boroughs, neighborhoods, calendar]
+    sample_questions:
+      - Which subway lines had the worst delays yesterday?
+      - What were the busiest stations by ridership in September?
+      - How many alerts did the A train have this week?
+
+  - id: bike
+    label: Citi Bike
+    description: >
+      Citi Bike rides since January 2024 and station availability captured live since
+      October 2026.
+    models: [bike_trips, bike_station_status, bike_stations]
+    shared: [boroughs, neighborhoods, taxi_zones, calendar]
+    sample_questions:
+      - How many Citi Bike rides started in Williamsburg last weekend?
+      - What share of rides used e-bikes each month?
+
+  - id: city_services
+    label: 311 requests
+    description: >
+      311 service requests since January 2024: complaint types, agencies, where they came from
+      and how long they took to close.
+    models: [service_requests]
+    shared: [boroughs, neighborhoods, community_districts, calendar]
+    sample_questions:
+      - How have noise complaints changed by neighborhood since 2024?
+      - Which agency takes longest to close requests?
+
+  - id: safety
+    label: Traffic safety
+    description: Motor vehicle crashes reported by NYPD since January 2024, and the people involved.
+    models: [collisions, collision_people]
+    shared: [boroughs, neighborhoods, community_districts, calendar]
+    sample_questions:
+      - How many cyclists were injured in Brooklyn this year?
+      - What are the most common contributing factors in fatal crashes?
+
+  - id: traffic
+    label: Road speeds
+    description: Vehicle speeds on about 130 highway and arterial links with DOT sensors, since January 2024.
+    models: [traffic_speeds, traffic_links]
+    shared: [boroughs, neighborhoods, calendar]
+    sample_questions:
+      - Which roads were slowest during the evening rush last week?
+
+  - id: weather
+    label: Weather
+    description: Hourly weather per borough and Weather Service alerts since January 2024.
+    models: [weather_hourly, weather_alerts]
+    shared: [boroughs, calendar]
+    sample_questions:
+      - How many hours did it rain in Manhattan last month?
+      - Which heat advisories were issued this summer?
+
+  - id: pipeline_ops
+    label: Data freshness
+    description: How current each dataset in the lake is, and gaps in the live feeds.
+    models: [source_freshness, feed_gaps]
+    sample_questions:
+      - Which datasets are stale right now?
+      - When were the subway feeds last down?
+
+  - id: geography
+    label: Places
+    description: Boroughs, neighborhoods, community districts and taxi zones, shared by every other workspace.
+    models: [boroughs, neighborhoods, community_districts, taxi_zones]
+
+  - id: calendar
+    label: Calendar
+    description: Dates with weekday, weekend and holiday flags, shared by every other workspace.
+    models: [calendar]

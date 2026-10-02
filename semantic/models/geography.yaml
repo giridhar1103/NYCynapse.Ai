@@ -1,0 +1,62 @@
+models:
+  - name: boroughs
+    table: gold.dim_borough
+    workspace: geography
+    label: Boroughs
+    grain: one row per borough
+    synonyms: [borough, boro]
+    entities:
+      - {name: borough, column: boro_code, kind: primary}
+    dimensions:
+      - {name: borough, column: borough, values: enumerate, geo_level: borough,
+         synonyms: [boro]}
+      - {name: land_area_sq_mi, column: land_area_sq_mi, kind: numeric}
+
+  - name: neighborhoods
+    table: gold.dim_neighborhood
+    workspace: geography
+    label: Neighborhoods
+    grain: one row per neighborhood (2020 NTA)
+    synonyms: [neighborhood, NTA, area]
+    entities:
+      - {name: neighborhood, column: nta_code, kind: primary}
+      - {name: borough, column: boro_code}
+    dimensions:
+      - {name: neighborhood, column: nta_name, values: index, geo_level: neighborhood,
+         synonyms: [neighbourhood, area, nabe]}
+      - {name: nta_code, column: nta_code, kind: identifier}
+      - {name: nta_kind, column: nta_kind, values: enumerate}
+      - {name: is_residential, column: is_residential, kind: boolean}
+      - {name: borough, column: borough, values: enumerate, geo_level: borough}
+      - {name: land_area_sq_mi, column: land_area_sq_mi, kind: numeric}
+
+  - name: community_districts
+    table: gold.dim_community_district
+    workspace: geography
+    label: Community districts
+    grain: one row per community district
+    synonyms: [community district, community board, CD]
+    entities:
+      - {name: community_district, column: community_district, kind: primary}
+      - {name: borough, column: boro_code}
+    dimensions:
+      - {name: community_district_name, column: district_name, values: index,
+         geo_level: community_district, synonyms: [community board]}
+      - {name: borough, column: borough, values: enumerate, geo_level: borough}
+      - {name: is_joint_interest_area, column: is_joint_interest_area, kind: boolean}
+
+  - name: taxi_zones
+    table: gold.dim_taxi_zone
+    workspace: geography
+    label: Taxi zones
+    grain: one row per TLC taxi zone
+    synonyms: [zone, taxi zone, pickup zone, dropoff zone]
+    entities:
+      - {name: taxi_zone, column: zone_id, kind: primary}
+    dimensions:
+      - {name: zone, column: zone_name, values: index, geo_level: taxi_zone,
+         synonyms: [taxi zone, area]}
+      - {name: borough, column: borough, values: enumerate, geo_level: borough}
+      - {name: service_zone, column: service_zone, values: enumerate}
+      - {name: is_airport, column: is_airport, kind: boolean, synonyms: [airport]}
+      - {name: is_yellow_zone, column: is_yellow_zone, kind: boolean, synonyms: [Manhattan core]}

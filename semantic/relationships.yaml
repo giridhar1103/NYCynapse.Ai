@@ -1,0 +1,116 @@
+relationships:
+  # geography
+  - {id: neighborhood_borough, left: neighborhoods, right: boroughs, kind: many_to_one,
+     condition: "{left}.boro_code = {right}.boro_code", description: Neighborhood to its borough.}
+  - {id: community_district_borough, left: community_districts, right: boroughs, kind: many_to_one,
+     condition: "{left}.boro_code = {right}.boro_code", description: Community district to its borough.}
+
+  # taxis and app rides
+  - {id: rideshare_pickup_zone, left: rideshare_trips, right: taxi_zones, kind: many_to_one, role: pickup,
+     condition: "{left}.pickup_zone_id = {right}.zone_id", description: Where an app ride started.}
+  - {id: rideshare_dropoff_zone, left: rideshare_trips, right: taxi_zones, kind: many_to_one, role: dropoff,
+     condition: "{left}.dropoff_zone_id = {right}.zone_id", description: Where an app ride ended.}
+  - {id: rideshare_date, left: rideshare_trips, right: calendar, kind: many_to_one,
+     condition: "{left}.pickup_date = {right}.date", description: Calendar day of the pickup.}
+  - {id: taxi_pickup_zone, left: taxi_trips, right: taxi_zones, kind: many_to_one, role: pickup,
+     condition: "{left}.pickup_zone_id = {right}.zone_id", description: Where a taxi trip started.}
+  - {id: taxi_dropoff_zone, left: taxi_trips, right: taxi_zones, kind: many_to_one, role: dropoff,
+     condition: "{left}.dropoff_zone_id = {right}.zone_id", description: Where a taxi trip ended.}
+  - {id: taxi_date, left: taxi_trips, right: calendar, kind: many_to_one,
+     condition: "{left}.pickup_date = {right}.date", description: Calendar day of the pickup.}
+  - {id: zone_hour_zone, left: trips_by_zone_hour, right: taxi_zones, kind: many_to_one, role: pickup,
+     condition: "{left}.pickup_zone_id = {right}.zone_id", description: Zone of the hourly trip counts.}
+  - {id: zone_hour_date, left: trips_by_zone_hour, right: calendar, kind: many_to_one,
+     condition: "{left}.pickup_date = {right}.date", description: Calendar day of the hourly trip counts.}
+  - {id: zone_hour_weather, left: trips_by_zone_hour, right: weather_hourly, kind: temporal,
+     condition: "{right}.borough = (select z.borough from gold.dim_taxi_zone z where z.zone_id = {left}.pickup_zone_id) and {right}.hour_date = {left}.pickup_date and {right}.hour_hour = {left}.pickup_hour",
+     description: Weather in the pickup zone's borough during the pickup hour.}
+
+  # subway
+  - {id: arrival_route, left: subway_arrivals, right: subway_routes, kind: many_to_one,
+     condition: "{left}.route_id = {right}.route_id", description: Route of the train.}
+  - {id: arrival_station, left: subway_arrivals, right: subway_stations, kind: many_to_one,
+     condition: "{left}.station_id = {right}.station_id", description: Station the train arrived at.}
+  - {id: arrival_date, left: subway_arrivals, right: calendar, kind: many_to_one,
+     condition: "{left}.arrived_date = {right}.date", description: Calendar day of the arrival.}
+  - {id: arrival_weather, left: subway_arrivals, right: weather_hourly, kind: temporal,
+     condition: "{right}.borough = {left}.borough and {right}.hour_start = date_trunc('hour', {left}.arrived_at)",
+     description: Weather in the station's borough during the hour of the arrival.}
+  - {id: arrival_during_weather_alert, left: subway_arrivals, right: weather_alerts, kind: range,
+     condition: "{right}.borough = {left}.borough and {left}.arrived_at between {right}.starts_at and {right}.ends_at",
+     description: Arrivals while a Weather Service alert was in effect for the station's borough.}
+  - {id: station_complex, left: subway_stations, right: subway_complexes, kind: many_to_one,
+     condition: "{left}.complex_id = {right}.complex_id", description: Complex a station belongs to.}
+  - {id: station_neighborhood, left: subway_stations, right: neighborhoods, kind: many_to_one,
+     condition: "{left}.nta_code = {right}.nta_code", description: Neighborhood a station is in.}
+  - {id: complex_neighborhood, left: subway_complexes, right: neighborhoods, kind: many_to_one,
+     condition: "{left}.nta_code = {right}.nta_code", description: Neighborhood a complex is in.}
+  - {id: ridership_complex, left: subway_ridership, right: subway_complexes, kind: many_to_one,
+     condition: "{left}.complex_id = {right}.complex_id", description: Complex the riders entered.}
+  - {id: ridership_date, left: subway_ridership, right: calendar, kind: many_to_one,
+     condition: "{left}.hour_date = {right}.date", description: Calendar day of the ridership hour.}
+  - {id: ridership_weather, left: subway_ridership, right: weather_hourly, kind: temporal,
+     condition: "{right}.borough = {left}.borough and {right}.hour_start = {left}.hour_start",
+     description: Weather in the complex's borough during the ridership hour.}
+  - {id: subway_trip_route, left: subway_trips, right: subway_routes, kind: many_to_one,
+     condition: "{left}.route_id = {right}.route_id", description: Route of the trip.}
+
+  # bike
+  - {id: bike_start_station, left: bike_trips, right: bike_stations, kind: many_to_one, role: start,
+     condition: "{left}.start_station_number = {right}.station_number", description: Station the ride started from.}
+  - {id: bike_end_station, left: bike_trips, right: bike_stations, kind: many_to_one, role: end,
+     condition: "{left}.end_station_number = {right}.station_number", description: Station the ride ended at.}
+  - {id: bike_start_neighborhood, left: bike_trips, right: neighborhoods, kind: many_to_one, role: start,
+     condition: "{left}.start_nta_code = {right}.nta_code", description: Neighborhood the ride started in.}
+  - {id: bike_end_neighborhood, left: bike_trips, right: neighborhoods, kind: many_to_one, role: end,
+     condition: "{left}.end_nta_code = {right}.nta_code", description: Neighborhood the ride ended in.}
+  - {id: bike_date, left: bike_trips, right: calendar, kind: many_to_one,
+     condition: "{left}.start_date = {right}.date", description: Calendar day the ride started.}
+  - {id: bike_weather, left: bike_trips, right: weather_hourly, kind: temporal,
+     condition: "{right}.boro_code = {left}.start_boro_code and {right}.hour_start = date_trunc('hour', {left}.started_at)",
+     description: Weather in the start borough during the hour the ride started.}
+  - {id: bike_status_station, left: bike_station_status, right: bike_stations, kind: many_to_one,
+     condition: "{left}.station_id = {right}.station_id", description: Station the status belongs to.}
+  - {id: bike_station_neighborhood, left: bike_stations, right: neighborhoods, kind: many_to_one,
+     condition: "{left}.nta_code = {right}.nta_code", description: Neighborhood a station is in.}
+
+  # 311
+  - {id: request_neighborhood, left: service_requests, right: neighborhoods, kind: many_to_one,
+     condition: "{left}.nta_code = {right}.nta_code", description: Neighborhood of the request location.}
+  - {id: request_community_district, left: service_requests, right: community_districts, kind: many_to_one,
+     condition: "{left}.community_district = {right}.community_district", description: Community district of the request.}
+  - {id: request_date, left: service_requests, right: calendar, kind: many_to_one,
+     condition: "{left}.created_date = {right}.date", description: Calendar day the request was filed.}
+  - {id: request_weather, left: service_requests, right: weather_hourly, kind: temporal,
+     condition: "{right}.boro_code = {left}.boro_code and {right}.hour_start = date_trunc('hour', {left}.created_at)",
+     description: Weather in the request's borough during the hour it was filed.}
+  - {id: request_during_weather_alert, left: service_requests, right: weather_alerts, kind: range,
+     condition: "{right}.boro_code = {left}.boro_code and {left}.created_at between {right}.starts_at and {right}.ends_at",
+     description: Requests filed while a Weather Service alert was in effect for their borough.}
+
+  # safety
+  - {id: collision_neighborhood, left: collisions, right: neighborhoods, kind: many_to_one,
+     condition: "{left}.nta_code = {right}.nta_code", description: Neighborhood of the crash.}
+  - {id: collision_community_district, left: collisions, right: community_districts, kind: many_to_one,
+     condition: "{left}.community_district = {right}.community_district", description: Community district of the crash.}
+  - {id: collision_date, left: collisions, right: calendar, kind: many_to_one,
+     condition: "{left}.crash_date = {right}.date", description: Calendar day of the crash.}
+  - {id: collision_weather, left: collisions, right: weather_hourly, kind: temporal,
+     condition: "{right}.boro_code = {left}.boro_code and {right}.hour_start = date_trunc('hour', {left}.crashed_at)",
+     description: Weather in the crash's borough during its hour.}
+  - {id: person_collision, left: collision_people, right: collisions, kind: many_to_one,
+     condition: "{left}.collision_id = {right}.collision_id", description: Crash the person was in.}
+
+  # traffic
+  - {id: speed_link, left: traffic_speeds, right: traffic_links, kind: many_to_one,
+     condition: "{left}.link_id = {right}.link_id", description: Road link of the reading.}
+  - {id: speed_date, left: traffic_speeds, right: calendar, kind: many_to_one,
+     condition: "{left}.observed_date = {right}.date", description: Calendar day of the reading.}
+  - {id: link_neighborhood, left: traffic_links, right: neighborhoods, kind: many_to_one,
+     condition: "{left}.nta_code = {right}.nta_code", description: Neighborhood at the middle of the link.}
+
+  # weather
+  - {id: weather_borough, left: weather_hourly, right: boroughs, kind: many_to_one,
+     condition: "{left}.boro_code = {right}.boro_code", description: Borough of the reading.}
+  - {id: weather_date, left: weather_hourly, right: calendar, kind: many_to_one,
+     condition: "{left}.hour_date = {right}.date", description: Calendar day of the hour.}

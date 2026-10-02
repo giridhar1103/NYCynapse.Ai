@@ -1,0 +1,91 @@
+models:
+  - name: rideshare_trips
+    table: gold.fct_rideshare_trip
+    workspace: rideshare_taxi
+    label: App rides (Uber, Lyft)
+    grain: one row per trip
+    synonyms: [rideshare, Uber, Lyft, app rides, for-hire trips, FHV, ride-hail]
+    time:
+      - {name: pickup, instant: pickup_at, local_date: pickup_date, local_hour: pickup_hour, default: true}
+    partition: {column: file_month, granularity: month, time_dimension: pickup}
+    entities:
+      - {name: pickup_zone, column: pickup_zone_id}
+      - {name: dropoff_zone, column: dropoff_zone_id}
+      - {name: pickup_date, column: pickup_date}
+    dimensions:
+      - {name: company, column: company, values: enumerate, synonyms: [app, provider]}
+      - {name: pickup_hour, column: pickup_hour, kind: numeric, synonyms: [hour of day]}
+      - {name: shared_matched, column: shared_matched, kind: boolean, synonyms: [shared ride, pooled]}
+      - {name: wav_matched, column: wav_matched, kind: boolean, synonyms: [wheelchair accessible]}
+      - {name: access_a_ride, column: access_a_ride, kind: boolean}
+      - {name: paid_cbd_toll, expr: "cbd_congestion_fee_usd > 0", kind: boolean,
+         synonyms: [congestion pricing, congestion toll, entered the zone]}
+    measures:
+      - {name: trips, expr: "*", agg: count}
+      - {name: wait_minutes, expr: wait_minutes, agg: avg}
+      - {name: rider_paid_usd, expr: rider_paid_usd, agg: sum}
+      - {name: driver_pay_usd, expr: driver_pay_usd, agg: sum}
+      - {name: tips_usd, expr: tips_usd, agg: sum}
+      - {name: trip_miles, expr: trip_miles, agg: sum}
+      - {name: trip_minutes, expr: trip_minutes, agg: sum}
+    filters:
+      - {name: plausible, sql: is_plausible, default: true,
+         description: "Leave out trips with impossible times, distances or fares."}
+
+  - name: taxi_trips
+    table: gold.fct_taxi_trip
+    workspace: rideshare_taxi
+    label: Taxi trips (yellow and green)
+    grain: one row per trip
+    synonyms: [taxi, cab, yellow cab, green cab, medallion]
+    time:
+      - {name: pickup, instant: pickup_at, local_date: pickup_date, local_hour: pickup_hour, default: true}
+    partition: {column: file_month, granularity: month, time_dimension: pickup}
+    entities:
+      - {name: pickup_zone, column: pickup_zone_id}
+      - {name: dropoff_zone, column: dropoff_zone_id}
+      - {name: pickup_date, column: pickup_date}
+    dimensions:
+      - {name: taxi_type, column: taxi_type, values: enumerate, synonyms: [cab color]}
+      - {name: payment_type, column: payment_type, values: enumerate, synonyms: [paid by, payment]}
+      - {name: rate_type, column: rate_type, values: enumerate}
+      - {name: pickup_hour, column: pickup_hour, kind: numeric}
+      - {name: passenger_count, column: passenger_count, kind: numeric, synonyms: [passengers]}
+      - {name: paid_cbd_toll, expr: "cbd_congestion_fee_usd > 0", kind: boolean,
+         synonyms: [congestion pricing, congestion toll]}
+    measures:
+      - {name: trips, expr: "*", agg: count}
+      - {name: total_usd, expr: total_usd, agg: sum}
+      - {name: tip_usd, expr: tip_usd, agg: sum}
+      - {name: trip_miles, expr: trip_miles, agg: sum}
+    filters:
+      - {name: plausible, sql: is_plausible, default: true,
+         description: "Leave out trips with impossible times, distances or totals."}
+      - {name: card_paid, sql: "payment_type = 'credit card'",
+         description: "Card payments only. Use for tips, since cash tips are not recorded."}
+
+  - name: trips_by_zone_hour
+    table: gold.agg_trips_zone_hourly
+    workspace: rideshare_taxi
+    label: Trips per zone and hour (all services)
+    grain: one row per service per pickup zone per local hour
+    synonyms: [trip counts, trip volume]
+    time:
+      - {name: pickup, instant: "timezone('America/New_York', pickup_date + to_hours(pickup_hour))",
+         local_date: pickup_date, local_hour: pickup_hour, default: true}
+    partition: {column: file_month, granularity: month, time_dimension: pickup}
+    entities:
+      - {name: pickup_zone, column: pickup_zone_id}
+      - {name: pickup_date, column: pickup_date}
+    dimensions:
+      - {name: service, column: service, values: enumerate,
+         synonyms: [company, taxi type, provider, mode]}
+      - {name: service_kind, expr: "case when service in ('yellow', 'green') then 'taxi' else 'app' end",
+         values: enumerate, synonyms: [taxi or app]}
+      - {name: pickup_hour, column: pickup_hour, kind: numeric}
+    measures:
+      - {name: trips, expr: trips, agg: sum}
+      - {name: wait_minutes_sum, expr: wait_minutes_sum, agg: sum}
+      - {name: trips_with_wait, expr: trips_with_wait, agg: sum}
+      - {name: fare_usd_sum, expr: fare_usd_sum, agg: sum}
+      - {name: trips_charged_cbd_fee, expr: trips_charged_cbd_fee, agg: sum}
