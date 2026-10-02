@@ -1,0 +1,58 @@
+instructions:
+  - id: time_filters
+    text: >
+      Filter time ranges on a model's instant column with New York boundaries, for example
+      pickup_at >= timezone('America/New_York', TIMESTAMP '2025-06-01'). Group and display by
+      the local date and hour columns. Filtering on a local date column alone reads every file.
+  - id: partition_hint
+    applies_to: [rideshare_trips, taxi_trips, trips_by_zone_hour, bike_trips]
+    text: >
+      These tables are split by file_month. When the question covers whole months, add the
+      matching file_month condition too.
+  - id: prefer_aggregate
+    applies_to: [rideshare_taxi]
+    text: >
+      Counts, waits, fares and distances by zone, borough, date or hour come from
+      trips_by_zone_hour. Use the trip tables only for things the aggregate does not carry, such
+      as medians, payment type, passenger count or dropoff location.
+  - id: complaint_matching
+    applies_to: [city_services]
+    text: >
+      Complaint types are written differently by different agencies ("Noise - Residential",
+      "HEAT/HOT WATER", "Illegal Parking"). Use the grounded values from the value index rather
+      than guessing spellings. A plain request about noise covers every complaint type starting
+      with "Noise".
+  - id: collision_lag
+    applies_to: [safety]
+    text: >
+      NYPD publishes crash reports months late. Say so when a question reaches into the last
+      four months, and check coverage before calling a recent drop real.
+  - id: subway_capture_window
+    applies_to: [subway]
+    text: >
+      Train arrivals, delays, trips and alerts exist only from October 2026, when live capture
+      began. Ridership goes back to January 2024. A delay question about an earlier date cannot
+      be answered.
+  - id: delay_sign
+    applies_to: [subway]
+    text: >
+      delay_seconds is arrival minus schedule: positive is late, negative is early. On time
+      means no more than five minutes late.
+  - id: weather_scale
+    applies_to: [weather]
+    text: >
+      Weather is one reading point per borough. For a citywide figure average across boroughs,
+      never add the five boroughs together.
+  - id: taxi_tips
+    applies_to: [rideshare_taxi]
+    text: >
+      Taxi tips are only recorded for card payments, so tip questions about taxis use card trips.
+  - id: ambiguous_safety
+    applies_to: [safety, city_services]
+    text: >
+      Words like safest, most dangerous or worst neighborhood need a definition: crashes,
+      injuries, deaths, or kinds of 311 complaints. Ask which one instead of choosing.
+  - id: per_capita
+    text: >
+      The lake has no population data except ZIP-area estimates, so rates per resident are not
+      available for neighborhoods or boroughs. Say so instead of inventing a denominator.

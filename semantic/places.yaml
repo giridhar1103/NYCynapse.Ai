@@ -1,0 +1,51 @@
+# Places people name that are not neighborhoods. Each resolves to the neighborhoods, taxi
+# zones, subway stations and bike stations within its radius when the catalog is built.
+places:
+  - {name: Times Square, kind: landmark, latitude: 40.7580, longitude: -73.9855, radius_m: 400}
+  - {name: Yankee Stadium, kind: venue, latitude: 40.8296, longitude: -73.9262, radius_m: 600,
+     aliases: [Yankees game, the Stadium]}
+  - {name: Citi Field, kind: venue, latitude: 40.7571, longitude: -73.8458, radius_m: 600,
+     aliases: [Mets game, Shea]}
+  - {name: Barclays Center, kind: venue, latitude: 40.6826, longitude: -73.9754, radius_m: 500,
+     aliases: [Nets game, Atlantic Terminal]}
+  - {name: Madison Square Garden, kind: venue, latitude: 40.7505, longitude: -73.9934, radius_m: 400,
+     aliases: [MSG, the Garden, Knicks game, Rangers game]}
+  - {name: JFK Airport, kind: airport, latitude: 40.6413, longitude: -73.7781, radius_m: 2500,
+     aliases: [JFK, Kennedy Airport, John F. Kennedy International Airport]}
+  - {name: LaGuardia Airport, kind: airport, latitude: 40.7769, longitude: -73.8740, radius_m: 1500,
+     aliases: [LaGuardia, LGA]}
+  - {name: Central Park, kind: park, latitude: 40.7829, longitude: -73.9654, radius_m: 1500}
+  - {name: Prospect Park, kind: park, latitude: 40.6602, longitude: -73.9690, radius_m: 1200}
+  - {name: Flushing Meadows Corona Park, kind: park, latitude: 40.7400, longitude: -73.8407, radius_m: 1500,
+     aliases: [US Open, USTA, Flushing Meadows]}
+  - {name: Grand Central, kind: transit_hub, latitude: 40.7527, longitude: -73.9772, radius_m: 400,
+     aliases: [Grand Central Terminal, Grand Central Station]}
+  - {name: Penn Station, kind: transit_hub, latitude: 40.7506, longitude: -73.9935, radius_m: 400,
+     aliases: [Pennsylvania Station, Moynihan]}
+  - {name: Port Authority Bus Terminal, kind: transit_hub, latitude: 40.7570, longitude: -73.9903, radius_m: 300,
+     aliases: [Port Authority]}
+  - {name: World Trade Center, kind: landmark, latitude: 40.7116, longitude: -74.0123, radius_m: 400,
+     aliases: [WTC, the Oculus, Freedom Tower]}
+  - {name: Wall Street, kind: area, latitude: 40.7069, longitude: -74.0113, radius_m: 500,
+     aliases: [Financial District, NYSE]}
+  - {name: Brooklyn Bridge, kind: landmark, latitude: 40.7061, longitude: -73.9969, radius_m: 600}
+  - {name: Coney Island, kind: area, latitude: 40.5749, longitude: -73.9859, radius_m: 800,
+     aliases: [Luna Park, the boardwalk]}
+  - {name: Rockefeller Center, kind: landmark, latitude: 40.7587, longitude: -73.9787, radius_m: 300,
+     aliases: [Rockefeller Plaza, 30 Rock]}
+  - {name: Empire State Building, kind: landmark, latitude: 40.7484, longitude: -73.9857, radius_m: 300}
+  - {name: Union Square, kind: area, latitude: 40.7359, longitude: -73.9911, radius_m: 400}
+  - {name: Hudson Yards, kind: area, latitude: 40.7539, longitude: -74.0010, radius_m: 400,
+     aliases: [the Vessel]}
+  - {name: Javits Center, kind: venue, latitude: 40.7573, longitude: -74.0021, radius_m: 400}
+  - {name: Lincoln Center, kind: venue, latitude: 40.7725, longitude: -73.9835, radius_m: 400}
+  - {name: Columbia University, kind: campus, latitude: 40.8075, longitude: -73.9626, radius_m: 500,
+     aliases: [Columbia]}
+  - {name: Washington Square Park, kind: park, latitude: 40.7308, longitude: -73.9973, radius_m: 400,
+     aliases: [NYU, Washington Square]}
+  - {name: Whitehall Ferry Terminal, kind: transit_hub, latitude: 40.7014, longitude: -74.0131, radius_m: 300,
+     aliases: [Staten Island Ferry, South Ferry]}
+  - {name: St. George Ferry Terminal, kind: transit_hub, latitude: 40.6437, longitude: -74.0736, radius_m: 400,
+     aliases: [St George, Staten Island Ferry terminal]}
+  - {name: Bronx Zoo, kind: park, latitude: 40.8506, longitude: -73.8769, radius_m: 800}
+  - {name: Fulton Center, kind: transit_hub, latitude: 40.7102, longitude: -74.0091, radius_m: 300}

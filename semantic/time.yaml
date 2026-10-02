@@ -1,0 +1,43 @@
+# Named parts of the day and week. Relative periods such as "last month" or "yesterday" are
+# resolved in code against the time the question is asked, in New York time.
+periods:
+  - name: morning_rush
+    phrases: [morning rush, morning rush hour, morning commute, AM rush, AM peak]
+    description: Weekdays from 7 to 10 in the morning.
+    where: "isodow({date}) between 1 and 5 and {hour} between 7 and 9"
+  - name: evening_rush
+    phrases: [evening rush, evening rush hour, evening commute, PM rush, PM peak, after work]
+    description: Weekdays from 4 to 7 in the evening.
+    where: "isodow({date}) between 1 and 5 and {hour} between 16 and 18"
+  - name: rush_hour
+    phrases: [rush hour, rush hours, peak hours, commute, commuting hours]
+    description: Weekday mornings from 7 to 10 and evenings from 4 to 7.
+    where: "isodow({date}) between 1 and 5 and ({hour} between 7 and 9 or {hour} between 16 and 18)"
+  - name: overnight
+    phrases: [overnight, late night, middle of the night, after midnight]
+    description: Midnight to 6 in the morning.
+    where: "{hour} between 0 and 5"
+  - name: morning
+    phrases: [morning, mornings]
+    description: 6 in the morning to noon.
+    where: "{hour} between 6 and 11"
+  - name: afternoon
+    phrases: [afternoon, afternoons]
+    description: Noon to 5 in the afternoon.
+    where: "{hour} between 12 and 16"
+  - name: evening
+    phrases: [evening, evenings, night, nights]
+    description: 5 in the afternoon to 10 at night.
+    where: "{hour} between 17 and 21"
+  - name: business_hours
+    phrases: [business hours, working hours, office hours, during the day on weekdays]
+    description: Weekdays from 9 to 5.
+    where: "isodow({date}) between 1 and 5 and {hour} between 9 and 16"
+  - name: weekend
+    phrases: [weekend, weekends, Saturday and Sunday]
+    description: Saturday and Sunday.
+    where: "isodow({date}) in (6, 7)"
+  - name: weekday
+    phrases: [weekday, weekdays, workweek, Monday to Friday]
+    description: Monday to Friday.
+    where: "isodow({date}) between 1 and 5"
