@@ -1,0 +1,191 @@
+metrics:
+  - id: bike_ride_count
+    label: Citi Bike rides
+    description: Citi Bike rides of one minute to four hours.
+    unit: rides
+    format: count
+    additivity: additive
+    synonyms: [bike trips, bike rides, Citi Bike usage]
+    sources:
+      - {model: bike_trips, expression: count(*), filters: [normal_length]}
+
+  - id: avg_bike_ride_minutes
+    label: Average ride length
+    description: Average Citi Bike ride in minutes.
+    unit: minutes
+    format: minutes
+    additivity: non_additive
+    synonyms: [ride duration]
+    bounds: [1, 240]
+    sources:
+      - {model: bike_trips, expression: avg(duration_minutes), filters: [normal_length]}
+
+  - id: ebike_share
+    label: E-bike share
+    description: Share of Citi Bike rides on electric bikes.
+    unit: share
+    format: percent
+    additivity: non_additive
+    synonyms: [electric bike share]
+    bounds: [0, 1]
+    sources:
+      - {model: bike_trips, expression: "avg(case when bike_type = 'electric_bike' then 1.0 else 0.0 end)", filters: [normal_length]}
+
+  - id: request_count
+    label: 311 requests
+    description: 311 service requests filed.
+    unit: requests
+    format: count
+    additivity: additive
+    synonyms: [complaints, 311 calls, requests]
+    sources:
+      - {model: service_requests, expression: count(*)}
+
+  - id: avg_hours_to_close
+    label: Average time to close
+    description: Average hours from filing a 311 request to the agency closing it, for closed requests.
+    unit: hours
+    format: hours
+    additivity: non_additive
+    synonyms: [response time, resolution time, how long it takes]
+    bounds: [0, 8760]
+    higher_is: worse
+    sources:
+      - {model: service_requests, expression: avg(hours_to_close)}
+
+  - id: median_hours_to_close
+    label: Median time to close
+    description: Median hours from filing to closing, for closed requests.
+    unit: hours
+    format: hours
+    additivity: non_additive
+    synonyms: [typical response time]
+    bounds: [0, 8760]
+    higher_is: worse
+    sources:
+      - {model: service_requests, expression: median(hours_to_close)}
+
+  - id: crash_count
+    label: Crashes
+    description: Motor vehicle crashes reported by NYPD.
+    unit: crashes
+    format: count
+    additivity: additive
+    synonyms: [collisions, accidents, crashes]
+    higher_is: worse
+    sources:
+      - {model: collisions, expression: count(*)}
+
+  - id: people_injured
+    label: People injured
+    description: People injured in crashes, all road users.
+    unit: people
+    format: count
+    additivity: additive
+    synonyms: [injuries]
+    higher_is: worse
+    sources:
+      - {model: collisions, expression: sum(persons_injured)}
+
+  - id: people_killed
+    label: Traffic deaths
+    description: People killed in crashes, all road users.
+    unit: people
+    format: count
+    additivity: additive
+    synonyms: [fatalities, deaths, traffic fatalities]
+    higher_is: worse
+    sources:
+      - {model: collisions, expression: sum(persons_killed)}
+
+  - id: pedestrians_injured
+    label: Pedestrians injured
+    description: Pedestrians injured in crashes.
+    unit: people
+    format: count
+    additivity: additive
+    higher_is: worse
+    sources:
+      - {model: collisions, expression: sum(pedestrians_injured)}
+
+  - id: cyclists_injured
+    label: Cyclists injured
+    description: Cyclists injured in crashes.
+    unit: people
+    format: count
+    additivity: additive
+    synonyms: [bike injuries]
+    higher_is: worse
+    sources:
+      - {model: collisions, expression: sum(cyclists_injured)}
+
+  - id: avg_road_speed_mph
+    label: Average road speed
+    description: Average speed on monitored road links, normal readings only.
+    unit: miles per hour
+    format: mph
+    additivity: non_additive
+    synonyms: [traffic speed, how fast traffic moves]
+    bounds: [0, 80]
+    higher_is: better
+    sources:
+      - {model: traffic_speeds, expression: avg(speed_mph), filters: [valid]}
+
+  - id: avg_temperature_f
+    label: Average temperature
+    description: Average hourly temperature in Fahrenheit.
+    unit: degrees Fahrenheit
+    format: fahrenheit
+    additivity: non_additive
+    synonyms: [temperature, how hot, how cold]
+    bounds: [-20, 110]
+    sources:
+      - {model: weather_hourly, expression: avg(temperature_f), filters: [observed]}
+
+  - id: precipitation_in
+    label: Precipitation
+    description: >
+      Total precipitation in inches. Summed over hours, but averaged across boroughs, so a
+      citywide figure is the typical borough's total rather than five boroughs added together.
+    unit: inches
+    format: inches
+    additivity: semi_additive
+    non_additive_over: [borough]
+    rollup: avg
+    synonyms: [rainfall, how much it rained]
+    bounds: [0, 50]
+    sources:
+      - {model: weather_hourly, expression: sum(precipitation_in), filters: [observed]}
+
+  - id: wet_hours
+    label: Hours with rain or snow
+    description: Hours with at least 0.1 mm of precipitation. Averaged across boroughs like precipitation.
+    unit: hours
+    format: hours
+    additivity: semi_additive
+    non_additive_over: [borough]
+    rollup: avg
+    synonyms: [rainy hours, hours of rain]
+    sources:
+      - {model: weather_hourly, expression: count(*) filter (where is_wet_hour), filters: [observed]}
+
+  - id: weather_alert_count
+    label: Weather alerts
+    description: Weather Service alert events. An alert covering several boroughs counts once.
+    unit: alerts
+    format: count
+    additivity: non_additive
+    synonyms: [warnings, advisories]
+    sources:
+      - {model: weather_alerts, expression: count(distinct event_key)}
+
+  - id: stale_dataset_count
+    label: Stale datasets
+    description: Lake tables whose last successful load is older than their freshness target.
+    unit: tables
+    format: count
+    additivity: additive
+    synonyms: [stale data, delayed feeds]
+    higher_is: worse
+    sources:
+      - {model: source_freshness, expression: count(*) filter (where is_stale)}

@@ -1,0 +1,100 @@
+metrics:
+  - id: avg_subway_delay_minutes
+    label: Average subway delay
+    description: Average minutes late against the schedule, across train arrivals. Negative means early on average.
+    unit: minutes
+    format: minutes
+    additivity: non_additive
+    synonyms: [delay, lateness, how late trains are]
+    bounds: [-30, 60]
+    higher_is: worse
+    sources:
+      - {model: subway_arrivals, expression: avg(delay_seconds) / 60.0, filters: [scheduled]}
+
+  - id: median_subway_delay_minutes
+    label: Median subway delay
+    description: Median minutes late against the schedule.
+    unit: minutes
+    format: minutes
+    additivity: non_additive
+    synonyms: [typical delay]
+    bounds: [-30, 60]
+    higher_is: worse
+    sources:
+      - {model: subway_arrivals, expression: median(delay_seconds) / 60.0, filters: [scheduled]}
+
+  - id: subway_on_time_rate
+    label: Subway on-time rate
+    description: Share of arrivals no more than five minutes behind schedule, the MTA's own standard for on time.
+    unit: share
+    format: percent
+    additivity: non_additive
+    synonyms: [on time, on-time performance, punctuality, reliability]
+    bounds: [0, 1]
+    higher_is: better
+    sources:
+      - {model: subway_arrivals, expression: "avg(case when delay_seconds <= 300 then 1.0 else 0.0 end)", filters: [scheduled]}
+
+  - id: subway_late_arrivals
+    label: Late arrivals
+    description: Arrivals more than five minutes behind schedule.
+    unit: arrivals
+    format: count
+    additivity: additive
+    synonyms: [late trains, delayed arrivals]
+    higher_is: worse
+    sources:
+      - {model: subway_arrivals, expression: count(*) filter (where delay_seconds > 300), filters: [scheduled]}
+
+  - id: subway_arrival_count
+    label: Train arrivals
+    description: Train arrivals recorded at stations.
+    unit: arrivals
+    format: count
+    additivity: additive
+    synonyms: [train service, trains]
+    sources:
+      - {model: subway_arrivals, expression: count(*)}
+
+  - id: subway_stops_skipped
+    label: Skipped stops
+    description: Stops dropped from a train's trip on the way, usually reroutes or trains running express.
+    unit: stops
+    format: count
+    additivity: additive
+    synonyms: [skipped stations, express reroutes]
+    higher_is: worse
+    sources:
+      - {model: subway_trips, expression: sum(stops_skipped)}
+
+  - id: subway_alert_count
+    label: Subway alerts
+    description: Service alerts published by the MTA.
+    unit: alerts
+    format: count
+    additivity: additive
+    synonyms: [service alerts, disruptions, service changes]
+    higher_is: worse
+    sources:
+      - {model: subway_alerts, expression: count(*)}
+
+  - id: subway_riders
+    label: Subway riders
+    description: Estimated subway entries through fare control. Free transfers count as entries.
+    unit: riders
+    format: count
+    additivity: additive
+    synonyms: [ridership, entries, riders, how many people rode]
+    sources:
+      - {model: subway_ridership, expression: sum(riders), filters: [subway_only]}
+
+  - id: omny_share
+    label: OMNY share
+    description: Share of subway entries paid with OMNY (tap) rather than MetroCard.
+    unit: share
+    format: percent
+    additivity: non_additive
+    synonyms: [tap to pay share, OMNY adoption]
+    bounds: [0, 1]
+    sources:
+      - {model: subway_ridership, expression: "sum(riders) filter (where payment_method = 'omny') / nullif(sum(riders), 0)", filters: [subway_only]}

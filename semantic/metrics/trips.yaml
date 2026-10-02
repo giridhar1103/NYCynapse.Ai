@@ -1,0 +1,149 @@
+metrics:
+  - id: trip_count
+    label: Trips
+    description: Taxi and app trips. Counts plausible trips only.
+    unit: trips
+    format: count
+    additivity: additive
+    synonyms: [rides, trips, pickups, ride volume]
+    sources:
+      - {model: trips_by_zone_hour, expression: sum(trips)}
+      - {model: rideshare_trips, expression: count(*), filters: [plausible]}
+      - {model: taxi_trips, expression: count(*), filters: [plausible]}
+
+  - id: app_ride_count
+    label: App rides
+    description: Trips by Uber, Lyft and the other app companies.
+    unit: trips
+    format: count
+    additivity: additive
+    synonyms: [Uber and Lyft trips, rideshare trips, ride-hail trips]
+    sources:
+      - {model: trips_by_zone_hour, expression: "sum(trips) filter (where service not in ('yellow', 'green'))"}
+      - {model: rideshare_trips, expression: count(*), filters: [plausible]}
+
+  - id: taxi_ride_count
+    label: Taxi trips
+    description: Yellow and green taxi trips.
+    unit: trips
+    format: count
+    additivity: additive
+    synonyms: [cab rides, taxi trips]
+    sources:
+      - {model: trips_by_zone_hour, expression: "sum(trips) filter (where service in ('yellow', 'green'))"}
+      - {model: taxi_trips, expression: count(*), filters: [plausible]}
+
+  - id: avg_app_wait_minutes
+    label: Average rider wait
+    description: Average minutes from requesting an app ride to being picked up.
+    unit: minutes
+    format: minutes
+    additivity: non_additive
+    synonyms: [wait time, pickup wait, how long riders waited]
+    bounds: [0, 60]
+    higher_is: worse
+    sources:
+      - {model: trips_by_zone_hour, expression: "sum(wait_minutes_sum) / nullif(sum(trips_with_wait), 0)"}
+      - {model: rideshare_trips, expression: avg(wait_minutes), filters: [plausible]}
+
+  - id: median_app_wait_minutes
+    label: Median rider wait
+    description: Median minutes from request to pickup for app rides. Less affected by a few very long waits than the average.
+    unit: minutes
+    format: minutes
+    additivity: non_additive
+    synonyms: [typical wait]
+    bounds: [0, 60]
+    higher_is: worse
+    sources:
+      - {model: rideshare_trips, expression: median(wait_minutes), filters: [plausible]}
+
+  - id: avg_app_fare_usd
+    label: Average app fare
+    description: Average paid by app riders per trip before tips, including tolls, taxes and fees.
+    unit: dollars
+    format: currency
+    additivity: non_additive
+    synonyms: [average fare, price of a ride, Uber price]
+    bounds: [0, 500]
+    sources:
+      - {model: rideshare_trips, expression: avg(rider_paid_usd), filters: [plausible]}
+
+  - id: avg_driver_pay_usd
+    label: Average driver pay
+    description: Average paid to the driver per app trip, before tips.
+    unit: dollars
+    format: currency
+    additivity: non_additive
+    synonyms: [driver earnings per trip]
+    bounds: [0, 500]
+    sources:
+      - {model: rideshare_trips, expression: avg(driver_pay_usd), filters: [plausible]}
+
+  - id: driver_share_of_fare
+    label: Driver share of the fare
+    description: Driver pay as a share of the base fare, across app trips. A ratio of sums, not an average of ratios.
+    unit: share
+    format: percent
+    additivity: non_additive
+    synonyms: [driver cut, take rate]
+    bounds: [0, 2]
+    sources:
+      - {model: rideshare_trips, expression: "sum(driver_pay_usd) / nullif(sum(base_fare_usd), 0)", filters: [plausible]}
+
+  - id: app_tip_rate
+    label: Share of app rides tipped
+    description: Share of app rides with a tip.
+    unit: share
+    format: percent
+    additivity: non_additive
+    synonyms: [how often riders tip]
+    bounds: [0, 1]
+    sources:
+      - {model: rideshare_trips, expression: "avg(case when tips_usd > 0 then 1.0 else 0.0 end)", filters: [plausible]}
+
+  - id: avg_taxi_total_usd
+    label: Average taxi total
+    description: Average total charged per taxi trip, without cash tips.
+    unit: dollars
+    format: currency
+    additivity: non_additive
+    synonyms: [average taxi fare, cab price]
+    bounds: [0, 500]
+    sources:
+      - {model: taxi_trips, expression: avg(total_usd), filters: [plausible]}
+
+  - id: taxi_card_tip_pct
+    label: Taxi tip on card payments
+    description: Tips as a share of the fare on taxi trips paid by card. Cash tips are not recorded, so cash trips are left out.
+    unit: share
+    format: percent
+    additivity: non_additive
+    synonyms: [taxi tip percentage, how much people tip cabs]
+    bounds: [0, 1]
+    sources:
+      - {model: taxi_trips, expression: "sum(tip_usd) / nullif(sum(fare_usd), 0)", filters: [plausible, card_paid]}
+
+  - id: avg_trip_miles
+    label: Average trip distance
+    description: Average miles per trip.
+    unit: miles
+    format: miles
+    additivity: non_additive
+    synonyms: [trip length, distance]
+    bounds: [0, 100]
+    sources:
+      - {model: trips_by_zone_hour, expression: "sum(trip_miles_sum) / nullif(sum(trips), 0)"}
+      - {model: rideshare_trips, expression: avg(trip_miles), filters: [plausible]}
+      - {model: taxi_trips, expression: avg(trip_miles), filters: [plausible]}
+
+  - id: cbd_toll_trip_share
+    label: Share of trips paying the congestion toll
+    description: Share of trips charged the congestion relief zone toll, which started on 5 January 2025.
+    unit: share
+    format: percent
+    additivity: non_additive
+    synonyms: [congestion pricing share]
+    bounds: [0, 1]
+    sources:
+      - {model: trips_by_zone_hour, expression: "sum(trips_charged_cbd_fee) / nullif(sum(trips), 0)"}
