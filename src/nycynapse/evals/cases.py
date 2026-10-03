@@ -11,7 +11,7 @@ from typing import Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-AS_OF = "2026-10-03T12:00:00-04:00"
+AS_OF = "2026-10-03T06:00:00-04:00"
 
 
 class Strict(BaseModel):
