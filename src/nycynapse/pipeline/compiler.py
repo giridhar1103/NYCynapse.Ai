@@ -207,6 +207,11 @@ class Compiler:
                     for o in plan.order
                 )
             )
+        elif groups:
+            # Grouped by time with no order asked for: read it in time order.
+            times = [str(i + 1) for i, g in enumerate(plan.group_by) if g.startswith("time:")]
+            if times:
+                parts.append("ORDER BY " + ", ".join(times))
         parts.append(f"LIMIT {min(plan.limit or 1000, 1000)}")
         return "\n".join(parts)
 

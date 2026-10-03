@@ -17,7 +17,9 @@ From E3 the model plans instead of writing SQL, and code compiles the plan:
                                         then to SQL generation as a last resort
 """
 
+import json
 import time
+from datetime import datetime
 from typing import Any, TypedDict
 
 import sqlglot
@@ -44,6 +46,7 @@ from .timeparse import resolve
 from .understand import understand, workspace_brief
 
 MAX_REPAIRS = 2
+HISTORY_START = datetime(2024, 1, 1)
 
 
 class State(TypedDict, total=False):
@@ -61,6 +64,7 @@ class State(TypedDict, total=False):
     plan_raw: Any
     plan_attempts: int
     compiled: bool
+    abstain: str | None
     sql: str | None
     explanation: str
     guard: Any
@@ -87,7 +91,7 @@ def _log(state: State, stage: str, **detail) -> list[dict]:
     return [*state.get("log", []), {"stage": stage, "t": time.monotonic(), **detail}]
 
 
-def build(ctx: Context, *, grounding: bool, planning: bool = False):
+def build(ctx: Context, *, grounding: bool, planning: bool = False, examples: bool = False):
     brief = workspace_brief(ctx.catalog, ctx.coverage)
     compiler = Compiler(ctx.catalog)
     values = _enumerated_values(ctx)
@@ -167,6 +171,7 @@ def build(ctx: Context, *, grounding: bool, planning: bool = False):
                     "Relationships:\n" + (relationship_catalog(ctx.catalog, names) or "none"),
                     rules,
                     resolved,
+                    _examples_text(ctx, state["question"], u.workspaces) if examples else "",
                 ]
                 if p
             )
@@ -250,6 +255,16 @@ def build(ctx: Context, *, grounding: bool, planning: bool = False):
                 "problem": f"rejected: {g.reason}",
                 "log": _log(state, "guard", ok=False, reason=g.reason),
             }
+        if grounding:
+            gap = coverage_gap(ctx, g.tables, state.get("window"))
+            if gap:
+                return {
+                    "guard": g,
+                    "execution": None,
+                    "problem": None,
+                    "abstain": gap,
+                    "log": _log(state, "coverage", ok=False, reason=gap),
+                }
         ex = run(ctx.lake, sql, timeout_s=120)
         problem = None
         if not ex.ok:
@@ -259,6 +274,8 @@ def build(ctx: Context, *, grounding: bool, planning: bool = False):
                 "the query returned nothing. Check filter values against the grounded "
                 "values and the time window against the coverage."
             )
+        elif state.get("compiled") and state.get("plan") is not None:
+            problem = out_of_bounds(ctx, state["plan"].metrics, ex)
         return {
             "guard": g,
             "execution": ex,
@@ -368,10 +385,18 @@ def _grounding_text(state: State, ctx: Context) -> str:
 
 
 class PipelineSystem:
-    def __init__(self, ctx: Context, *, grounding: bool, name: str, planning: bool = False):
+    def __init__(
+        self,
+        ctx: Context,
+        *,
+        grounding: bool,
+        name: str,
+        planning: bool = False,
+        examples: bool = False,
+    ):
         self.ctx = ctx
         self.name = name
-        self.graph = build(ctx, grounding=grounding, planning=planning)
+        self.graph = build(ctx, grounding=grounding, planning=planning, examples=examples)
 
     def answer(self, question: str, as_of: str) -> Answer:
         t0 = time.monotonic()
@@ -385,10 +410,13 @@ class PipelineSystem:
             )
         u = s["understanding"]
         sql = s.get("sql") if u.classification == "answerable" else None
+        classification = u.classification
+        if s.get("abstain"):
+            classification, sql = "unsupported", None
         return Answer(
-            classification=u.classification if u.classification != "error" else "error",
+            classification=classification,
             sql=sql,
-            explanation=s.get("explanation", u.reason),
+            explanation=s.get("abstain") or s.get("explanation", u.reason),
             workspaces=u.workspaces,
             tables=s["guard"].tables if s.get("guard") and s["guard"].ok else [],
             values=_literals(sql) if sql else [],
@@ -406,6 +434,63 @@ class PipelineSystem:
             latency_ms=int((time.monotonic() - t0) * 1000),
             error=u.error,
         )
+
+
+def _examples_text(ctx: Context, question: str, workspaces: list[str]) -> str:
+    found = ctx.verified_examples(question, workspaces)
+    if not found:
+        return ""
+    lines = ["Verified plans for similar questions (follow their style, not their values):"]
+    for _, ex in found:
+        plan = {k: v for k, v in ex["plan"].items() if v not in (None, [], {}, True, "aggregate")}
+        lines.append(f"Q: {ex['question']}\nplan: {json.dumps(plan)}")
+    return "\n".join(lines)
+
+
+def out_of_bounds(ctx: Context, metric_ids: list[str], ex) -> str | None:
+    """A governed metric outside its plausible range means the query is wrong, not the city."""
+    for mid in metric_ids:
+        m = next((x for x in ctx.catalog.metrics if x.id == mid), None)
+        if m is None or mid not in ex.columns or m.bounds == (None, None):
+            continue
+        i = ex.columns.index(mid)
+        lo, hi = m.bounds
+        for row in ex.rows:
+            v = row[i]
+            if isinstance(v, int | float) and (
+                (lo is not None and v < lo) or (hi is not None and v > hi)
+            ):
+                return (
+                    f"{mid} = {v} is outside the plausible range {lo} to {hi}; "
+                    "check filters, joins and units"
+                )
+    return None
+
+
+def coverage_gap(ctx: Context, tables: list[str], window) -> str | None:
+    """Say why not, when most of the time window is outside what the data covers.
+
+    A model's coverage is the union of its source tables, so weather counts both the settled
+    archive and the recent model hours.
+    """
+    if window is None or window.is_now or window.start is None or window.end is None:
+        return None
+    span = (window.end - window.start).total_seconds()
+    for m in ctx.models_for_tables(tables):
+        spans = [ctx.table_coverage[t] for t in m.coverage if ctx.table_coverage.get(t, (None,))[0]]
+        if not spans or not span:
+            continue
+        # A few source rows carry impossible dates; the lake's history starts in 2024.
+        start = max(min(s for s, _ in spans), HISTORY_START)
+        end = max(e for _, e in spans)
+        missing = max(0.0, (window.end - max(end, window.start)).total_seconds())
+        missing += max(0.0, (min(start, window.end) - window.start).total_seconds())
+        if missing / span > 0.1:
+            return (
+                f"{m.label} covers {start:%-d %b %Y} to {end:%-d %b %Y}, which does not "
+                f"cover most of {window.label}."
+            )
+    return None
 
 
 def _literals(sql: str) -> list[str]:
