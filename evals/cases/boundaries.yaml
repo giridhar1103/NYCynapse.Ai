@@ -21,7 +21,7 @@ cases:
       with latest as (
         select station_id, arg_max(is_full, reported_at) as is_full
         from gold.fct_bike_station_status
-        where reported_at <= timezone('America/New_York', timestamp '2026-10-03 12:00')
+        where reported_at <= timezone('America/New_York', timestamp '2026-10-03 06:00')
         group by 1)
       select count(*) from latest l join gold.dim_bike_station s using (station_id)
       where l.is_full and s.boro_code = 1

@@ -1,4 +1,4 @@
-# as_of for every case: 2026-10-03 12:00 America/New_York unless a case says otherwise.
+# as_of for every case: 2026-10-03 06:00 America/New_York unless a case says otherwise.
 # TLC trip files cover January 2024 to August 2026.
 cases:
   - id: rt-001
