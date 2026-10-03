@@ -109,6 +109,18 @@ class Context:
             out.setdefault(domain, []).append(f"{table} {start} to {end}")
         return {k: "; ".join(v) for k, v in out.items()}
 
+    @cached_property
+    def table_coverage(self) -> dict[str, tuple]:
+        """Lake table -> (first event, last event) in New York local time."""
+        rows = self.lake.execute(
+            "SELECT table_name, coverage_start AT TIME ZONE 'America/New_York', "
+            "coverage_end AT TIME ZONE 'America/New_York' FROM gold.ops_source_freshness"
+        ).fetchall()
+        return {t: (start, end) for t, start, end in rows}
+
+    def models_for_tables(self, tables: list[str]) -> list[SemanticModel]:
+        return [m for m in self.catalog.models if m.table in tables]
+
     # workspaces and models
 
     def workspace_models(self, workspaces: list[str]) -> list[SemanticModel]:
@@ -169,6 +181,32 @@ class Context:
             for i in top
             if i in by_id
         ]
+
+    def verified_examples(
+        self,
+        question: str,
+        workspaces: list[str],
+        *,
+        k: int = 3,
+        min_similarity: float = 0.55,
+        near_copy: float = 0.95,
+    ) -> list[tuple[float, dict]]:
+        """The closest verified question and plan pairs, leaving out near copies."""
+        vec = str(self.embed(question))
+        rows = self.conn.execute(
+            "SELECT payload, 1 - (embedding <=> %s::vector) AS sim FROM catalog.objects "
+            "WHERE version = %s AND kind = 'verified' AND workspace = ANY(%s) "
+            "ORDER BY embedding <=> %s::vector LIMIT %s",
+            (vec, self.version, workspaces, vec, k + 3),
+        ).fetchall()
+        out = []
+        for r in rows:
+            sim = float(r["sim"])
+            if sim >= near_copy or normalize(r["payload"]["question"]) == normalize(question):
+                continue
+            if sim >= min_similarity:
+                out.append((round(sim, 3), r["payload"]))
+        return out[:k]
 
     # grounding
 

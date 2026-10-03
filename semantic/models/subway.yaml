@@ -4,6 +4,7 @@ models:
     workspace: subway
     label: Subway arrivals and delays
     grain: one row per train arrival at a stop
+    coverage: [subway_stop_events]
     synonyms: [train arrivals, delays, on-time performance, train delays]
     live: true
     time:
@@ -32,6 +33,7 @@ models:
     workspace: subway
     label: Subway train trips
     grain: one row per train trip
+    coverage: [subway_trips]
     live: true
     time:
       - {name: first_seen, instant: first_seen_at, default: true}
@@ -50,6 +52,7 @@ models:
     workspace: subway
     label: Subway service alerts
     grain: one row per alert
+    coverage: [subway_alerts]
     synonyms: [service changes, service alerts, planned work, suspensions]
     live: true
     time:
@@ -67,6 +70,7 @@ models:
     workspace: subway
     label: Subway ridership
     grain: one row per hour per station complex per payment method per fare class
+    coverage: [subway_ridership_hourly]
     synonyms: [ridership, entries, swipes, taps, riders, turnstile]
     time:
       - {name: hour, instant: hour_start, local_date: hour_date, local_hour: hour_hour, default: true}

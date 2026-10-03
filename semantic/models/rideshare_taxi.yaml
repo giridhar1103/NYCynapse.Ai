@@ -4,6 +4,7 @@ models:
     workspace: rideshare_taxi
     label: App rides (Uber, Lyft)
     grain: one row per trip
+    coverage: [tlc_fhvhv_trips]
     synonyms: [rideshare, Uber, Lyft, app rides, for-hire trips, FHV, ride-hail]
     time:
       - {name: pickup, instant: pickup_at, local_date: pickup_date, local_hour: pickup_hour, default: true}
@@ -37,6 +38,7 @@ models:
     workspace: rideshare_taxi
     label: Taxi trips (yellow and green)
     grain: one row per trip
+    coverage: [tlc_yellow_trips, tlc_green_trips]
     synonyms: [taxi, cab, yellow cab, green cab, medallion]
     time:
       - {name: pickup, instant: pickup_at, local_date: pickup_date, local_hour: pickup_hour, default: true}
@@ -69,6 +71,7 @@ models:
     workspace: rideshare_taxi
     label: Trips per zone and hour (all services)
     grain: one row per service per pickup zone per local hour
+    coverage: [tlc_fhvhv_trips, tlc_yellow_trips]
     synonyms: [trip counts, trip volume]
     time:
       - {name: pickup, instant: "timezone('America/New_York', pickup_date + to_hours(pickup_hour))",

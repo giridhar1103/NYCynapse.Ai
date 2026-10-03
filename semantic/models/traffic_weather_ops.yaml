@@ -4,6 +4,7 @@ models:
     workspace: traffic
     label: Road speeds
     grain: one row per road link per reading
+    coverage: [traffic_speed_obs]
     synonyms: [traffic, congestion, road speed, traffic speed]
     time:
       - {name: observed, instant: observed_at, local_date: observed_date, local_hour: observed_hour, default: true}
@@ -36,6 +37,7 @@ models:
     workspace: weather
     label: Hourly weather by borough
     grain: one row per borough per hour
+    coverage: [weather_hourly, weather_recent_hourly]
     synonyms: [weather, rain, snow, temperature, heat, precipitation]
     time:
       - {name: hour, instant: hour_start, local_date: hour_date, local_hour: hour_hour, default: true}
@@ -64,6 +66,7 @@ models:
     workspace: weather
     label: Weather Service alerts
     grain: one row per alert event per forecast zone
+    coverage: [weather_alerts]
     synonyms: [weather alerts, warnings, advisories, watches]
     time:
       - {name: start, instant: starts_at, default: true}

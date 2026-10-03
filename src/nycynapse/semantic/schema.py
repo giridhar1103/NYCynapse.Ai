@@ -106,6 +106,9 @@ class SemanticModel(Strict):
     filters: list[NamedFilter] = Field(default_factory=list)
     partition: Partition | None = None
     live: bool = False
+    # Lake tables this model is built from, used to check a question's time window against
+    # what the data actually covers.
+    coverage: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _unique_names(self):

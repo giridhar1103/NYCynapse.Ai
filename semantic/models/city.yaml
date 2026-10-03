@@ -4,6 +4,7 @@ models:
     workspace: city_services
     label: 311 service requests
     grain: one row per request
+    coverage: [requests_311]
     synonyms: ["311", complaints, service requests, 311 calls]
     time:
       - {name: created, instant: created_at, local_date: created_date, local_hour: created_hour, default: true}

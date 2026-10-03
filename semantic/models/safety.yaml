@@ -4,6 +4,7 @@ models:
     workspace: safety
     label: Motor vehicle crashes
     grain: one row per crash
+    coverage: [collision_crashes]
     synonyms: [crashes, collisions, accidents, traffic deaths, injuries]
     time:
       - {name: crash, instant: crashed_at, local_date: crash_date, local_hour: crash_hour, default: true}
@@ -41,6 +42,7 @@ models:
     workspace: safety
     label: People in crashes
     grain: one row per person per crash
+    coverage: [collision_persons]
     entities:
       - {name: collision, column: collision_id}
     time:
