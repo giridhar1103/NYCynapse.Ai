@@ -16,7 +16,7 @@ def main(argv: list[str] | None = None) -> int:
     pin = sub.add_parser("eval-pin", help="pin the current lake snapshot for evaluation")
     pin.add_argument("--reason", default="evaluation set")
     er = sub.add_parser("eval", help="run a system over the evaluation cases")
-    er.add_argument("--system", choices=["e0", "e1", "e2"], default="e0")
+    er.add_argument("--system", choices=["e0", "e1", "e2", "e3"], default="e0")
     er.add_argument("--split", choices=["dev", "regression", "holdout", "all"], default="dev")
     er.add_argument("--only", help="comma separated case ids")
     er.add_argument("--limit", type=int)
@@ -116,13 +116,20 @@ def main(argv: list[str] | None = None) -> int:
 
             system = FullSchemaBaseline(manifest)
         con = lake.connect(settings, snapshot=snap)
-        if args.system in ("e1", "e2"):
+        if args.system in ("e1", "e2", "e3"):
             from .pipeline.context import Context
             from .pipeline.graph import PipelineSystem
 
-            names = {"e1": "E1 routed and pruned", "e2": "E2 plus grounding"}
+            names = {
+                "e1": "E1 routed and pruned",
+                "e2": "E2 plus grounding",
+                "e3": "E3 plan and compile",
+            }
             system = PipelineSystem(
-                Context(settings, con), grounding=args.system == "e2", name=names[args.system]
+                Context(settings, con),
+                grounding=args.system != "e1",
+                planning=args.system == "e3",
+                name=names[args.system],
             )
         stamp = time.strftime("%Y%m%d-%H%M%S")
         out = root / "runs" / f"{stamp}-{args.system}-{args.split}.json"

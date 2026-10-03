@@ -8,6 +8,13 @@ Stages are plain functions; the graph only decides the order and the branches:
                                            └──── repair (max 2) ──────┘
 
 * grounding, time resolution and place coverage are on from E2 up.
+
+From E3 the model plans instead of writing SQL, and code compiles the plan:
+
+    ... ground ─ plan ─ compile ─ guard ─ execute
+                  ^        │         │
+                  └────────┴─────────┘  failed plans and runs go back to the planner,
+                                        then to SQL generation as a last resort
 """
 
 import time
@@ -20,9 +27,19 @@ from sqlglot import exp
 from .. import guard
 from ..evals.execute import run
 from ..evals.system import Answer
-from .cards import instruction_lines, metric_lines, model_card, relationship_lines
+from .cards import (
+    instruction_lines,
+    metric_catalog,
+    metric_lines,
+    model_card,
+    relationship_catalog,
+    relationship_lines,
+    semantic_card,
+)
+from .compiler import CompileError, Compiler
 from .context import Context
 from .generate import generate
+from .plan import make_plan
 from .timeparse import resolve
 from .understand import understand, workspace_brief
 
@@ -39,6 +56,11 @@ class State(TypedDict, total=False):
     groundings: list[Any]
     places: dict
     context: str
+    semantic_context: str
+    plan: Any
+    plan_raw: Any
+    plan_attempts: int
+    compiled: bool
     sql: str | None
     explanation: str
     guard: Any
@@ -65,8 +87,9 @@ def _log(state: State, stage: str, **detail) -> list[dict]:
     return [*state.get("log", []), {"stage": stage, "t": time.monotonic(), **detail}]
 
 
-def build(ctx: Context, *, grounding: bool):
+def build(ctx: Context, *, grounding: bool, planning: bool = False):
     brief = workspace_brief(ctx.catalog, ctx.coverage)
+    compiler = Compiler(ctx.catalog)
     values = _enumerated_values(ctx)
 
     def n_understand(state: State) -> dict:
@@ -118,6 +141,8 @@ def build(ctx: Context, *, grounding: bool):
     def n_context(state: State) -> dict:
         names = set(state["models"])
         u = state["understanding"]
+        rules = "Rules:\n" + instruction_lines(ctx.catalog, u.workspaces, names)
+        resolved = _grounding_text(state, ctx) if grounding else ""
         cards = "\n\n".join(
             model_card(ctx.models[n], ctx.manifest, values) for n in state["models"]
         )
@@ -125,11 +150,71 @@ def build(ctx: Context, *, grounding: bool):
             cards,
             "Governed metrics:\n" + (metric_lines(ctx.catalog, names) or "none"),
             "Relationships:\n" + (relationship_lines(ctx.catalog, names) or "none"),
-            "Rules:\n" + instruction_lines(ctx.catalog, u.workspaces, names),
+            rules,
+            resolved,
         ]
-        if grounding:
-            parts.append(_grounding_text(state, ctx))
-        return {"context": "\n\n".join(parts)}
+        out = {"context": "\n\n".join(p for p in parts if p)}
+        if planning:
+            sem = "\n\n".join(
+                semantic_card(ctx.models[n], ctx.manifest, values, ctx.catalog)
+                for n in state["models"]
+            )
+            out["semantic_context"] = "\n\n".join(
+                p
+                for p in [
+                    sem,
+                    "Metrics:\n" + (metric_catalog(ctx.catalog, names) or "none"),
+                    "Relationships:\n" + (relationship_catalog(ctx.catalog, names) or "none"),
+                    rules,
+                    resolved,
+                ]
+                if p
+            )
+        return out
+
+    def n_plan(state: State) -> dict:
+        retry = state.get("problem")
+        p = make_plan(
+            state["question"],
+            state["as_of"],
+            state["semantic_context"],
+            previous=state.get("plan_raw") if retry else None,
+            problem=retry,
+        )
+        return {
+            "plan": p.plan,
+            "plan_raw": p.raw,
+            "problem": p.error,
+            "plan_attempts": state.get("plan_attempts", 0) + 1,
+            **_spend(state, p),
+            "log": _log(state, "plan", plan=p.raw, error=p.error),
+        }
+
+    def n_compile(state: State) -> dict:
+        if state.get("plan") is None:
+            return {"sql": None, "compiled": False}
+        try:
+            sql = compiler.compile(state["plan"], state.get("window"), state.get("places"))
+        except CompileError as e:
+            return {
+                "sql": None,
+                "compiled": False,
+                "problem": f"compile: {e}",
+                "log": _log(state, "compile", ok=False, error=str(e)),
+            }
+        return {
+            "sql": sql,
+            "compiled": True,
+            "problem": None,
+            "log": _log(state, "compile", ok=True, sql=sql),
+        }
+
+    def after_compile(state: State) -> str:
+        if state.get("sql"):
+            return "run"
+        if state.get("plan_attempts", 0) < 2:
+            return "plan"
+        return "generate"
 
     def n_generate(state: State) -> dict:
         g = generate(
@@ -186,6 +271,9 @@ def build(ctx: Context, *, grounding: bool):
             return "repair"
         return END
 
+    def after_repair(state: State) -> str:
+        return "plan" if planning and state.get("compiled") else "generate"
+
     def n_repair(state: State) -> dict:
         return {"repairs": state.get("repairs", 0) + 1}
 
@@ -201,10 +289,20 @@ def build(ctx: Context, *, grounding: bool):
     g.add_conditional_edges("understand", route, {"retrieve": "retrieve", END: END})
     g.add_edge("retrieve", "ground" if grounding else "context")
     g.add_edge("ground", "context")
-    g.add_edge("context", "generate")
+    if planning:
+        g.add_node("plan", n_plan)
+        g.add_node("compile", n_compile)
+        g.add_edge("context", "plan")
+        g.add_edge("plan", "compile")
+        g.add_conditional_edges(
+            "compile", after_compile, {"run": "run", "plan": "plan", "generate": "generate"}
+        )
+        g.add_conditional_edges("repair", after_repair, {"plan": "plan", "generate": "generate"})
+    else:
+        g.add_edge("context", "generate")
+        g.add_edge("repair", "generate")
     g.add_edge("generate", "run")
     g.add_conditional_edges("run", after_run, {"repair": "repair", END: END})
-    g.add_edge("repair", "generate")
     return g.compile()
 
 
@@ -270,10 +368,10 @@ def _grounding_text(state: State, ctx: Context) -> str:
 
 
 class PipelineSystem:
-    def __init__(self, ctx: Context, *, grounding: bool, name: str):
+    def __init__(self, ctx: Context, *, grounding: bool, name: str, planning: bool = False):
         self.ctx = ctx
         self.name = name
-        self.graph = build(ctx, grounding=grounding)
+        self.graph = build(ctx, grounding=grounding, planning=planning)
 
     def answer(self, question: str, as_of: str) -> Answer:
         t0 = time.monotonic()
@@ -294,6 +392,7 @@ class PipelineSystem:
             workspaces=u.workspaces,
             tables=s["guard"].tables if s.get("guard") and s["guard"].ok else [],
             values=_literals(sql) if sql else [],
+            metrics=list(s["plan"].metrics) if s.get("plan") is not None else [],
             places=list(s.get("places", {})),
             stages={
                 "log": s.get("log", []),

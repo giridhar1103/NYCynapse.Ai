@@ -79,3 +79,52 @@ def instruction_lines(catalog: Catalog, workspaces: list[str], model_names: set[
         if not i.applies_to or set(i.applies_to) & (set(workspaces) | model_names)
     ]
     return "\n".join(f"- {' '.join(i.text.split())}" for i in keep)
+
+
+def semantic_card(
+    m: SemanticModel, manifest: dict, values: dict[tuple[str, str], list[str]], catalog: Catalog
+) -> str:
+    """The model in semantic terms, for the planner: dimensions, keys, times, filters."""
+    table = manifest["tables"].get(m.table.split(".")[-1], {"columns": {}})
+    cols = table["columns"]
+    lines = [f"MODEL {m.name}: {m.label}, {m.grain}"]
+    for t in m.time:
+        lines.append(f"  time {t.name}{' (default)' if t.default else ''}")
+    for e in m.entities:
+        lines.append(f"  key {e.column}")
+    for d in m.dimensions:
+        doc = d.description or cols.get(d.column or "", {}).get("description", "")
+        vs = values.get((m.name, d.name))
+        extra = f" values: {', '.join(vs[:12])}{' ...' if len(vs) > 12 else ''}" if vs else ""
+        syn = f" (also: {', '.join(d.synonyms)})" if d.synonyms else ""
+        lines.append(f"  dimension {d.name} [{d.kind}]{syn}: {doc[:160]}{extra}")
+    for f in m.filters:
+        lines.append(f"  filter {f.name}{' (always on)' if f.default else ''}: {f.description}")
+    return "\n".join(lines)
+
+
+def metric_catalog(catalog: Catalog, model_names: set[str]) -> str:
+    out = []
+    for metric in catalog.metrics:
+        srcs = [s.model for s in metric.sources if s.model in model_names]
+        if srcs:
+            note = (
+                f" Must not be summed across {', '.join(metric.non_additive_over)}."
+                if metric.non_additive_over
+                else ""
+            )
+            out.append(
+                f"- {metric.id}: {metric.label}, {metric.unit}. "
+                f"{' '.join(metric.description.split())}{note} Sources: {', '.join(srcs)}"
+            )
+    return "\n".join(out)
+
+
+def relationship_catalog(catalog: Catalog, model_names: set[str]) -> str:
+    out = []
+    for r in catalog.relationships:
+        if r.left in model_names and r.right in model_names:
+            role = f" as {r.role}" if r.role else ""
+            kind = " (filter only)" if r.kind == "range" else ""
+            out.append(f"- {r.left} -> {r.right}{role}{kind}: {r.description}")
+    return "\n".join(out)
