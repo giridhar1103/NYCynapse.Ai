@@ -16,7 +16,7 @@ def main(argv: list[str] | None = None) -> int:
     pin = sub.add_parser("eval-pin", help="pin the current lake snapshot for evaluation")
     pin.add_argument("--reason", default="evaluation set")
     er = sub.add_parser("eval", help="run a system over the evaluation cases")
-    er.add_argument("--system", choices=["e0", "e1", "e2", "e3"], default="e0")
+    er.add_argument("--system", choices=["e0", "e1", "e2", "e3", "e4"], default="e0")
     er.add_argument("--split", choices=["dev", "regression", "holdout", "all"], default="dev")
     er.add_argument("--only", help="comma separated case ids")
     er.add_argument("--limit", type=int)
@@ -116,7 +116,8 @@ def main(argv: list[str] | None = None) -> int:
 
             system = FullSchemaBaseline(manifest)
         con = lake.connect(settings, snapshot=snap)
-        if args.system in ("e1", "e2", "e3"):
+        catalog_version = None
+        if args.system in ("e1", "e2", "e3", "e4"):
             from .pipeline.context import Context
             from .pipeline.graph import PipelineSystem
 
@@ -124,22 +125,29 @@ def main(argv: list[str] | None = None) -> int:
                 "e1": "E1 routed and pruned",
                 "e2": "E2 plus grounding",
                 "e3": "E3 plan and compile",
+                "e4": "E4 plus verified examples",
             }
+            ctx = Context(settings, con)
+            catalog_version = ctx.version
             system = PipelineSystem(
-                Context(settings, con),
+                ctx,
                 grounding=args.system != "e1",
-                planning=args.system == "e3",
+                planning=args.system in ("e3", "e4"),
+                examples=args.system == "e4",
                 name=names[args.system],
             )
+        from .prompts import prompt_version
+
         stamp = time.strftime("%Y%m%d-%H%M%S")
         out = root / "runs" / f"{stamp}-{args.system}-{args.split}.json"
-        summary = evaluate(
-            system,
-            cases,
-            con,
-            out,
-            meta={"system": system.name, "split": args.split, "snapshot": snap},
-        )
+        meta = {
+            "system": system.name,
+            "split": args.split,
+            "snapshot": snap,
+            "catalog_version": catalog_version,
+            "prompts": {p: prompt_version(p) for p in ("understand", "generate", "plan")},
+        }
+        summary = evaluate(system, cases, con, out, meta=meta)
         print(json.dumps(summary, indent=1))
         print(f"report: {out}")
         return 0
@@ -176,7 +184,17 @@ def main(argv: list[str] | None = None) -> int:
             or None
         )
         con = None if args.no_lake else lake.connect(settings)
-        stats = sync.publish(conn, catalog, manifest, version=version, lake=con, git_sha=sha)
+        from .pipeline.verified import load as load_verified
+
+        stats = sync.publish(
+            conn,
+            catalog,
+            manifest,
+            version=version,
+            lake=con,
+            git_sha=sha,
+            verified=load_verified(settings.semantic_path),
+        )
         print(f"published {version}: {stats}")
         return 0
     return 2

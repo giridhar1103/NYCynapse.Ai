@@ -30,7 +30,7 @@ def _syn(words: list[str]) -> str:
     return f"Also called: {', '.join(words)}." if words else ""
 
 
-def build(catalog: Catalog, gold: dict) -> list[Document]:
+def build(catalog: Catalog, gold: dict, verified: list | None = None) -> list[Document]:
     docs: list[Document] = []
     tables = gold["tables"]
 
@@ -178,6 +178,19 @@ def build(catalog: Catalog, gold: dict) -> list[Document]:
                     f"{p.name}, a {p.kind.replace('_', ' ')} in New York City.", _syn(p.aliases)
                 ),
                 payload=p.model_dump(),
+            )
+        )
+    for v in verified or []:
+        docs.append(
+            Document(
+                id=f"verified:{v.id}",
+                kind="verified",
+                name=v.id,
+                label=v.question,
+                workspace=catalog.model(v.plan.model).workspace,
+                model=v.plan.model,
+                body=v.question,
+                payload=v.model_dump(mode="json"),
             )
         )
     for i in catalog.instructions:

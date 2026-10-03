@@ -80,12 +80,13 @@ def place_coverage(con: duckdb.DuckDBPyConnection, catalog: Catalog) -> list[tup
         # An area belongs to a place when it contains the place's point, or when its center is
         # within the radius. Counting every area the circle merely touches made "JFK" cover
         # Jamaica Bay.
-        near = (f"(ST_Contains(geom, {point}) OR ST_Distance_Sphere("
-                f"ST_Point(ST_Y(ST_Centroid(geom)), ST_X(ST_Centroid(geom))), "
-                f"ST_Point({p.latitude}, {p.longitude})) <= {p.radius_m})")
+        near = (
+            f"(ST_Contains(geom, {point}) OR ST_Distance_Sphere("
+            f"ST_Point(ST_Y(ST_Centroid(geom)), ST_X(ST_Centroid(geom))), "
+            f"ST_Point({p.latitude}, {p.longitude})) <= {p.radius_m})"
+        )
         queries = {
-            "neighborhood": f"SELECT nta_code, nta_name FROM lake.silver.geo_nta "
-            f"WHERE {near}",
+            "neighborhood": f"SELECT nta_code, nta_name FROM lake.silver.geo_nta WHERE {near}",
             "taxi_zone": f"SELECT CAST(location_id AS VARCHAR), zone_name "
             f"FROM lake.silver.geo_taxi_zone "
             f"WHERE {near}",
@@ -113,8 +114,9 @@ def publish(
     version: str,
     lake: duckdb.DuckDBPyConnection | None,
     git_sha: str | None = None,
+    verified: list | None = None,
 ) -> dict:
-    docs: list[Document] = build(catalog, gold)
+    docs: list[Document] = build(catalog, gold, verified)
     vectors = embed([f"{d.label or d.name}. {d.body}" for d in docs])
     values = dimension_values(lake, catalog) if lake is not None else []
     places = place_coverage(lake, catalog) if lake is not None else []

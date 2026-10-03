@@ -1,0 +1,199 @@
+# Verified question and plan pairs. Retrieved as examples for the planner when a new question is
+# similar. Written to differ from every evaluation question; the harness also excludes any
+# verified query that is a near copy of the question being tested.
+verified:
+  - id: vq-001
+    question: How many Lyft trips started in Brooklyn in March 2025?
+    window: {kind: month, year: 2025, month: 3}
+    plan:
+      model: trips_by_zone_hour
+      metrics: [trip_count]
+      filters:
+        - {field: trips_by_zone_hour.service, op: "=", values: [lyft]}
+        - {field: taxi_zones.borough, op: "=", values: [Brooklyn]}
+  - id: vq-002
+    question: Which ten taxi zones had the most yellow cab pickups in September 2025?
+    window: {kind: month, year: 2025, month: 9}
+    plan:
+      model: trips_by_zone_hour
+      metrics: [trip_count]
+      group_by: [taxi_zones.zone]
+      filters: [{field: trips_by_zone_hour.service, op: "=", values: [yellow]}]
+      order: [{by: trip_count, desc: true}]
+      limit: 10
+  - id: vq-003
+    question: Average wait for an app ride at LaGuardia by hour of day in October 2025
+    window: {kind: month, year: 2025, month: 10}
+    plan:
+      model: trips_by_zone_hour
+      metrics: [avg_app_wait_minutes]
+      group_by: ["time:hour_of_day"]
+      places: [{place: LaGuardia Airport, level: taxi_zone, field: trips_by_zone_hour.pickup_zone_id}]
+  - id: vq-004
+    question: How many illegal parking complaints were there in each borough in 2024?
+    window: {kind: year, year: 2024}
+    plan:
+      model: service_requests
+      metrics: [request_count]
+      group_by: [service_requests.borough]
+      filters: [{field: service_requests.complaint_type, op: "=", values: [Illegal Parking]}]
+  - id: vq-005
+    question: Monthly count of rat sightings in Manhattan during 2024
+    window: {kind: year, year: 2024}
+    plan:
+      model: service_requests
+      metrics: [request_count]
+      group_by: ["time:month"]
+      filters:
+        - {field: service_requests.descriptor, op: "=", values: [Rat Sighting]}
+        - {field: service_requests.borough, op: "=", values: [Manhattan]}
+  - id: vq-006
+    question: Which neighborhoods filed the most blocked driveway complaints in 2025?
+    window: {kind: year, year: 2025}
+    plan:
+      model: service_requests
+      metrics: [request_count]
+      group_by: [neighborhoods.neighborhood]
+      filters: [{field: service_requests.complaint_type, op: "=", values: [Blocked Driveway]}]
+      order: [{by: request_count, desc: true}]
+      limit: 10
+  - id: vq-007
+    question: How many 311 requests about street conditions were filed while a winter storm warning was active in 2025?
+    window: {kind: year, year: 2025}
+    plan:
+      model: service_requests
+      metrics: [request_count]
+      filters:
+        - {field: service_requests.complaint_type, op: "=", values: [Street Condition]}
+        - {field: weather_alerts.event_name, op: "=", values: [Winter Storm Warning]}
+  - id: vq-008
+    question: How many pedestrians were injured in Queens each month of 2025?
+    window: {kind: year, year: 2025}
+    plan:
+      model: collisions
+      metrics: [pedestrians_injured]
+      group_by: ["time:month"]
+      filters: [{field: collisions.borough, op: "=", values: [Queens]}]
+  - id: vq-009
+    question: Crashes with a fatality by hour of day in 2024
+    window: {kind: year, year: 2024}
+    plan:
+      model: collisions
+      metrics: [crash_count]
+      group_by: ["time:hour_of_day"]
+      filters: [{field: collisions.has_fatality, op: "is true"}]
+  - id: vq-010
+    question: How many crashes happened in wet hours versus dry hours in Manhattan in 2024?
+    window: {kind: year, year: 2024}
+    plan:
+      model: collisions
+      metrics: [crash_count]
+      group_by: [weather_hourly.is_wet_hour]
+      filters: [{field: collisions.borough, op: "=", values: [Manhattan]}]
+  - id: vq-011
+    question: What was the subway on-time rate for each route on 2 October 2026?
+    window: {kind: date, date: "2026-10-02"}
+    plan:
+      model: subway_arrivals
+      metrics: [subway_on_time_rate]
+      group_by: [subway_arrivals.route]
+      order: [{by: subway_on_time_rate, desc: false}]
+  - id: vq-012
+    question: Which stations had the highest average delay for the Q train on 2 October 2026?
+    window: {kind: date, date: "2026-10-02"}
+    plan:
+      model: subway_arrivals
+      metrics: [avg_subway_delay_minutes]
+      group_by: [subway_arrivals.station]
+      filters: [{field: subway_arrivals.route, op: "=", values: [Q]}]
+      order: [{by: avg_subway_delay_minutes, desc: true}]
+      limit: 10
+  - id: vq-013
+    question: Total subway riders at Fulton St in April 2025
+    window: {kind: month, year: 2025, month: 4}
+    plan:
+      model: subway_ridership
+      metrics: [subway_riders]
+      filters: [{field: subway_ridership.station_complex, op: like, values: ["Fulton St%"]}]
+  - id: vq-014
+    question: OMNY share of subway entries by borough in December 2024
+    window: {kind: month, year: 2024, month: 12}
+    plan:
+      model: subway_ridership
+      metrics: [omny_share]
+      group_by: [subway_ridership.borough]
+  - id: vq-015
+    question: Busiest hours of the day for subway entries on Saturdays in 2024
+    window: {kind: year, year: 2024}
+    plan:
+      model: subway_ridership
+      metrics: [subway_riders]
+      group_by: ["time:hour_of_day"]
+      filters: [{field: calendar.day_of_week, op: "=", values: [Saturday]}]
+      order: [{by: subway_riders, desc: true}]
+      limit: 5
+  - id: vq-016
+    question: How many Citi Bike rides ended in Long Island City in August 2024?
+    window: {kind: month, year: 2024, month: 8}
+    plan:
+      model: bike_trips
+      metrics: [bike_ride_count]
+      filters: [{field: neighborhoods@end.neighborhood, op: like, values: ["Long Island City%"]}]
+  - id: vq-017
+    question: Average Citi Bike ride length by bike type in October 2024
+    window: {kind: month, year: 2024, month: 10}
+    plan:
+      model: bike_trips
+      metrics: [avg_bike_ride_minutes]
+      group_by: [bike_trips.bike_type]
+  - id: vq-018
+    question: Citi Bike rides that started in wet versus dry hours in Brooklyn, September 2024
+    window: {kind: month, year: 2024, month: 9}
+    plan:
+      model: bike_trips
+      metrics: [bike_ride_count]
+      group_by: [weather_hourly.is_wet_hour]
+      filters: [{field: neighborhoods@start.borough, op: "=", values: [Brooklyn]}]
+  - id: vq-019
+    question: Average speed on monitored roads in Queens by weekday in July 2025
+    window: {kind: month, year: 2025, month: 7}
+    plan:
+      model: traffic_speeds
+      metrics: [avg_road_speed_mph]
+      group_by: ["time:day_of_week"]
+      filters: [{field: traffic_links.borough, op: "=", values: [Queens]}]
+  - id: vq-020
+    question: How much rain fell in the city in each month of 2024?
+    window: {kind: year, year: 2024}
+    plan:
+      model: weather_hourly
+      metrics: [precipitation_in]
+      group_by: ["time:month"]
+  - id: vq-021
+    question: Number of hours with snow in the Bronx during January 2025
+    window: {kind: month, year: 2025, month: 1}
+    plan:
+      model: weather_hourly
+      metrics: [wet_hours]
+      filters:
+        - {field: weather_hourly.is_snow_hour, op: is true}
+        - {field: weather_hourly.borough, op: "=", values: [Bronx]}
+  - id: vq-022
+    question: Which coastal flood alerts were issued for Staten Island in 2025?
+    window: {kind: year, year: 2025}
+    plan:
+      kind: list
+      model: weather_alerts
+      select: [weather_alerts.event_name, weather_alerts.alert_level]
+      filters:
+        - {field: weather_alerts.event_name, op: like, values: ["Coastal Flood%"]}
+        - {field: weather_alerts.borough, op: "=", values: [Staten Island]}
+  - id: vq-023
+    question: Which datasets are behind their freshness target right now?
+    window: null
+    plan:
+      kind: list
+      model: source_freshness
+      select: [source_freshness.table_name, source_freshness.source]
+      filters: [{field: source_freshness.is_stale, op: is true}]
+      use_time_window: false
