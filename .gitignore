@@ -6,3 +6,5 @@ __pycache__/
 *.egg-info/
 .env
 docs/PLAN.md
+evals/runs/
+evals/snapshot.yaml

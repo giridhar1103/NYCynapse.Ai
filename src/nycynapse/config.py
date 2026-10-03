@@ -13,6 +13,7 @@ class Settings:
     semantic_path: Path = REPO / "semantic"
     dbt_manifest: Path = Path("/root/NYCynapse_Lake/dbt/target/manifest.json")
     memory_limit: str = "1GB"
+    holdout_path: Path | None = Path("/srv/nycynapse/evals-holdout")
 
     @classmethod
     def from_env(cls) -> "Settings":

@@ -12,7 +12,10 @@ import duckdb
 from .config import Settings
 
 
-def connect(settings: Settings, *, threads: int = 2) -> duckdb.DuckDBPyConnection:
+def connect(
+    settings: Settings, *, threads: int = 2, snapshot: int | None = None
+) -> duckdb.DuckDBPyConnection:
+    """Open the lake read-only, optionally frozen at a DuckLake snapshot."""
     if not settings.lake_pg_dsn:
         raise RuntimeError("NYC_LAKE_PG_DSN is not set")
     con = duckdb.connect()
@@ -29,7 +32,9 @@ def connect(settings: Settings, *, threads: int = 2) -> duckdb.DuckDBPyConnectio
             con.execute(f"LOAD {ext}")
     con.execute(
         f"ATTACH 'ducklake:postgres:{settings.lake_pg_dsn}' AS lake "
-        "(METADATA_SCHEMA 'ducklake', READ_ONLY)"
+        "(METADATA_SCHEMA 'ducklake', READ_ONLY"
+        + (f", SNAPSHOT_VERSION {int(snapshot)}" if snapshot is not None else "")
+        + ")"
     )
     con.execute("USE lake")
     # DuckLake reads its own Parquet files, so file access is limited to the lake's data
