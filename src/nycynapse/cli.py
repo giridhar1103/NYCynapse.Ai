@@ -2,6 +2,7 @@ import argparse
 import json
 import sys
 import time
+from pathlib import Path
 
 from .config import Settings
 
@@ -20,6 +21,7 @@ def main(argv: list[str] | None = None) -> int:
     er.add_argument("--split", choices=["dev", "regression", "holdout", "all"], default="dev")
     er.add_argument("--only", help="comma separated case ids")
     er.add_argument("--limit", type=int)
+    er.add_argument("--resume", help="report path of a stopped run to continue")
     pub = sub.add_parser("publish", help="validate, then publish the catalog to Postgres")
     pub.add_argument("--no-lake", action="store_true", help="skip the value index and places")
     args = parser.parse_args(argv)
@@ -51,19 +53,23 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1 if problems else 0
     if args.cmd == "verify-gold":
+        import yaml
+
         from . import lake
         from .evals.cases import load_dir
         from .evals.execute import run
 
-        cases = [
-            c
-            for c in load_dir(settings.semantic_path.parent / "evals" / "cases")
-            if c.gold_sql and (not args.only or c.id in args.only.split(","))
-        ]
-        con = lake.connect(settings)
+        root = settings.semantic_path.parent / "evals"
+        every = load_dir(root / "cases")
+        if settings.holdout_path and settings.holdout_path.exists():
+            every += load_dir(settings.holdout_path)
+        cases = [c for c in every if c.gold_sql and (not args.only or c.id in args.only.split(","))]
+        pinned = root / "snapshot.yaml"
+        snap = yaml.safe_load(pinned.read_text())["snapshot_id"] if pinned.exists() else None
+        con = lake.connect(settings, snapshot=snap)
         bad = 0
         for c in cases:
-            r = run(con, c.gold_sql)
+            r = run(con, c.gold_sql, timeout_s=300)
             flag = "ERROR" if not r.ok else ("EMPTY" if not r.rows or r.rows == [(None,)] else "ok")
             bad += flag != "ok"
             preview = r.error if not r.ok else str(r.rows[:3])[:110]
@@ -139,7 +145,11 @@ def main(argv: list[str] | None = None) -> int:
         from .prompts import prompt_version
 
         stamp = time.strftime("%Y%m%d-%H%M%S")
-        out = root / "runs" / f"{stamp}-{args.system}-{args.split}.json"
+        out = (
+            Path(args.resume)
+            if args.resume
+            else (root / "runs" / f"{stamp}-{args.system}-{args.split}.json")
+        )
         meta = {
             "system": system.name,
             "split": args.split,
