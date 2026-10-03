@@ -77,18 +77,21 @@ def place_coverage(con: duckdb.DuckDBPyConnection, catalog: Catalog) -> list[tup
     rows = []
     for p in catalog.places:
         point = f"ST_Point({p.longitude}, {p.latitude})"
-        # Buffer in degrees of latitude. East-west it reaches a little further, which is fine
-        # for "near".
-        circle = f"ST_Buffer({point}, {p.radius_m / 111_320.0})"
+        # An area belongs to a place when it contains the place's point, or when its center is
+        # within the radius. Counting every area the circle merely touches made "JFK" cover
+        # Jamaica Bay.
+        near = (f"(ST_Contains(geom, {point}) OR ST_Distance_Sphere("
+                f"ST_Point(ST_Y(ST_Centroid(geom)), ST_X(ST_Centroid(geom))), "
+                f"ST_Point({p.latitude}, {p.longitude})) <= {p.radius_m})")
         queries = {
             "neighborhood": f"SELECT nta_code, nta_name FROM lake.silver.geo_nta "
-            f"WHERE ST_Intersects(geom, {circle})",
+            f"WHERE {near}",
             "taxi_zone": f"SELECT CAST(location_id AS VARCHAR), zone_name "
             f"FROM lake.silver.geo_taxi_zone "
-            f"WHERE ST_Intersects(geom, {circle})",
+            f"WHERE {near}",
             "borough": f"SELECT CAST(boro_code AS VARCHAR), boro_name "
             f"FROM lake.silver.geo_borough "
-            f"WHERE ST_Intersects(geom, {circle})",
+            f"WHERE {near}",
             "subway_station": f"SELECT station_id, station_name FROM lake.gold.dim_subway_station "
             f"WHERE ST_Distance_Sphere(ST_Point({p.latitude}, {p.longitude}), "
             f"ST_Point(latitude, longitude)) <= {p.radius_m}",

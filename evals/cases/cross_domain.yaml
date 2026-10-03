@@ -1,13 +1,13 @@
 cases:
   - id: cx-002
-    question: How many 311 street flooding complaints came in while a flood watch or warning was in effect in 2025?
+    question: How many 311 street flooding complaints came in while an inland flood or flash flood alert (not a coastal flood alert) was in effect in 2025?
     category: cross_domain
     difficulty: hard
-    expect: {workspaces: [city_services, weather], values: [Street Flooding (SJ)]}
+    expect: {workspaces: [city_services, weather], values: [Street Flooding (SJ), Flooding on Street]}
     notes: Range relationship, applied as EXISTS so overlapping alerts do not double count.
     gold_sql: |
       select count(*) from gold.fct_service_request r
-      where r.descriptor ilike 'street flooding%'
+      where r.descriptor in ('Street Flooding (SJ)', 'Flooding on Street')
         and r.created_at >= timezone('America/New_York', timestamp '2025-01-01')
         and r.created_at < timezone('America/New_York', timestamp '2026-01-01')
         and exists (select 1 from gold.fct_weather_alert a
