@@ -1,0 +1,185 @@
+cases:
+  - id: cs-001
+    group: cs-noise-month
+    question: How many noise complaints were filed last month?
+    category: temporal
+    expect: {workspaces: [city_services], metrics: [request_count]}
+    gold_sql: |
+      select count(*) from gold.fct_service_request
+      where complaint_type ilike 'noise%'
+        and created_at >= timezone('America/New_York', timestamp '2026-09-01')
+        and created_at < timezone('America/New_York', timestamp '2026-10-01')
+  - id: cs-002
+    group: cs-noise-month
+    question: Count noise complaints from the previous month.
+    category: temporal
+    expect: {workspaces: [city_services], metrics: [request_count]}
+    gold_sql: |
+      select count(*) from gold.fct_service_request
+      where complaint_type ilike 'noise%'
+        and created_at >= timezone('America/New_York', timestamp '2026-09-01')
+        and created_at < timezone('America/New_York', timestamp '2026-10-01')
+  - id: cs-003
+    group: cs-noise-month
+    question: What was last month's total number of noise complaints?
+    category: temporal
+    expect: {workspaces: [city_services], metrics: [request_count]}
+    gold_sql: |
+      select count(*) from gold.fct_service_request
+      where complaint_type ilike 'noise%'
+        and created_at >= timezone('America/New_York', timestamp '2026-09-01')
+        and created_at < timezone('America/New_York', timestamp '2026-10-01')
+
+  - id: cs-004
+    group: cs-loud-music
+    question: How many complaints about loud music or parties were there in Bushwick in 2025?
+    category: grounding
+    expect: {workspaces: [city_services], values: [Loud Music/Party, Bushwick]}
+    gold_sql: |
+      select count(*) from gold.fct_service_request
+      where descriptor = 'Loud Music/Party'
+        and nta_code in (select nta_code from gold.dim_neighborhood where nta_name ilike 'Bushwick%')
+        and created_at >= timezone('America/New_York', timestamp '2025-01-01')
+        and created_at < timezone('America/New_York', timestamp '2026-01-01')
+  - id: cs-005
+    group: cs-loud-music
+    question: Loud party complaints in Bushwick during 2025, how many?
+    category: grounding
+    expect: {workspaces: [city_services], values: [Loud Music/Party, Bushwick]}
+    gold_sql: |
+      select count(*) from gold.fct_service_request
+      where descriptor = 'Loud Music/Party'
+        and nta_code in (select nta_code from gold.dim_neighborhood where nta_name ilike 'Bushwick%')
+        and created_at >= timezone('America/New_York', timestamp '2025-01-01')
+        and created_at < timezone('America/New_York', timestamp '2026-01-01')
+
+  - id: cs-006
+    question: What were the ten most common 311 complaint types in 2025?
+    category: single_table
+    expect: {workspaces: [city_services], metrics: [request_count]}
+    compare: {order_matters: true}
+    gold_sql: |
+      select complaint_type, count(*) from gold.fct_service_request
+      where created_at >= timezone('America/New_York', timestamp '2025-01-01')
+        and created_at < timezone('America/New_York', timestamp '2026-01-01')
+      group by 1 order by 2 desc limit 10
+  - id: cs-007
+    question: How have residential noise complaints changed by year since 2024?
+    category: temporal
+    expect: {workspaces: [city_services], metrics: [request_count], values: [Noise - Residential]}
+    gold_sql: |
+      select year(created_date), count(*) from gold.fct_service_request
+      where complaint_type = 'Noise - Residential' group by 1
+  - id: cs-009
+    question: Which agency takes the longest to close requests, on average, in 2025? Only agencies with at least 10,000 closed requests.
+    category: single_table
+    expect: {workspaces: [city_services], metrics: [avg_hours_to_close]}
+    compare: {order_matters: true, rows: 1, tolerance: 0.01}
+    gold_sql: |
+      select agency, avg(hours_to_close) from gold.fct_service_request
+      where hours_to_close is not null
+        and created_at >= timezone('America/New_York', timestamp '2025-01-01')
+        and created_at < timezone('America/New_York', timestamp '2026-01-01')
+      group by 1 having count(*) >= 10000 order by 2 desc limit 1
+  - id: cs-010
+    question: What is the median time for NYPD to close a noise complaint, in hours, in 2025?
+    category: single_table
+    expect: {workspaces: [city_services], metrics: [median_hours_to_close], values: [NYPD]}
+    compare: {tolerance: 0.02}
+    gold_sql: |
+      select median(hours_to_close) from gold.fct_service_request
+      where agency = 'NYPD' and complaint_type ilike 'noise%' and hours_to_close is not null
+        and created_at >= timezone('America/New_York', timestamp '2025-01-01')
+        and created_at < timezone('America/New_York', timestamp '2026-01-01')
+  - id: cs-012
+    question: How many 311 requests came from community district Brooklyn 1 in August 2026?
+    category: geographic
+    expect: {workspaces: [city_services], values: [Brooklyn Community District 1]}
+    gold_sql: |
+      select count(*) from gold.fct_service_request
+      where community_district = 301
+        and created_at >= timezone('America/New_York', timestamp '2026-08-01')
+        and created_at < timezone('America/New_York', timestamp '2026-09-01')
+  - id: cs-014
+    question: How many 311 requests about homeless encampments were there in Manhattan in 2025?
+    category: grounding
+    expect: {workspaces: [city_services], values: [Encampment]}
+    gold_sql: |
+      select count(*) from gold.fct_service_request
+      where complaint_type = 'Encampment' and boro_code = 1
+        and created_at >= timezone('America/New_York', timestamp '2025-01-01')
+        and created_at < timezone('America/New_York', timestamp '2026-01-01')
+  - id: cs-015
+    question: What share of 311 requests filed in September 2026 are still open?
+    category: single_table
+    expect: {workspaces: [city_services]}
+    compare: {tolerance: 0.005}
+    gold_sql: |
+      select avg(case when is_closed then 0.0 else 1.0 end) from gold.fct_service_request
+      where created_at >= timezone('America/New_York', timestamp '2026-09-01')
+        and created_at < timezone('America/New_York', timestamp '2026-10-01')
+  - id: cs-016
+    question: How many 311 complaints were there near Barclays Center in 2025?
+    category: geographic
+    expect: {workspaces: [city_services], places: [Barclays Center]}
+    notes: Place coverage at neighborhood level.
+    gold_sql: |
+      select count(*) from gold.fct_service_request
+      where ST_Distance_Sphere(ST_Point(40.6826, -73.9754), ST_Point(latitude, longitude)) <= 500
+        and created_at >= timezone('America/New_York', timestamp '2025-01-01')
+        and created_at < timezone('America/New_York', timestamp '2026-01-01')
+
+  - id: sf-001
+    group: sf-cyclists-brooklyn
+    question: How many cyclists were injured in Brooklyn in 2025?
+    category: single_table
+    expect: {workspaces: [safety], metrics: [cyclists_injured]}
+    gold_sql: |
+      select sum(cyclists_injured) from gold.fct_collision
+      where borough = 'Brooklyn'
+        and crashed_at >= timezone('America/New_York', timestamp '2025-01-01')
+        and crashed_at < timezone('America/New_York', timestamp '2026-01-01')
+  - id: sf-002
+    group: sf-cyclists-brooklyn
+    question: Number of bike riders hurt in crashes in Brooklyn in 2025
+    category: single_table
+    expect: {workspaces: [safety], metrics: [cyclists_injured]}
+    gold_sql: |
+      select sum(cyclists_injured) from gold.fct_collision
+      where borough = 'Brooklyn'
+        and crashed_at >= timezone('America/New_York', timestamp '2025-01-01')
+        and crashed_at < timezone('America/New_York', timestamp '2026-01-01')
+  - id: sf-003
+    question: How many people were killed in traffic crashes in 2025?
+    category: single_table
+    expect: {workspaces: [safety], metrics: [people_killed]}
+    gold_sql: |
+      select sum(persons_killed) from gold.fct_collision
+      where crashed_at >= timezone('America/New_York', timestamp '2025-01-01')
+        and crashed_at < timezone('America/New_York', timestamp '2026-01-01')
+  - id: sf-004
+    question: What are the most common contributing factors in fatal crashes, leaving out unspecified?
+    category: single_table
+    expect: {workspaces: [safety]}
+    compare: {order_matters: true, rows: 5}
+    gold_sql: |
+      select primary_factor, count(*) from gold.fct_collision
+      where has_fatality and primary_factor <> 'Unspecified'
+      group by 1 order by 2 desc limit 5
+  - id: sf-006
+    question: What hour of the day has the most crashes with injuries?
+    category: temporal
+    expect: {workspaces: [safety]}
+    compare: {order_matters: true, rows: 1}
+    gold_sql: |
+      select crash_hour, count(*) from gold.fct_collision where has_injury
+      group by 1 order by 2 desc limit 1
+  - id: sf-009
+    question: How many crashes happened on Atlantic Avenue in 2025?
+    category: grounding
+    expect: {workspaces: [safety], values: [ATLANTIC AVENUE]}
+    gold_sql: |
+      select count(*) from gold.fct_collision
+      where upper(on_street_name) = 'ATLANTIC AVENUE'
+        and crashed_at >= timezone('America/New_York', timestamp '2025-01-01')
+        and crashed_at < timezone('America/New_York', timestamp '2026-01-01')

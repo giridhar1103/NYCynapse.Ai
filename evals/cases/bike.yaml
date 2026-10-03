@@ -1,0 +1,84 @@
+cases:
+  - id: bk-001
+    group: bk-month
+    question: How many Citi Bike rides were there in May 2025?
+    category: single_table
+    expect: {workspaces: [bike], metrics: [bike_ride_count]}
+    gold_sql: |
+      select count(*) from gold.fct_bike_trip
+      where started_at >= timezone('America/New_York', timestamp '2025-05-01')
+        and started_at < timezone('America/New_York', timestamp '2025-06-01')
+        and duration_minutes between 1 and 240
+  - id: bk-002
+    group: bk-month
+    question: Total Citi Bike trips in May 2025
+    category: single_table
+    expect: {workspaces: [bike], metrics: [bike_ride_count]}
+    gold_sql: |
+      select count(*) from gold.fct_bike_trip
+      where started_at >= timezone('America/New_York', timestamp '2025-05-01')
+        and started_at < timezone('America/New_York', timestamp '2025-06-01')
+        and duration_minutes between 1 and 240
+  - id: bk-004
+    question: How many Citi Bike rides started in Williamsburg in April 2025?
+    category: geographic
+    expect: {workspaces: [bike], metrics: [bike_ride_count], values: [Williamsburg]}
+    gold_sql: |
+      select count(*) from gold.fct_bike_trip
+      where start_nta_code = (select nta_code from gold.dim_neighborhood where nta_name = 'Williamsburg')
+        and started_at >= timezone('America/New_York', timestamp '2025-04-01')
+        and started_at < timezone('America/New_York', timestamp '2025-05-01')
+        and duration_minutes between 1 and 240
+  - id: bk-005
+    question: Do members or casual riders take longer Citi Bike rides? Use June 2024.
+    category: single_table
+    expect: {workspaces: [bike], metrics: [avg_bike_ride_minutes]}
+    compare: {tolerance: 0.01}
+    gold_sql: |
+      select rider_type, avg(duration_minutes) from gold.fct_bike_trip
+      where started_at >= timezone('America/New_York', timestamp '2024-06-01')
+        and started_at < timezone('America/New_York', timestamp '2024-07-01')
+        and duration_minutes between 1 and 240
+      group by 1
+  - id: bk-007
+    question: How many Citi Bike rides started in each borough in 2024?
+    category: multi_join
+    expect: {workspaces: [bike], metrics: [bike_ride_count]}
+    gold_sql: |
+      select b.borough, count(*) from gold.fct_bike_trip t join gold.dim_borough b on b.boro_code = t.start_boro_code
+      where t.started_at >= timezone('America/New_York', timestamp '2024-01-01')
+        and t.started_at < timezone('America/New_York', timestamp '2025-01-01')
+        and t.duration_minutes between 1 and 240
+      group by 1
+  - id: bk-008
+    question: How many Citi Bike rides started near Central Park on weekends in July 2024?
+    category: geographic
+    difficulty: hard
+    expect: {workspaces: [bike], places: [Central Park]}
+    notes: Central Park resolves to stations within its radius; gold uses the same coverage list.
+    gold_sql: |
+      select count(*) from gold.fct_bike_trip t
+      where t.start_station_number in (
+              select station_number from gold.dim_bike_station
+              where ST_Distance_Sphere(ST_Point(40.7829, -73.9654), ST_Point(latitude, longitude)) <= 1500)
+        and t.started_at >= timezone('America/New_York', timestamp '2024-07-01')
+        and t.started_at < timezone('America/New_York', timestamp '2024-08-01')
+        and isodow(t.start_date) in (6, 7) and t.duration_minutes between 1 and 240
+  - id: bk-011
+    question: How many Citi Bike rides were there in December 2023?
+    category: unsupported
+    notes: History starts in January 2024.
+    expect: {classification: unsupported, workspaces: [bike]}
+  - id: bk-012
+    question: What share of Citi Bike rides ended in a different borough than they started in 2024?
+    category: single_table
+    difficulty: hard
+    expect: {workspaces: [bike]}
+    compare: {tolerance: 0.002}
+    gold_sql: |
+      select avg(case when start_boro_code <> end_boro_code then 1.0 else 0.0 end)
+      from gold.fct_bike_trip
+      where started_at >= timezone('America/New_York', timestamp '2024-01-01')
+        and started_at < timezone('America/New_York', timestamp '2025-01-01')
+        and duration_minutes between 1 and 240
+        and start_boro_code is not null and end_boro_code is not null

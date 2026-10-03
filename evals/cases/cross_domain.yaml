@@ -1,0 +1,55 @@
+cases:
+  - id: cx-002
+    question: How many 311 street flooding complaints came in while a flood watch or warning was in effect in 2025?
+    category: cross_domain
+    difficulty: hard
+    expect: {workspaces: [city_services, weather], values: [Street Flooding (SJ)]}
+    notes: Range relationship, applied as EXISTS so overlapping alerts do not double count.
+    gold_sql: |
+      select count(*) from gold.fct_service_request r
+      where r.descriptor ilike 'street flooding%'
+        and r.created_at >= timezone('America/New_York', timestamp '2025-01-01')
+        and r.created_at < timezone('America/New_York', timestamp '2026-01-01')
+        and exists (select 1 from gold.fct_weather_alert a
+                    where a.boro_code = r.boro_code and a.hazard_code in ('FA', 'FF')
+                      and r.created_at between a.starts_at and a.ends_at)
+  - id: cx-004
+    question: Were subway trains later on average yesterday in hours with rain than in dry hours?
+    category: cross_domain
+    expect: {workspaces: [subway, weather], metrics: [avg_subway_delay_minutes]}
+    compare: {tolerance: 0.05}
+    gold_sql: |
+      select w.is_wet_hour, avg(a.delay_seconds) / 60.0
+      from gold.fct_subway_arrival a join gold.fct_weather_hourly w
+        on w.borough = a.borough and w.hour_start = date_trunc('hour', a.arrived_at)
+      where a.is_scheduled_trip and a.arrived_date = date '2026-10-02'
+      group by 1
+  - id: cx-005
+    question: How did Citi Bike ridership on rainy hours compare with dry hours in June 2025, per hour?
+    category: cross_domain
+    expect: {workspaces: [bike, weather], metrics: [bike_ride_count]}
+    compare: {tolerance: 0.03}
+    gold_sql: |
+      with r as (
+        select start_boro_code as boro_code, date_trunc('hour', started_at) as hour_start, count(*) as rides
+        from gold.fct_bike_trip
+        where started_at >= timezone('America/New_York', timestamp '2025-06-01')
+          and started_at < timezone('America/New_York', timestamp '2025-07-01')
+          and duration_minutes between 1 and 240 and start_boro_code is not null
+        group by all)
+      select w.is_wet_hour, sum(coalesce(r.rides, 0)) / count(*)
+      from gold.fct_weather_hourly w left join r using (boro_code, hour_start)
+      where not w.is_forecast and w.boro_code in (1, 2, 3, 4)
+        and w.hour_start >= timezone('America/New_York', timestamp '2025-06-01')
+        and w.hour_start < timezone('America/New_York', timestamp '2025-07-01')
+      group by 1
+  - id: cx-007
+    question: How many subway riders entered stations near Yankee Stadium on September 15, 2024 compared with the Sunday before?
+    category: cross_domain
+    difficulty: hard
+    expect: {workspaces: [subway], places: [Yankee Stadium]}
+    gold_sql: |
+      select hour_date, sum(riders) from gold.fct_subway_ridership_hourly
+      where complex_id in (select complex_id from gold.dim_subway_station where station_id in ('414', 'D11'))
+        and hour_date in (date '2024-09-15', date '2024-09-08')
+      group by 1

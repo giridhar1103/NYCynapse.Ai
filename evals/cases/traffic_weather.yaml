@@ -1,0 +1,98 @@
+cases:
+  - id: tw-001
+    question: Which monitored roads were slowest during the evening rush in September 2026?
+    category: temporal
+    expect: {workspaces: [traffic], metrics: [avg_road_speed_mph]}
+    compare: {order_matters: true, rows: 5, tolerance: 0.02}
+    gold_sql: |
+      select l.link_name, avg(s.speed_mph) from gold.fct_traffic_speed s
+      join gold.dim_traffic_link l using (link_id)
+      where s.is_valid
+        and s.observed_at >= timezone('America/New_York', timestamp '2026-09-01')
+        and s.observed_at < timezone('America/New_York', timestamp '2026-10-01')
+        and isodow(s.observed_date) between 1 and 5 and s.observed_hour between 16 and 18
+      group by 1 order by 2 limit 5
+  - id: tw-003
+    question: How fast was traffic on the BQE on weekday mornings in 2025?
+    category: grounding
+    difficulty: hard
+    expect: {workspaces: [traffic], values: [BQE]}
+    compare: {tolerance: 0.02}
+    gold_sql: |
+      select avg(s.speed_mph) from gold.fct_traffic_speed s join gold.dim_traffic_link l using (link_id)
+      where s.is_valid and l.link_name like 'BQE%'
+        and s.observed_at >= timezone('America/New_York', timestamp '2025-01-01')
+        and s.observed_at < timezone('America/New_York', timestamp '2026-01-01')
+        and isodow(s.observed_date) between 1 and 5 and s.observed_hour between 7 and 9
+
+  - id: tw-004
+    group: tw-rain-hours
+    question: How many hours did it rain in Manhattan last month?
+    category: temporal
+    expect: {workspaces: [weather], metrics: [wet_hours]}
+    gold_sql: |
+      select count(*) from gold.fct_weather_hourly
+      where borough = 'Manhattan' and is_wet_hour and not is_forecast
+        and hour_start >= timezone('America/New_York', timestamp '2026-09-01')
+        and hour_start < timezone('America/New_York', timestamp '2026-10-01')
+  - id: tw-005
+    group: tw-rain-hours
+    question: Number of rainy hours in Manhattan in September 2026
+    category: temporal
+    expect: {workspaces: [weather], metrics: [wet_hours]}
+    gold_sql: |
+      select count(*) from gold.fct_weather_hourly
+      where borough = 'Manhattan' and is_wet_hour and not is_forecast
+        and hour_start >= timezone('America/New_York', timestamp '2026-09-01')
+        and hour_start < timezone('America/New_York', timestamp '2026-10-01')
+  - id: tw-006
+    question: How much rain fell across the city in July 2025, in inches?
+    category: single_table
+    notes: Citywide means the average of the boroughs, not their sum.
+    expect: {workspaces: [weather], metrics: [precipitation_in]}
+    compare: {tolerance: 0.02}
+    gold_sql: |
+      select avg(total) from (
+        select borough, sum(precipitation_in) as total from gold.fct_weather_hourly
+        where not is_forecast
+          and hour_start >= timezone('America/New_York', timestamp '2025-07-01')
+          and hour_start < timezone('America/New_York', timestamp '2025-08-01')
+        group by 1)
+  - id: tw-007
+    question: What was the hottest hour recorded in each borough in 2025?
+    category: single_table
+    expect: {workspaces: [weather]}
+    compare: {columns: subset, tolerance: 0.01}
+    gold_sql: |
+      select borough, max(temperature_f) from gold.fct_weather_hourly
+      where not is_forecast
+        and hour_start >= timezone('America/New_York', timestamp '2025-01-01')
+        and hour_start < timezone('America/New_York', timestamp '2026-01-01')
+      group by 1
+  - id: tw-008
+    question: Which heat advisories were issued for Brooklyn in summer 2025?
+    category: grounding
+    expect: {workspaces: [weather], values: [Heat Advisory]}
+    compare: {columns: subset}
+    gold_sql: |
+      select starts_at_local, ends_at_local from gold.fct_weather_alert
+      where event_name = 'Heat Advisory' and borough = 'Brooklyn'
+        and starts_at >= timezone('America/New_York', timestamp '2025-06-01')
+        and starts_at < timezone('America/New_York', timestamp '2025-09-01')
+  - id: tw-009
+    question: How many Weather Service warnings were issued for New York City in 2025?
+    category: single_table
+    expect: {workspaces: [weather], metrics: [weather_alert_count]}
+    gold_sql: |
+      select count(distinct event_key) from gold.fct_weather_alert
+      where alert_level = 'warning'
+        and starts_at >= timezone('America/New_York', timestamp '2025-01-01')
+        and starts_at < timezone('America/New_York', timestamp '2026-01-01')
+  - id: tw-011
+    question: What is the forecast high temperature in Manhattan tomorrow?
+    category: live
+    expect: {workspaces: [weather]}
+    compare: {tolerance: 0.01}
+    gold_sql: |
+      select max(temperature_f) from gold.fct_weather_hourly
+      where borough = 'Manhattan' and hour_date = date '2026-10-04'

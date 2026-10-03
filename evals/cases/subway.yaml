@@ -1,0 +1,127 @@
+# Subway arrivals, trips and alerts exist from 2 October 2026. Ridership covers 2024 onward.
+cases:
+  - id: sw-001
+    group: sw-worst-lines
+    question: Which subway lines had the worst average delay yesterday?
+    category: temporal
+    expect: {workspaces: [subway], metrics: [avg_subway_delay_minutes]}
+    compare: {order_matters: true, rows: 5, tolerance: 0.05}
+    gold_sql: |
+      select route_id, avg(delay_seconds) / 60.0 as minutes from gold.fct_subway_arrival
+      where is_scheduled_trip and arrived_date = date '2026-10-02'
+      group by 1 order by 2 desc limit 5
+  - id: sw-002
+    group: sw-worst-lines
+    question: Rank the subway routes by how late they ran on October 2, worst first.
+    category: temporal
+    expect: {workspaces: [subway], metrics: [avg_subway_delay_minutes]}
+    compare: {order_matters: true, rows: 5, tolerance: 0.05}
+    gold_sql: |
+      select route_id, avg(delay_seconds) / 60.0 as minutes from gold.fct_subway_arrival
+      where is_scheduled_trip and arrived_date = date '2026-10-02'
+      group by 1 order by 2 desc limit 5
+  - id: sw-004
+    question: How many subway arrivals were more than five minutes late on 2 October 2026?
+    category: single_table
+    expect: {workspaces: [subway], metrics: [subway_late_arrivals]}
+    gold_sql: |
+      select count(*) from gold.fct_subway_arrival
+      where is_scheduled_trip and delay_seconds > 300 and arrived_date = date '2026-10-02'
+  - id: sw-005
+    question: Which stations had the most late arrivals yesterday?
+    category: single_table
+    expect: {workspaces: [subway], metrics: [subway_late_arrivals]}
+    compare: {order_matters: true, rows: 5}
+    gold_sql: |
+      select station_name, count(*) from gold.fct_subway_arrival
+      where is_scheduled_trip and delay_seconds > 300 and arrived_date = date '2026-10-02'
+      group by 1 order by 2 desc limit 5
+  - id: sw-008
+    question: What were subway delays like in July 2025?
+    category: unsupported
+    notes: Arrival capture started in October 2026.
+    expect: {classification: unsupported, workspaces: [subway]}
+  - id: sw-009
+    question: How many subway service alerts mentioned the L train this week?
+    category: single_table
+    expect: {workspaces: [subway], metrics: [subway_alert_count], values: [L]}
+    gold_sql: |
+      select count(*) from gold.fct_subway_alert
+      where list_contains(route_ids, 'L')
+        and created_at >= timezone('America/New_York', timestamp '2026-09-28')
+        and created_at < timezone('America/New_York', timestamp '2026-10-03 12:00')
+
+  - id: sw-010
+    group: sw-busiest-stations
+    question: What were the five busiest subway stations by ridership in 2025?
+    category: single_table
+    expect: {workspaces: [subway], metrics: [subway_riders]}
+    compare: {order_matters: true}
+    gold_sql: |
+      select complex_name, sum(riders) from gold.fct_subway_ridership_hourly
+      where transit_mode = 'subway' and year(hour_date) = 2025
+      group by 1 order by 2 desc limit 5
+  - id: sw-011
+    group: sw-busiest-stations
+    question: Top 5 stations by number of riders entering in 2025
+    category: single_table
+    expect: {workspaces: [subway], metrics: [subway_riders]}
+    compare: {order_matters: true}
+    gold_sql: |
+      select complex_name, sum(riders) from gold.fct_subway_ridership_hourly
+      where transit_mode = 'subway' and year(hour_date) = 2025
+      group by 1 order by 2 desc limit 5
+  - id: sw-013
+    question: What share of subway entries were paid with OMNY in each month of 2024?
+    category: temporal
+    expect: {workspaces: [subway], metrics: [omny_share]}
+    compare: {tolerance: 0.005}
+    gold_sql: |
+      select date_trunc('month', hour_date) as month,
+             sum(riders) filter (where payment_method = 'omny') / sum(riders)
+      from gold.fct_subway_ridership_hourly
+      where transit_mode = 'subway' and year(hour_date) = 2024 group by 1
+  - id: sw-014
+    question: Which hour of the day has the most subway entries on weekdays?
+    category: temporal
+    expect: {workspaces: [subway], metrics: [subway_riders]}
+    compare: {order_matters: true, rows: 1}
+    gold_sql: |
+      select hour_hour, sum(riders) from gold.fct_subway_ridership_hourly
+      where transit_mode = 'subway' and isodow(hour_date) between 1 and 5
+      group by 1 order by 2 desc limit 1
+  - id: sw-015
+    question: How many subway riders were there citywide in the morning rush on weekdays in May 2025?
+    category: temporal
+    expect: {workspaces: [subway], metrics: [subway_riders]}
+    gold_sql: |
+      select sum(riders) from gold.fct_subway_ridership_hourly
+      where transit_mode = 'subway' and hour_date between date '2025-05-01' and date '2025-05-31'
+        and isodow(hour_date) between 1 and 5 and hour_hour between 7 and 9
+  - id: sw-017
+    question: How many riders used the Staten Island Railway in 2024?
+    category: grounding
+    expect: {workspaces: [subway], values: [staten_island_railway]}
+    gold_sql: |
+      select sum(riders) from gold.fct_subway_ridership_hourly
+      where transit_mode = 'staten_island_railway' and year(hour_date) = 2024
+  - id: sw-019
+    question: How many subway stations are near Yankee Stadium, and which routes stop there?
+    category: geographic
+    expect: {workspaces: [subway], places: [Yankee Stadium]}
+    compare: {columns: subset}
+    gold_sql: |
+      select station_name, daytime_routes_text from gold.dim_subway_station
+      where station_id in ('414', 'D11')
+  - id: sw-020
+    question: How did weekday subway ridership at Penn Station compare between June 2024 and June 2025?
+    category: grounding
+    difficulty: hard
+    expect: {workspaces: [subway], metrics: [subway_riders], places: [Penn Station]}
+    compare: {tolerance: 0.01}
+    gold_sql: |
+      select year(hour_date) as year, sum(riders) from gold.fct_subway_ridership_hourly
+      where transit_mode = 'subway' and complex_name ilike '34 St-Penn Station%'
+        and month(hour_date) = 6 and year(hour_date) in (2024, 2025)
+        and isodow(hour_date) between 1 and 5
+      group by 1

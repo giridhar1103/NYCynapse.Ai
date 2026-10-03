@@ -1,0 +1,174 @@
+cases:
+  - id: tp-001
+    group: tp-holiday
+    question: How many 311 requests were filed on federal holidays in 2025?
+    category: temporal
+    expect: {workspaces: [city_services], tables: [gold.dim_date]}
+    gold_sql: |
+      select count(*) from gold.fct_service_request r join gold.dim_date d on d.date = r.created_date
+      where d.is_holiday and year(d.date) = 2025
+  - id: tp-002
+    question: On average, are there more app rides on weekends or weekdays? Use 2025.
+    category: temporal
+    expect: {workspaces: [rideshare_taxi], metrics: [app_ride_count]}
+    compare: {tolerance: 0.01}
+    gold_sql: |
+      select isodow(pickup_date) in (6, 7) as weekend, sum(trips) / count(distinct pickup_date)
+      from gold.agg_trips_zone_hourly
+      where service not in ('yellow', 'green') and year(pickup_date) = 2025
+      group by 1
+  - id: tp-003
+    question: How many noise complaints were filed overnight, between midnight and 6am, in July 2026?
+    category: temporal
+    expect: {workspaces: [city_services]}
+    gold_sql: |
+      select count(*) from gold.fct_service_request
+      where complaint_type ilike 'noise%' and created_hour between 0 and 5
+        and created_at >= timezone('America/New_York', timestamp '2026-07-01')
+        and created_at < timezone('America/New_York', timestamp '2026-08-01')
+  - id: tp-004
+    question: How many crashes happened during weekday rush hours in 2025?
+    category: temporal
+    expect: {workspaces: [safety], metrics: [crash_count]}
+    gold_sql: |
+      select count(*) from gold.fct_collision
+      where isodow(crash_date) between 1 and 5 and (crash_hour between 7 and 9 or crash_hour between 16 and 18)
+        and crashed_at >= timezone('America/New_York', timestamp '2025-01-01')
+        and crashed_at < timezone('America/New_York', timestamp '2026-01-01')
+  - id: tp-005
+    question: How many 311 requests were filed this week?
+    category: temporal
+    notes: The week starts Monday 28 September 2026 and runs to the as_of time.
+    expect: {workspaces: [city_services], metrics: [request_count]}
+    gold_sql: |
+      select count(*) from gold.fct_service_request
+      where created_at >= timezone('America/New_York', timestamp '2026-09-28')
+        and created_at < timezone('America/New_York', timestamp '2026-10-03 12:00')
+  - id: tp-006
+    question: How many 311 requests were filed last week?
+    category: temporal
+    notes: Monday 21 to Sunday 27 September 2026.
+    expect: {workspaces: [city_services], metrics: [request_count]}
+    gold_sql: |
+      select count(*) from gold.fct_service_request
+      where created_at >= timezone('America/New_York', timestamp '2026-09-21')
+        and created_at < timezone('America/New_York', timestamp '2026-09-28')
+  - id: tp-007
+    question: How many 311 requests have been filed so far this year?
+    category: temporal
+    expect: {workspaces: [city_services], metrics: [request_count]}
+    gold_sql: |
+      select count(*) from gold.fct_service_request
+      where created_at >= timezone('America/New_York', timestamp '2026-01-01')
+        and created_at < timezone('America/New_York', timestamp '2026-10-03 12:00')
+  - id: tp-008
+    question: What was the average temperature in the city on the Fourth of July 2025?
+    category: temporal
+    notes: Citywide means averaged over the boroughs. Independence Day 2025 fell on a Friday.
+    expect: {workspaces: [weather], metrics: [avg_temperature_f]}
+    compare: {tolerance: 0.01}
+    gold_sql: |
+      select avg(temperature_f) from gold.fct_weather_hourly
+      where hour_date = date '2025-07-04' and not is_forecast
+  - id: tp-009
+    question: How much did it rain citywide in the last 7 days, in inches?
+    category: temporal
+    expect: {workspaces: [weather], metrics: [precipitation_in]}
+    compare: {tolerance: 0.03}
+    gold_sql: |
+      select avg(total) from (
+        select borough, sum(precipitation_in) as total from gold.fct_weather_hourly
+        where not is_forecast
+          and hour_start >= timezone('America/New_York', timestamp '2026-09-26 12:00')
+          and hour_start < timezone('America/New_York', timestamp '2026-10-03 12:00')
+        group by 1)
+  - id: tp-010
+    question: Which day last month had the most 311 requests?
+    category: temporal
+    expect: {workspaces: [city_services], metrics: [request_count]}
+    compare: {order_matters: true, rows: 1}
+    gold_sql: |
+      select created_date, count(*) from gold.fct_service_request
+      where created_at >= timezone('America/New_York', timestamp '2026-09-01')
+        and created_at < timezone('America/New_York', timestamp '2026-10-01')
+      group by 1 order by 2 desc limit 1
+
+  - id: tp-011
+    group: tp-msg
+    question: How many taxi and app pickups were there near Madison Square Garden in August 2026?
+    category: geographic
+    expect: {workspaces: [rideshare_taxi], places: [Madison Square Garden]}
+    notes: Uses the taxi zones the place covers.
+    gold_sql: |
+      select sum(trips) from gold.agg_trips_zone_hourly
+      where pickup_date between date '2026-08-01' and date '2026-08-31'
+        and pickup_zone_id in (186, 100, 68)
+  - id: tp-012
+    question: How many 311 complaints came from Staten Island in September 2026?
+    category: geographic
+    expect: {workspaces: [city_services], metrics: [request_count]}
+    gold_sql: |
+      select count(*) from gold.fct_service_request
+      where boro_code = 5
+        and created_at >= timezone('America/New_York', timestamp '2026-09-01')
+        and created_at < timezone('America/New_York', timestamp '2026-10-01')
+  - id: tp-014
+    question: How many crashes were there in the 75th precinct in 2025?
+    category: geographic
+    expect: {workspaces: [safety], metrics: [crash_count]}
+    gold_sql: |
+      select count(*) from gold.fct_collision
+      where police_precinct = 75
+        and crashed_at >= timezone('America/New_York', timestamp '2025-01-01')
+        and crashed_at < timezone('America/New_York', timestamp '2026-01-01')
+  - id: tp-015
+    question: How many 311 complaints came from ZIP code 11211 in 2025?
+    category: geographic
+    expect: {workspaces: [city_services]}
+    gold_sql: |
+      select count(*) from gold.fct_service_request
+      where incident_zip = '11211'
+        and created_at >= timezone('America/New_York', timestamp '2025-01-01')
+        and created_at < timezone('America/New_York', timestamp '2026-01-01')
+  - id: tp-016
+    question: Which neighborhoods in the Bronx had the most crashes with injuries in 2025?
+    category: geographic
+    expect: {workspaces: [safety]}
+    compare: {order_matters: true, rows: 5}
+    gold_sql: |
+      select n.nta_name, count(*) from gold.fct_collision c join gold.dim_neighborhood n using (nta_code)
+      where c.has_injury and n.boro_code = 2
+        and c.crashed_at >= timezone('America/New_York', timestamp '2025-01-01')
+        and c.crashed_at < timezone('America/New_York', timestamp '2026-01-01')
+      group by 1 order by 2 desc limit 5
+  - id: tp-017
+    question: How many Citi Bike stations are there in New Jersey?
+    category: geographic
+    expect: {workspaces: [bike]}
+    gold_sql: select count(*) from gold.dim_bike_station where is_new_jersey
+  - id: tp-018
+    question: How many people rode the subway from stations in the congestion zone in June 2025?
+    category: geographic
+    difficulty: hard
+    expect: {workspaces: [subway], metrics: [subway_riders]}
+    gold_sql: |
+      select sum(riders) from gold.fct_subway_ridership_hourly
+      where transit_mode = 'subway' and hour_date between date '2025-06-01' and date '2025-06-30'
+        and complex_id in (select complex_id from gold.dim_subway_station where in_congestion_zone)
+
+  # data that is not there yet
+  - id: tp-019
+    question: How many Citi Bike rides were there yesterday?
+    category: temporal
+    notes: Trip history is published monthly; yesterday is not covered.
+    expect: {classification: unsupported, workspaces: [bike]}
+  - id: tp-020
+    question: How many subway riders were there last week?
+    category: temporal
+    notes: Ridership is published weekly with a delay; check coverage at the as_of time.
+    expect: {classification: unsupported, workspaces: [subway]}
+  - id: tp-021
+    question: How many pedestrians were hit by cars in August 2026?
+    category: temporal
+    notes: Crash data ends in June 2026.
+    expect: {classification: unsupported, workspaces: [safety]}

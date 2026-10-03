@@ -1,0 +1,180 @@
+# as_of for every case: 2026-10-03 12:00 America/New_York unless a case says otherwise.
+# TLC trip files cover January 2024 to August 2026.
+cases:
+  - id: rt-001
+    group: rt-uber-june
+    question: How many Uber trips were there in June 2025?
+    category: single_table
+    expect: {workspaces: [rideshare_taxi], metrics: [app_ride_count], values: [uber]}
+    gold_sql: |
+      select sum(trips) from gold.agg_trips_zone_hourly
+      where service = 'uber' and pickup_date between date '2025-06-01' and date '2025-06-30'
+  - id: rt-002
+    group: rt-uber-june
+    question: Count Uber rides in June 2025.
+    category: single_table
+    expect: {workspaces: [rideshare_taxi], metrics: [app_ride_count], values: [uber]}
+    gold_sql: |
+      select sum(trips) from gold.agg_trips_zone_hourly
+      where service = 'uber' and pickup_date between date '2025-06-01' and date '2025-06-30'
+  - id: rt-003
+    group: rt-uber-june
+    question: What was the total number of Uber pickups during June of 2025?
+    category: single_table
+    expect: {workspaces: [rideshare_taxi], metrics: [app_ride_count], values: [uber]}
+    gold_sql: |
+      select sum(trips) from gold.agg_trips_zone_hourly
+      where service = 'uber' and pickup_date between date '2025-06-01' and date '2025-06-30'
+
+  - id: rt-004
+    question: Which company had more app rides in 2025, Uber or Lyft, and by how many?
+    category: single_table
+    expect: {workspaces: [rideshare_taxi], metrics: [app_ride_count]}
+    gold_sql: |
+      select service, sum(trips) as trips from gold.agg_trips_zone_hourly
+      where service in ('uber', 'lyft') and year(pickup_date) = 2025 group by 1 order by 2 desc
+  - id: rt-005
+    question: What share of app rides were by Lyft in 2024?
+    category: single_table
+    expect: {workspaces: [rideshare_taxi]}
+    gold_sql: |
+      select sum(trips) filter (where service = 'lyft') / sum(trips)
+      from gold.agg_trips_zone_hourly
+      where service not in ('yellow', 'green') and year(pickup_date) = 2024
+
+  - id: rt-006
+    group: rt-busiest-zones
+    question: Which 10 pickup zones had the most Uber and Lyft trips in July 2026?
+    category: multi_join
+    expect: {workspaces: [rideshare_taxi], metrics: [app_ride_count], tables: [gold.dim_taxi_zone]}
+    compare: {order_matters: true}
+    gold_sql: |
+      select z.zone_name, sum(a.trips) as trips
+      from gold.agg_trips_zone_hourly a join gold.dim_taxi_zone z on z.zone_id = a.pickup_zone_id
+      where a.service in ('uber', 'lyft') and a.pickup_date between date '2026-07-01' and date '2026-07-31'
+      group by 1 order by 2 desc limit 10
+  - id: rt-007
+    group: rt-busiest-zones
+    question: Top 10 zones for app pickups in July 2026
+    category: multi_join
+    expect: {workspaces: [rideshare_taxi], metrics: [app_ride_count], tables: [gold.dim_taxi_zone]}
+    compare: {order_matters: true}
+    gold_sql: |
+      select z.zone_name, sum(a.trips) as trips
+      from gold.agg_trips_zone_hourly a join gold.dim_taxi_zone z on z.zone_id = a.pickup_zone_id
+      where a.service not in ('yellow', 'green') and a.pickup_date between date '2026-07-01' and date '2026-07-31'
+      group by 1 order by 2 desc limit 10
+
+  - id: rt-013
+    question: How did daily yellow taxi trips change after congestion pricing started? Compare December 2024 with February 2025.
+    category: temporal
+    difficulty: hard
+    expect: {workspaces: [rideshare_taxi], metrics: [taxi_ride_count]}
+    compare: {tolerance: 0.01}
+    gold_sql: |
+      select date_trunc('month', pickup_date) as month, sum(trips) / count(distinct pickup_date) as trips_per_day
+      from gold.agg_trips_zone_hourly
+      where service = 'yellow' and (pickup_date between date '2024-12-01' and date '2024-12-31'
+                                    or pickup_date between date '2025-02-01' and date '2025-02-28')
+      group by 1
+
+  - id: rt-016
+    question: What share of the base fare went to drivers on Uber versus Lyft in August 2026?
+    category: single_table
+    expect: {workspaces: [rideshare_taxi], metrics: [driver_share_of_fare]}
+    compare: {tolerance: 0.01}
+    gold_sql: |
+      select company, sum(driver_pay_usd) / sum(base_fare_usd)
+      from gold.fct_rideshare_trip
+      where pickup_at >= timezone('America/New_York', timestamp '2026-08-01')
+        and pickup_at < timezone('America/New_York', timestamp '2026-09-01')
+        and is_plausible and company in ('Uber', 'Lyft')
+      group by 1
+  - id: rt-018
+    question: What do taxi riders who pay by card tip, as a percentage of the fare, in 2025?
+    category: single_table
+    expect: {workspaces: [rideshare_taxi], metrics: [taxi_card_tip_pct]}
+    compare: {tolerance: 0.005}
+    gold_sql: |
+      select sum(tip_usd) / sum(fare_usd) from gold.fct_taxi_trip
+      where pickup_at >= timezone('America/New_York', timestamp '2025-01-01')
+        and pickup_at < timezone('America/New_York', timestamp '2026-01-01')
+        and is_plausible and payment_type = 'credit card'
+
+  - id: rt-019
+    question: Which hour of the day has the most taxi and app pickups on weekdays, based on 2025?
+    category: temporal
+    expect: {workspaces: [rideshare_taxi], metrics: [trip_count]}
+    compare: {order_matters: true, rows: 1}
+    gold_sql: |
+      select pickup_hour, sum(trips) from gold.agg_trips_zone_hourly
+      where year(pickup_date) = 2025 and isodow(pickup_date) between 1 and 5
+      group by 1 order by 2 desc limit 1
+  - id: rt-022
+    question: What was the average taxi trip distance by borough of pickup in 2025?
+    category: multi_join
+    expect: {workspaces: [rideshare_taxi], metrics: [avg_trip_miles]}
+    compare: {tolerance: 0.01}
+    gold_sql: |
+      select z.borough, sum(a.trip_miles_sum) / sum(a.trips)
+      from gold.agg_trips_zone_hourly a join gold.dim_taxi_zone z on z.zone_id = a.pickup_zone_id
+      where a.service in ('yellow', 'green') and year(a.pickup_date) = 2025
+      group by 1
+  - id: rt-023
+    question: How many green taxi street hails were there in 2025?
+    category: single_table
+    expect: {workspaces: [rideshare_taxi], tables: [gold.fct_taxi_trip]}
+    gold_sql: |
+      select count(*) from gold.fct_taxi_trip
+      where taxi_type = 'green' and is_street_hail and is_plausible
+        and pickup_at >= timezone('America/New_York', timestamp '2025-01-01')
+        and pickup_at < timezone('America/New_York', timestamp '2026-01-01')
+  - id: rt-024
+    question: What share of yellow taxi trips were paid in cash in August 2026?
+    category: single_table
+    expect: {workspaces: [rideshare_taxi], tables: [gold.fct_taxi_trip]}
+    compare: {tolerance: 0.005}
+    gold_sql: |
+      select avg(case when payment_type = 'cash' then 1.0 else 0.0 end) from gold.fct_taxi_trip
+      where taxi_type = 'yellow' and is_plausible
+        and pickup_at >= timezone('America/New_York', timestamp '2026-08-01')
+        and pickup_at < timezone('America/New_York', timestamp '2026-09-01')
+  - id: rt-025
+    question: How many app rides were in wheelchair accessible vehicles in August 2026?
+    category: single_table
+    expect: {workspaces: [rideshare_taxi], tables: [gold.fct_rideshare_trip]}
+    gold_sql: |
+      select count(*) from gold.fct_rideshare_trip
+      where wav_matched and is_plausible
+        and pickup_at >= timezone('America/New_York', timestamp '2026-08-01')
+        and pickup_at < timezone('America/New_York', timestamp '2026-09-01')
+  - id: rt-027
+    question: Compare app rides on Thanksgiving Day 2025 with the Thursday a week before.
+    category: temporal
+    difficulty: hard
+    expect: {workspaces: [rideshare_taxi], metrics: [app_ride_count]}
+    gold_sql: |
+      select pickup_date, sum(trips) from gold.agg_trips_zone_hourly
+      where service not in ('yellow', 'green') and pickup_date in (date '2025-11-27', date '2025-11-20')
+      group by 1
+  - id: rt-028
+    question: How many Uber trips were there last month?
+    category: temporal
+    notes: As of 3 Oct 2026 last month is September 2026, which TLC has not published yet.
+    expect: {classification: unsupported, workspaces: [rideshare_taxi]}
+  - id: rt-029
+    question: How many taxi rides did people take in Midtown Center in July 2026?
+    category: geographic
+    expect: {workspaces: [rideshare_taxi], metrics: [taxi_ride_count], values: [Midtown Center]}
+    gold_sql: |
+      select sum(trips) from gold.agg_trips_zone_hourly
+      where service in ('yellow', 'green') and pickup_zone_id = 161
+        and pickup_date between date '2026-07-01' and date '2026-07-31'
+  - id: rt-030
+    question: Average app trips per day from the Times Square taxi zone in 2025
+    category: geographic
+    expect: {workspaces: [rideshare_taxi], values: [Times Sq/Theatre District]}
+    compare: {tolerance: 0.01}
+    gold_sql: |
+      select sum(trips) / 365.0 from gold.agg_trips_zone_hourly
+      where service not in ('yellow', 'green') and pickup_zone_id = 230 and year(pickup_date) = 2025

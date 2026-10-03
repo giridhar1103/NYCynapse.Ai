@@ -1,0 +1,92 @@
+# Questions that only work if words are matched to the values the data actually uses.
+cases:
+  - id: gr-001
+    group: gr-bedstuy-rats
+    question: How many rat sightings were reported in Bed-Stuy in 2025?
+    category: grounding
+    expect: {workspaces: [city_services], values: [Rat Sighting, Bedford-Stuyvesant (East), Bedford-Stuyvesant (West)]}
+    gold_sql: |
+      select count(*) from gold.fct_service_request
+      where descriptor = 'Rat Sighting'
+        and nta_code in (select nta_code from gold.dim_neighborhood where nta_name like 'Bedford-Stuyvesant%')
+        and created_at >= timezone('America/New_York', timestamp '2025-01-01')
+        and created_at < timezone('America/New_York', timestamp '2026-01-01')
+  - id: gr-002
+    group: gr-bedstuy-rats
+    question: Rats seen in Bedford-Stuyvesant during 2025, how many reports?
+    category: grounding
+    expect: {workspaces: [city_services], values: [Rat Sighting]}
+    gold_sql: |
+      select count(*) from gold.fct_service_request
+      where descriptor = 'Rat Sighting'
+        and nta_code in (select nta_code from gold.dim_neighborhood where nta_name like 'Bedford-Stuyvesant%')
+        and created_at >= timezone('America/New_York', timestamp '2025-01-01')
+        and created_at < timezone('America/New_York', timestamp '2026-01-01')
+  - id: gr-005
+    question: How many graffiti complaints were there in SoHo in 2025?
+    category: grounding
+    expect: {workspaces: [city_services], values: [Graffiti, SoHo-Little Italy-Hudson Square]}
+    gold_sql: |
+      select count(*) from gold.fct_service_request
+      where complaint_type = 'Graffiti'
+        and nta_code = (select nta_code from gold.dim_neighborhood where nta_name = 'SoHo-Little Italy-Hudson Square')
+        and created_at >= timezone('America/New_York', timestamp '2025-01-01')
+        and created_at < timezone('America/New_York', timestamp '2026-01-01')
+  - id: gr-006
+    question: How many complaints about barking dogs were made in Park Slope since 2024?
+    category: grounding
+    expect: {workspaces: [city_services], values: ["Noise, Barking Dog (NR5)", Park Slope]}
+    gold_sql: |
+      select count(*) from gold.fct_service_request
+      where descriptor = 'Noise, Barking Dog (NR5)'
+        and nta_code = (select nta_code from gold.dim_neighborhood where nta_name = 'Park Slope')
+  - id: gr-009
+    group: gr-hells-kitchen-noise
+    question: How many noise complaints came from Hells Kitchen in August 2026?
+    category: grounding
+    expect: {workspaces: [city_services], values: [Hell's Kitchen]}
+    gold_sql: |
+      select count(*) from gold.fct_service_request
+      where complaint_type ilike 'noise%'
+        and nta_code = (select nta_code from gold.dim_neighborhood where nta_name = 'Hell''s Kitchen')
+        and created_at >= timezone('America/New_York', timestamp '2026-08-01')
+        and created_at < timezone('America/New_York', timestamp '2026-09-01')
+  - id: gr-010
+    group: gr-hells-kitchen-noise
+    question: Noise complaints in Hell's Kitchen, August 2026
+    category: grounding
+    expect: {workspaces: [city_services], values: [Hell's Kitchen]}
+    gold_sql: |
+      select count(*) from gold.fct_service_request
+      where complaint_type ilike 'noise%'
+        and nta_code = (select nta_code from gold.dim_neighborhood where nta_name = 'Hell''s Kitchen')
+        and created_at >= timezone('America/New_York', timestamp '2026-08-01')
+        and created_at < timezone('America/New_York', timestamp '2026-09-01')
+  - id: gr-011
+    question: How many crashes in Astoria involved someone being hurt in 2025?
+    category: grounding
+    notes: Astoria spans several NTAs; Astoria Park is a park NTA and has few crashes.
+    expect: {workspaces: [safety]}
+    gold_sql: |
+      select count(*) from gold.fct_collision
+      where has_injury
+        and nta_code in (select nta_code from gold.dim_neighborhood where nta_name like '%Astoria%')
+        and crashed_at >= timezone('America/New_York', timestamp '2025-01-01')
+        and crashed_at < timezone('America/New_York', timestamp '2026-01-01')
+  - id: gr-012
+    question: How many people entered the subway at Grand Central in July 2025?
+    category: grounding
+    expect: {workspaces: [subway], metrics: [subway_riders], places: [Grand Central]}
+    gold_sql: |
+      select sum(riders) from gold.fct_subway_ridership_hourly
+      where complex_name ilike 'Grand Central-42 St%' and transit_mode = 'subway'
+        and hour_date between date '2025-07-01' and date '2025-07-31'
+  - id: gr-017
+    question: How many wind advisories were there in 2025?
+    category: grounding
+    expect: {workspaces: [weather], values: [Wind Advisory]}
+    gold_sql: |
+      select count(distinct event_key) from gold.fct_weather_alert
+      where event_name = 'Wind Advisory'
+        and starts_at >= timezone('America/New_York', timestamp '2025-01-01')
+        and starts_at < timezone('America/New_York', timestamp '2026-01-01')
