@@ -29,6 +29,7 @@ from sqlglot import exp
 from .. import guard
 from ..evals.execute import run
 from ..evals.system import Answer
+from ..llm.client import ProviderLimit
 from .cards import (
     instruction_lines,
     metric_catalog,
@@ -402,6 +403,8 @@ class PipelineSystem:
         t0 = time.monotonic()
         try:
             s = self.graph.invoke({"question": question, "as_of": as_of, "repairs": 0})
+        except ProviderLimit:
+            raise
         except Exception as e:  # noqa: BLE001 - a crash is scored as a failed answer
             return Answer(
                 "error",

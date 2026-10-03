@@ -164,24 +164,47 @@ def evaluate(
     meta: dict,
     progress=print,
 ) -> dict:
+    """Run and score every case. Each result is appended to a .partial.jsonl file as it
+    finishes, so a run stopped by a provider limit resumes where it stopped."""
+    from ..llm.client import ProviderLimit
+
+    out.parent.mkdir(parents=True, exist_ok=True)
+    partial = out.with_suffix(".partial.jsonl")
+    done: dict[str, CaseResult] = {}
+    if partial.exists():
+        for line in partial.read_text().splitlines():
+            d = json.loads(line)
+            done[d["id"]] = CaseResult(**d)
     gold_cache: dict[str, Execution] = {}
     results: list[CaseResult] = []
-    for i, case in enumerate(cases, 1):
-        if case.gold_sql and case.id not in gold_cache:
-            gold_cache[case.id] = run(con, case.gold_sql, timeout_s=300)
-        answer = system.answer(case.question, case.as_of)
-        res = score(case, answer, gold_cache.get(case.id), con)
-        results.append(res)
-        progress(
-            f"[{i}/{len(cases)}] {case.id:8} {'ok ' if res.correct else 'MISS'} "
-            f"{res.predicted:11} {res.match_reason or res.guard_reason or res.error or ''}"
-        )
+    with partial.open("a") as log:
+        for i, case in enumerate(cases, 1):
+            if case.id in done:
+                results.append(done[case.id])
+                continue
+            if case.gold_sql and case.id not in gold_cache:
+                gold_cache[case.id] = run(con, case.gold_sql, timeout_s=300)
+            try:
+                answer = system.answer(case.question, case.as_of)
+            except ProviderLimit as e:
+                raise SystemExit(
+                    f"stopped at {case.id}: provider limit ({e}). "
+                    f"Rerun with --resume {out} to continue."
+                ) from e
+            res = score(case, answer, gold_cache.get(case.id), con)
+            results.append(res)
+            log.write(json.dumps(asdict(res), default=str) + "\n")
+            log.flush()
+            progress(
+                f"[{i}/{len(cases)}] {case.id:8} {'ok ' if res.correct else 'MISS'} "
+                f"{res.predicted:11} {res.match_reason or res.guard_reason or res.error or ''}"
+            )
     summary = summarize(results)
     report = {
         "meta": {**meta, "finished_at": time.strftime("%Y-%m-%dT%H:%M:%S%z")},
         "summary": summary,
         "results": [asdict(r) for r in results],
     }
-    out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(report, indent=1, default=str))
+    partial.unlink(missing_ok=True)
     return summary

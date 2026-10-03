@@ -30,6 +30,14 @@ class LLMError(Exception):
     pass
 
 
+class ProviderLimit(Exception):  # noqa: N818
+    """The provider refused for quota reasons. Not an answer failure: callers should stop and
+    resume later rather than record it against the question."""
+
+
+LIMIT_MARKERS = ("session limit", "usage limit", "rate limit", "quota", "too many requests")
+
+
 @dataclass
 class LLMResult:
     text: str
@@ -217,6 +225,8 @@ def complete(
             with _lock:
                 return _IMPL[p["type"]](pid, p, system, prompt, schema)
         except LLMError as e:
+            if any(m in str(e).lower() for m in LIMIT_MARKERS):
+                raise ProviderLimit(str(e)[:300]) from e
             last = e
             time.sleep(3 * (attempt + 1))
     raise LLMError(f"{role} failed after {retries + 1} attempts: {last}")
