@@ -39,8 +39,8 @@ def connect(
     con.execute("USE lake")
     # DuckLake reads its own Parquet files, so file access is limited to the lake's data
     # directory rather than switched off. That still allows COPY TO inside it, which is why
-    # the SQL guard only lets SELECT through and the query worker runs as a user that cannot
-    # write there.
+    # the SQL guard only lets SELECT through, and the API service gets the lake mounted
+    # read-only and a Postgres role that can only read the catalog.
     con.execute(f"SET allowed_directories = ['{settings.lake_data_path}/']")
     con.execute("SET enable_external_access = false")
     con.execute("SET autoinstall_known_extensions = false")

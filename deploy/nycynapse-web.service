@@ -1,0 +1,29 @@
+[Unit]
+Description=NYCynapse site and API
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+WorkingDirectory=/root/NYCynapse
+EnvironmentFile=/root/.secrets/nycynapse-web.env
+Environment=HOME=/root
+Environment=PYTHONUNBUFFERED=1
+Environment=PATH=/root/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/root/NYCynapse/.venv/bin/uvicorn nycynapse.api.app:app --host 127.0.0.1 --port 8031 --workers 1 --proxy-headers --forwarded-allow-ips 127.0.0.1
+Restart=on-failure
+RestartSec=5
+MemoryMax=1200M
+CPUQuota=150%
+TasksMax=96
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+# The lake is visible to this process but cannot be written, whatever SQL gets through.
+ReadOnlyPaths=/srv/nycynapse/lake
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target
