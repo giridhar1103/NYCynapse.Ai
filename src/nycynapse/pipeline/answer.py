@@ -74,7 +74,8 @@ def write_answer(
     return w
 
 
-NUMBER = re.compile(r"(?<![\w.])-?\d[\d,]*(?:\.\d+)?")
+# Commas only count as thousands separators, so "in September 2026, the A" reads as 2026.
+NUMBER = re.compile(r"(?<![\w.])-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?")
 
 
 def unsupported_numbers(text: str, rows: list, context: str = "") -> list[str]:
