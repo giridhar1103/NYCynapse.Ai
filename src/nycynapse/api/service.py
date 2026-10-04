@@ -226,7 +226,7 @@ def _stage_detail(node: str, change: dict, state: dict) -> dict:
         return {
             "guard": (g.ok if g else None),
             "rows": len(ex.rows) if ex else 0,
-            "ms": ex.ms if ex else None,
+            "query_ms": ex.ms if ex else None,
             "problem": change.get("problem"),
             "abstain": change.get("abstain"),
         }
