@@ -113,6 +113,27 @@ def test_day_part_uses_local_columns(compiler):
     assert "(isodow(t0.crash_date) between 1 and 5 and (t0.crash_hour between 7 and 9" in sql
 
 
+def test_grouping_by_a_list_counts_each_value(compiler):
+    sql = sql_of(
+        compiler,
+        model="subway_alerts",
+        metrics=["subway_alert_count"],
+        group_by=["subway_alerts.routes"],
+    )
+    assert "CROSS JOIN unnest(t0.route_ids) AS u0(value)" in sql
+    assert "u0.value AS routes" in sql
+
+
+def test_filtering_a_list_matches_any_value(compiler):
+    sql = sql_of(
+        compiler,
+        model="subway_alerts",
+        metrics=["subway_alert_count"],
+        filters=[{"field": "subway_alerts.routes", "op": "in", "values": ["A", "C"]}],
+    )
+    assert "list_has_any(t0.route_ids, ['A', 'C'])" in sql
+
+
 def test_place_becomes_code_list(compiler):
     places = {"JFK Airport": {"taxi_zone": [("132", "JFK Airport")]}}
     plan = {

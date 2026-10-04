@@ -125,6 +125,12 @@ class Compiler:
             a = alias_for(model, role)
             return _qualify(self._dim_sql(m, dim), a)
 
+        def is_list(ref: str) -> bool:
+            if ref.startswith("time:"):
+                return False
+            model, _, dim = _split(ref)
+            return any(d.name == dim and d.kind == "list" for d in self._model(model).dimensions)
+
         where: list[str] = []
         # time
         if plan.use_time_window and window is not None and not window.is_now:
@@ -147,6 +153,11 @@ class Compiler:
                 cond = rel.condition.replace("{left}", "t0").replace("{right}", "x")
                 pred = _predicate(_qualify(self._dim_sql(other, dim), "x"), f.op, f.values)
                 exists.append(f"EXISTS (SELECT 1 FROM {other.table} x WHERE {cond} AND {pred})")
+            elif is_list(f.field) and f.op in ("=", "in", "not in"):
+                # A list column holds several values per row (an alert naming three lines).
+                values = ", ".join(_lit(v) for v in f.values)
+                neg = "NOT " if f.op == "not in" else ""
+                where.append(f"{neg}list_has_any({field_sql(f.field)}, [{values}])")
             else:
                 where.append(_predicate(field_sql(f.field), f.op, f.values))
         for p in plan.places:
@@ -171,7 +182,15 @@ class Compiler:
             for f in self._default_filters(base, src):
                 if f not in filters:
                     filters.append(f)
-        groups = [(field_sql(g), _name(g)) for g in plan.group_by]
+        groups = []
+        for g in plan.group_by:
+            if is_list(g):
+                # Grouping by a list counts each value once per row that names it.
+                u = f"u{len(groups)}"
+                join_sql.append(f"CROSS JOIN unnest({field_sql(g)}) AS {u}(value)")
+                groups.append((f"{u}.value", _name(g)))
+            else:
+                groups.append((field_sql(g), _name(g)))
         semi = [m for m in metrics if m.additivity == "semi_additive"]
         if semi:
             return self._semi_additive(
