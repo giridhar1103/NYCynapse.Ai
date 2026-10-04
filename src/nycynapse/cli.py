@@ -22,6 +22,8 @@ def main(argv: list[str] | None = None) -> int:
     er.add_argument("--only", help="comma separated case ids")
     er.add_argument("--limit", type=int)
     er.add_argument("--resume", help="report path of a stopped run to continue")
+    ep = sub.add_parser("eval-publish", help="copy a run's summary to evals/results for the site")
+    ep.add_argument("report", nargs="+")
     pub = sub.add_parser("publish", help="validate, then publish the catalog to Postgres")
     pub.add_argument("--no-lake", action="store_true", help="skip the value index and places")
     args = parser.parse_args(argv)
@@ -160,6 +162,24 @@ def main(argv: list[str] | None = None) -> int:
         summary = evaluate(system, cases, con, out, meta=meta)
         print(json.dumps(summary, indent=1))
         print(f"report: {out}")
+        return 0
+
+    if args.cmd == "eval-publish":
+        results = settings.semantic_path.parent / "evals" / "results"
+        results.mkdir(exist_ok=True)
+        for path in args.report:
+            run = json.loads(Path(path).read_text())
+            meta = run["meta"]
+            if meta.get("split") == "all":
+                print(f"skipped {path}: publish one split at a time")
+                continue
+            key = meta["system"].split()[0].lower()
+            # Summaries only. Per-case results would reveal the holdout questions.
+            out = results / f"{meta['split']}-{key}.json"
+            out.write_text(
+                json.dumps({"id": key, **meta, "summary": run["summary"]}, indent=1) + "\n"
+            )
+            print(f"wrote {out}")
         return 0
 
     if args.cmd == "publish":
