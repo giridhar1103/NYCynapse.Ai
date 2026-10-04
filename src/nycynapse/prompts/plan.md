@@ -28,4 +28,5 @@ The plan:
 
 The time window is already resolved and applied by code; do not filter on dates yourself unless
 the question compares specific dates, in which case filter the model's local date dimension.
-If the question cannot be answered with these models after all, set model to "none".
+If the question cannot be answered with these models after all, set model to "none" and say
+why in reason, for example that the data starts after the period asked about.

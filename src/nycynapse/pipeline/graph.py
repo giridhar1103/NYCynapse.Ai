@@ -187,6 +187,16 @@ def build(ctx: Context, *, grounding: bool, planning: bool = False, examples: bo
             previous=state.get("plan_raw") if retry else None,
             problem=retry,
         )
+        if p.declined:
+            return {
+                "plan": None,
+                "plan_raw": p.raw,
+                "problem": None,
+                "abstain": f"I can't answer that from this data: {p.declined}",
+                "plan_attempts": state.get("plan_attempts", 0) + 1,
+                **_spend(state, p),
+                "log": _log(state, "plan", plan=p.raw, declined=p.declined),
+            }
         return {
             "plan": p.plan,
             "plan_raw": p.raw,
@@ -216,6 +226,8 @@ def build(ctx: Context, *, grounding: bool, planning: bool = False, examples: bo
         }
 
     def after_compile(state: State) -> str:
+        if state.get("abstain"):
+            return END
         if state.get("sql"):
             return "run"
         if state.get("plan_attempts", 0) < 2:
@@ -313,7 +325,9 @@ def build(ctx: Context, *, grounding: bool, planning: bool = False, examples: bo
         g.add_edge("context", "plan")
         g.add_edge("plan", "compile")
         g.add_conditional_edges(
-            "compile", after_compile, {"run": "run", "plan": "plan", "generate": "generate"}
+            "compile",
+            after_compile,
+            {"run": "run", "plan": "plan", "generate": "generate", END: END},
         )
         g.add_conditional_edges("repair", after_repair, {"plan": "plan", "generate": "generate"})
     else:

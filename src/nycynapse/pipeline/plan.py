@@ -17,11 +17,16 @@ class Planned:
     tokens_out: int = 0
     cost_usd: float = 0.0
     error: str | None = None
+    declined: str | None = None
 
 
 def plan_schema() -> dict:
     schema = Plan.model_json_schema()
     schema["properties"]["model"]["description"] = "semantic model name, or none"
+    schema["properties"]["reason"] = {
+        "type": "string",
+        "description": "when model is none: what the data lacks, in one sentence for the reader",
+    }
     return schema
 
 
@@ -47,8 +52,12 @@ def make_plan(
         "tokens_out": r.tokens_out or 0,
         "cost_usd": r.cost_usd or 0.0,
     }
+    reason = raw.pop("reason", None)
     if raw.get("model") in (None, "none"):
-        return Planned(None, raw, error="planner found no model", **spent)
+        # A deliberate "the data cannot answer this", not a broken plan: say so instead of
+        # pushing for another attempt, which tends to produce a confident wrong answer.
+        why = (reason or "").strip() or "the data available does not cover this question."
+        return Planned(None, raw, error="planner found no model", declined=why, **spent)
     try:
         return Planned(Plan(**raw), raw, **spent)
     except ValidationError as e:
