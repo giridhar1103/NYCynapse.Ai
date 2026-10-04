@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NYCynapse</title>
+<meta name="description" content="Ask questions about New York City in plain English. Answers come from open city data, with the SQL and every step shown.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%232a78d6'/%3E%3Ctext x='16' y='22' font-family='Helvetica,Arial' font-weight='700' font-size='17' fill='white' text-anchor='middle'%3EN%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="static/style.css?v=1">
+</head>
+<body>
+<main class="wrap">
+  <section class="hero">
+    <h1>Ask New York.</h1>
+    <p>Taxi and app rides, the subway, Citi Bike, 311, crashes, road speeds and weather, from January 2024 to a few minutes ago. Every answer shows the SQL that produced it and how it got there.</p>
+    <form class="ask" id="ask">
+      <input id="q" name="q" autocomplete="off" maxlength="400" placeholder="Which subway lines had the worst delays yesterday?" aria-label="Your question">
+      <button id="go" type="submit">Ask</button>
+    </form>
+    <div class="hint" id="hint">Times are New York time. Try one of the examples below.</div>
+  </section>
+
+  <div class="strip" id="strip" hidden>
+    <ol id="stations"><div class="fill" id="fill"></div></ol>
+  </div>
+
+  <article class="card answer" id="answer" hidden></article>
+
+  <section class="block">
+    <h2 class="rule">Examples by line</h2>
+    <div class="boards" id="boards"></div>
+  </section>
+
+  <section class="block">
+    <h2 class="rule">Recently asked</h2>
+    <div class="recent" id="recent"><span class="hint">Loading…</span></div>
+  </section>
+</main>
+<script src="static/app.js?v=1"></script>
+<script>
+const { el, get, url, bullet, table, chart, tabs, fmt, ago } = NY;
+NY.header("");
+
+const STATIONS = [
+  ["understand", "Understand"], ["retrieve", "Find tables"], ["ground", "Match names"],
+  ["context", "Gather context"], ["plan", "Plan"], ["compile", "Compile SQL"], ["run", "Check and run"],
+];
+const $ = (id) => document.getElementById(id);
+let busy = false;
+
+function resetStrip() {
+  const ol = $("stations");
+  ol.querySelectorAll(".station").forEach((n) => n.remove());
+  for (const [id, name] of STATIONS) {
+    ol.append(el("li", { class: "station", "data-id": id },
+      el("div", { class: "dot" }), el("div", { class: "name" }, name), el("div", { class: "note" }, "")));
+  }
+  $("fill").style.width = "0";
+  $("strip").hidden = false;
+  mark(0, "active");
+}
+
+function station(id) { return $("stations").querySelector(`[data-id="${id}"]`); }
+
+function mark(index, cls) {
+  const all = [...$("stations").querySelectorAll(".station")];
+  const n = all[index];
+  if (!n) return;
+  if (cls === "active") all.forEach((s) => s.classList.remove("active"));
+  n.classList.add(cls);
+  if (cls === "done") {
+    n.classList.remove("active");
+    $("fill").style.width = Math.max(0, n.offsetLeft - all[0].offsetLeft) + "px";
+    if (all[index + 1]) mark(index + 1, "active");
+  }
+}
+
+function noteFor(s) {
+  switch (s.stage) {
+    case "understand":
+      if (s.classification && s.classification !== "answerable") return s.classification;
+      return s.window || (s.workspaces || []).join(", ");
+    case "retrieve": return (s.models || []).slice(0, 3).join(", ");
+    case "ground":
+      if (s.matches && s.matches.length) return s.matches.slice(0, 2).map((m) => `${m.mention} → ${m.value}`).join("; ");
+      if (s.places && s.places.length) return s.places.join(", ");
+      return "nothing to match";
+    case "plan": return s.problem ? "plan rejected, retrying" : "typed plan ready";
+    case "compile": return s.problem ? "could not compile" : "from governed metrics";
+    case "generate": return s.problem ? "problem found" : "SQL written";
+    case "run":
+      if (s.abstain) return "data does not cover this";
+      if (s.problem) return "problem: retrying";
+      return s.query_ms != null ? `${NY.plural(s.rows, "row")} · ${fmt(s.query_ms)} ms` : NY.plural(s.rows, "row");
+    case "repair": return "fixing the query";
+  }
+  return "";
+}
+
+function onStage(s) {
+  if (s.stage === "start") return;
+  const idx = STATIONS.findIndex(([id]) => id === s.stage);
+  if (s.stage === "generate") {
+    // Free-form path: no plan, the model writes SQL directly.
+    const p = station("plan"), c = station("compile");
+    p.querySelector(".name").textContent = "Write SQL";
+    p.querySelector(".note").textContent = noteFor(s);
+    c.classList.add("skipped"); c.querySelector(".note").textContent = "not needed";
+    mark(4, "done"); mark(5, "done");
+    return;
+  }
+  if (s.stage === "repair") {
+    const r = station("run");
+    r.classList.add("repair"); r.querySelector(".note").textContent = "repairing";
+    return;
+  }
+  if (idx < 0) return;
+  station(s.stage).querySelector(".note").textContent = noteFor(s);
+  if (s.stage === "understand" && s.classification && s.classification !== "answerable") {
+    // Nothing else will run; mark the rest as skipped.
+    mark(0, "done");
+    [...$("stations").querySelectorAll(".station")].slice(1).forEach((n) => { n.classList.remove("active"); n.classList.add("skipped"); });
+    return;
+  }
+  mark(idx, "done");
+}
+
+let result = null;
+
+function renderAnswer(a) {
+  const card = $("answer");
+  card.replaceChildren();
+  card.hidden = false;
+  card.classList.toggle("abstain", a.classification !== "answerable");
+  card.append(el("p", { class: "text" }, a.answer || "No answer."));
+  const pills = el("div", { class: "pills" });
+  if (a.window) pills.append(el("span", { class: "pill" }, el("span", { class: "bullet b0" }, "◷"), a.window));
+  for (const e of a.evidence || []) pills.append(el("span", { class: "pill" }, el("span", { class: "bullet b1" }, "✓"), e));
+  if (pills.childNodes.length) card.append(pills);
+  if (a.caveats && a.caveats.length) card.append(el("ul", { class: "caveats" }, a.caveats.map((c) => el("li", {}, c))));
+  if (result && result.columns && result.columns.length) {
+    const defs = [];
+    const c = chart(a.chart, result.columns, result.rows);
+    if (c) defs.push(["Chart", c]);
+    defs.push([`Table (${NY.plural(result.rows.length, "row")})`, table(result.columns, result.rows)]);
+    if (result.sql) defs.push(["SQL", el("pre", { class: "code" }, result.sql)]);
+    card.append(tabs(defs));
+  }
+  const meta = el("div", { class: "meta-row" },
+    el("span", {}, `${(a.latency_ms / 1000).toFixed(1)} s`),
+    a.cached ? el("span", {}, "answered from a recent identical question") : el("span", {}, `$${(a.cost_usd || 0).toFixed(3)} in model calls`),
+    a.trace_id ? el("a", { href: url(`trace?id=${a.trace_id}`) }, "Full trace") : null);
+  card.append(meta);
+}
+
+function showError(msg) {
+  const card = $("answer");
+  card.hidden = false;
+  card.replaceChildren(el("div", { class: "error-box" }, msg));
+  document.querySelectorAll(".station.active").forEach((n) => n.classList.remove("active"));
+}
+
+async function ask(q) {
+  if (busy || !q || q.trim().length < 3) return;
+  busy = true; $("go").disabled = true; result = null;
+  $("q").value = q;
+  history.replaceState(null, "", "?q=" + encodeURIComponent(q));
+  $("answer").hidden = true;
+  resetStrip();
+  try {
+    const r = await fetch(url("api/ask?q=" + encodeURIComponent(q)), { headers: { Accept: "text/event-stream" } });
+    if (!r.ok) {
+      let msg = "Something went wrong.";
+      try { msg = (await r.json()).detail || msg; } catch (_) { /* not json */ }
+      if (Array.isArray(msg)) msg = "Questions need between 3 and 400 characters.";
+      return showError(msg);
+    }
+    const reader = r.body.getReader(), dec = new TextDecoder();
+    let buf = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let cut;
+      while ((cut = buf.indexOf("\n\n")) >= 0) {
+        const chunk = buf.slice(0, cut); buf = buf.slice(cut + 2);
+        const ev = (chunk.match(/^event: (.*)$/m) || [])[1];
+        const data = (chunk.match(/^data: (.*)$/m) || [])[1];
+        if (!ev || !data) continue;
+        const d = JSON.parse(data);
+        if (ev === "stage") onStage(d);
+        else if (ev === "result") result = d;
+        else if (ev === "answer") renderAnswer(d);
+        else if (ev === "error") showError(d.message);
+      }
+    }
+  } catch (e) {
+    showError("Lost the connection while answering. Try again.");
+  } finally {
+    busy = false; $("go").disabled = false;
+    document.querySelectorAll(".station.active").forEach((n) => n.classList.remove("active"));
+    loadRecent();
+  }
+}
+
+$("ask").addEventListener("submit", (e) => { e.preventDefault(); ask($("q").value); });
+
+async function loadBoards() {
+  try {
+    const c = await get("api/catalog");
+    const box = $("boards");
+    for (const w of c.workspaces) {
+      if (!w.questions || !w.questions.length) continue;
+      box.append(el("div", { class: "card board" },
+        el("h3", {}, bullet(w.id, true), w.label),
+        w.questions.map((q) => el("button", { type: "button", onclick: () => { scrollTo({ top: 0, behavior: "smooth" }); ask(q); } }, q))));
+    }
+  } catch (e) {
+    $("boards").append(el("div", { class: "error-box" }, "Could not load examples: " + e.message));
+  }
+}
+
+async function loadRecent() {
+  try {
+    const rows = await get("api/recent?limit=10");
+    const box = $("recent");
+    box.replaceChildren();
+    if (!rows.length) return box.append(el("span", { class: "hint" }, "Nothing yet."));
+    for (const r of rows) box.append(el("a", { href: url(`trace?id=${r.id}`) },
+      el("span", { class: "q" }, r.question), el("span", { class: "t" }, ago(r.asked_at))));
+  } catch (_) {
+    $("recent").replaceChildren(el("span", { class: "hint" }, "Unavailable right now."));
+  }
+}
+
+loadBoards();
+loadRecent();
+const first = new URLSearchParams(location.search).get("q");
+if (first) ask(first);
+</script>
+</body>
+</html>
