@@ -33,17 +33,32 @@ app = FastAPI(title="NYCynapse", docs_url=None, redoc_url=None)
 _busy = threading.Semaphore(1)
 _queue = threading.Semaphore(WAITING + 1)
 _state: dict = {}
+_setup = threading.Lock()
 
 
 def answerer() -> Answerer:
-    if "answerer" not in _state:
-        con = lake.connect(settings)
-        _state["answerer"] = Answerer(Context(settings, con, store.connect(settings.app_pg_dsn)))
+    with _setup:
+        if "answerer" not in _state:
+            con = lake.connect(settings)
+            ctx = Context(settings, con, store.connect(settings.app_pg_dsn))
+            _state["answerer"] = Answerer(ctx)
     return _state["answerer"]
 
 
+@app.on_event("startup")
+def warm_up():
+    # Loading the embedding model takes several seconds; do it before the first reader asks.
+    threading.Thread(target=lambda: answerer().ctx.embed("warm up"), daemon=True).start()
+
+
 def _client(request: Request) -> str:
-    ip = request.headers.get("x-real-ip") or (request.client.host if request.client else "?")
+    # Behind the site's proxy every request comes from the same few addresses, so the proxy
+    # passes the reader's address along.
+    ip = (
+        request.headers.get("x-client-ip")
+        or request.headers.get("x-real-ip")
+        or (request.client.host if request.client else "?")
+    )
     return client_hash(ip)
 
 
@@ -138,10 +153,11 @@ def recent(limit: int = 12):
 
 @app.get("/api/freshness")
 def freshness():
-    con = answerer().ctx.lake
+    # A cursor of its own: a question may be using the main connection right now.
+    con = answerer().ctx.lake.cursor()
     rows = con.execute(
         "SELECT table_name, domain, cadence, coverage_start, coverage_end, row_count, "
-        "last_success_at, is_stale, hours_since_latest_event FROM gold.ops_source_freshness "
+        "last_success_at, is_stale, hours_since_latest_event FROM lake.gold.ops_source_freshness "
         "ORDER BY domain, table_name"
     ).fetchall()
     cols = [
@@ -157,7 +173,7 @@ def freshness():
     ]
     gaps = con.execute(
         "SELECT source, feed, gap_start, gap_end, gap_minutes, reason "
-        "FROM gold.ops_feed_gap ORDER BY gap_start DESC LIMIT 20"
+        "FROM lake.gold.ops_feed_gap ORDER BY gap_start DESC LIMIT 20"
     ).fetchall()
     return JSONResponse(
         json.loads(
