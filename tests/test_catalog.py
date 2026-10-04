@@ -21,6 +21,7 @@ def test_publish_makes_one_current_version(catalog, manifest, app_dsn, monkeypat
     monkeypatch.setattr(sync, "embed", lambda texts: [[0.0] * 383 + [1.0] for _ in texts])
     conn = store.connect(app_dsn)
     conn.execute("DROP SCHEMA IF EXISTS catalog CASCADE")
+    conn.execute("DROP SCHEMA IF EXISTS app CASCADE")
     store.migrate(conn)
     sync.publish(conn, catalog, manifest, version="t1", lake=None)
     stats = sync.publish(conn, catalog, manifest, version="t2", lake=None)

@@ -5,8 +5,15 @@ from nycynapse.evals.harness import evaluate
 from nycynapse.evals.system import Answer
 from nycynapse.llm.client import ProviderLimit
 
-CASES = [Case(id=f"x-{i}", question=f"q{i}", category="unsupported",
-              expect={"classification": "unsupported"}) for i in range(3)]
+CASES = [
+    Case(
+        id=f"x-{i}",
+        question=f"q{i}",
+        category="unsupported",
+        expect={"classification": "unsupported"},
+    )
+    for i in range(3)
+]
 
 
 class Flaky:
