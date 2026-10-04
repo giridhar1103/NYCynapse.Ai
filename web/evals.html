@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Evals · NYCynapse</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%232a78d6'/%3E%3Ctext x='16' y='22' font-family='Helvetica,Arial' font-weight='700' font-size='17' fill='white' text-anchor='middle'%3EN%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="static/style.css?v=1">
+</head>
+<body>
+<main class="wrap">
+  <section class="hero">
+    <h1>How often it is right.</h1>
+    <p class="lede">Every version is scored on a fixed set of questions with known answers, run against a frozen copy of the lake so the numbers stay comparable. A result counts as correct when its rows match the reference query, not when the SQL looks similar. Questions that should be refused, like future dates or data the city does not publish, count too.</p>
+    <p class="lede">Five builds are compared, each adding one piece. The holdout questions are kept out of the repository and were never used while building.</p>
+  </section>
+  <section class="block"><h2 class="rule">The builds</h2>
+    <div class="boards">
+      <div class="card board"><h3><span class="bullet b0">0</span>Full schema</h3><p class="hint" style="margin:0">The model gets every table and column and writes SQL. The usual starting point.</p></div>
+      <div class="card board"><h3><span class="bullet b8">1</span>Routed</h3><p class="hint" style="margin:0">Questions go to a subject area first; only the tables that matter are shown.</p></div>
+      <div class="card board"><h3><span class="bullet b2">2</span>Grounded</h3><p class="hint" style="margin:0">Names, places and periods are matched to real values and exact dates before writing SQL.</p></div>
+      <div class="card board"><h3><span class="bullet b3">3</span>Planned</h3><p class="hint" style="margin:0">The model fills in a typed plan; SQL is compiled from fixed metric definitions and join paths.</p></div>
+      <div class="card board"><h3><span class="bullet b1">4</span>With examples</h3><p class="hint" style="margin:0">As 3, plus reviewed question and plan pairs found by similarity.</p></div>
+    </div>
+  </section>
+  <div id="splits"><p class="hint">Loading…</p></div>
+</main>
+<script src="static/app.js?v=1"></script>
+<script>
+const { el, get, fmt } = NY;
+NY.header("evals");
+const COLORS = { e0: "var(--ink-2)", e1: "var(--c8)", e2: "var(--c2)", e3: "var(--c3)", e4: "var(--c1)" };
+const SPLITS = [["holdout", "Holdout", "Never seen while building. The honest number."],
+  ["dev", "Development", "Used while building, so expect these to be higher."],
+  ["regression", "Regression", "Earlier mistakes, kept so they stay fixed."]];
+const pct = (v) => (v == null ? "n/a" : Math.round(v * 100) + "%");
+const CAT = { single_table: "One table", temporal: "Dates and periods", grounding: "Names and values",
+  geographic: "Places", multi_join: "Joins", cross_domain: "Across sources", live: "Live feeds",
+  ambiguous: "Needs clarifying", unsupported: "Data not available", non_data: "Not a data question",
+  adversarial: "Unsafe requests" };
+
+(async () => {
+  let runs;
+  try { runs = await get("api/evals"); }
+  catch (e) { document.getElementById("splits").replaceChildren(el("div", { class: "error-box" }, e.message)); return; }
+  const box = document.getElementById("splits");
+  box.replaceChildren();
+  if (!runs.length) { box.append(el("p", { class: "hint" }, "Results are being produced. Check back soon.")); return; }
+  for (const [split, title, note] of SPLITS) {
+    const rs = runs.filter((r) => r.split === split).sort((a, b) => a.id.localeCompare(b.id));
+    if (!rs.length) continue;
+    const n = rs[0].summary.cases;
+    const bars = el("div", { class: "bars" }, rs.map((r) => el("div", { class: "barrow" },
+      el("span", {}, r.system.replace(/^E\d /, (m) => m.trim() + " · ")),
+      el("div", { class: "track" }, el("span", { style: `width:${(r.summary.overall_correct || 0) * 100}%;background:${COLORS[r.id] || "var(--line)"}` })),
+      el("span", { class: "v" }, pct(r.summary.overall_correct)))));
+    const metrics = [
+      ["Right answer", "overall_correct", pct], ["Rows match", "execution_accuracy", pct],
+      ["Refused when it should", "abstention_recall", pct], ["Refused when it should not", "false_abstention_rate", pct],
+      ["Same answer to rephrasings", "paraphrase_consistency", pct], ["Right tables found", "table_recall", pct],
+      ["Median time", "latency_ms_p50", (v) => (v == null ? "n/a" : (v / 1000).toFixed(1) + " s")],
+      ["Model cost per question", "cost_usd", null],
+    ];
+    const head = el("tr", {}, el("th", {}, ""), rs.map((r) => el("th", { class: "num" }, r.id.toUpperCase())));
+    const body = metrics.map(([label, key, f]) => el("tr", {}, el("td", {}, label), rs.map((r) => {
+      const v = r.summary[key];
+      const text = f ? f(v) : "$" + (v / Math.max(1, r.summary.cases)).toFixed(4);
+      return el("td", { class: "num" }, text);
+    })));
+    const cats = [...new Set(rs.flatMap((r) => Object.keys(r.summary.by_category || {})))];
+    const catTable = el("table", { class: "data" },
+      el("thead", {}, el("tr", {}, el("th", {}, "Question type"), rs.map((r) => el("th", { class: "num" }, r.id.toUpperCase())))),
+      el("tbody", {}, cats.map((c) => el("tr", {},
+        el("td", {}, `${CAT[c] || c} `, el("span", { class: "hint" }, `(${(rs[0].summary.by_category[c] || {}).n || 0})`)),
+        rs.map((r) => el("td", { class: "num" }, pct((r.summary.by_category[c] || {}).correct)))))));
+    box.append(el("section", { class: "block" },
+      el("h2", { class: "rule" }, `${title} · ${n} questions`),
+      el("p", { class: "hint", style: "margin-top:-6px" }, note),
+      bars,
+      el("div", { class: "table-wrap", style: "margin-top:22px" }, el("table", { class: "data" }, el("thead", {}, head), el("tbody", {}, body))),
+      el("div", { class: "table-wrap", style: "margin-top:22px" }, catTable),
+      el("p", { class: "hint" }, `Lake snapshot ${rs[0].snapshot}. Finished ${String(rs[rs.length - 1].finished_at || "").slice(0, 10)}.`)));
+  }
+})();
+</script>
+</body>
+</html>
