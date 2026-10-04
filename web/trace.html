@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Answer trace · NYCynapse</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%232a78d6'/%3E%3Ctext x='16' y='22' font-family='Helvetica,Arial' font-weight='700' font-size='17' fill='white' text-anchor='middle'%3EN%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="static/style.css?v=1">
+</head>
+<body>
+<main class="wrap" id="main"><section class="hero"><p class="hint">Loading…</p></section></main>
+<script src="static/app.js?v=1"></script>
+<script>
+const { el, get, url, bullet, table, chart, tabs, fmt } = NY;
+NY.header("");
+const main = document.getElementById("main");
+
+function details(s) {
+  const kv = [];
+  const add = (k, v) => { if (v != null && v !== "" && !(Array.isArray(v) && !v.length)) kv.push([k, v]); };
+  add("Kind", s.classification);
+  add("Areas", s.workspaces && el("span", {}, s.workspaces.map((w) => [bullet(w), " ", w, "  "])));
+  add("Period", s.window);
+  add("Mentions", (s.mentions || []).join(", "));
+  add("Tables", (s.models || []).join(", "));
+  add("Matched", (s.matches || []).map((m) => `${m.mention} → ${m.value} (${m.where})`).join("; "));
+  add("Places", (s.places || []).join(", "));
+  add("Plan", s.plan && el("pre", { class: "code" }, typeof s.plan === "string" ? s.plan : JSON.stringify(s.plan, null, 2)));
+  add("SQL", s.sql && el("pre", { class: "code" }, s.sql));
+  if (s.stage === "run") {
+    add("Guard", s.guard == null ? null : s.guard ? "passed" : "blocked");
+    add("Rows", fmt(s.rows));
+    add("Query time", s.query_ms != null ? `${fmt(s.query_ms)} ms` : null);
+    add("Stopped", s.abstain);
+  }
+  add("Problem", s.problem);
+  if (!kv.length) return null;
+  return el("dl", { class: "kv" }, kv.flatMap(([k, v]) => [el("dt", {}, k), el("dd", {}, v)]));
+}
+
+(async () => {
+  const id = new URLSearchParams(location.search).get("id");
+  if (!id) { main.replaceChildren(el("section", { class: "hero" }, el("h1", {}, "No answer picked"), el("p", {}, "Open a trace from the Ask page."))); return; }
+  let t;
+  try { t = await get("api/trace/" + encodeURIComponent(id)); }
+  catch (e) { main.replaceChildren(el("section", { class: "hero" }, el("h1", {}, "Not found"), el("p", {}, e.message))); return; }
+  document.title = t.question + " · NYCynapse";
+  const r = t.result || {};
+  const hero = el("section", { class: "hero" },
+    el("p", { class: "hint" }, `Asked ${new Date(t.asked_at).toLocaleString("en-US", { timeZone: "America/New_York", dateStyle: "medium", timeStyle: "short" })} New York time`),
+    el("h1", { style: "font-size:clamp(28px,4.4vw,44px)" }, t.question),
+    el("p", {}, el("a", { href: url("?q=" + encodeURIComponent(t.question)) }, "Ask it again")));
+  const card = el("article", { class: "card answer" }, el("p", { class: "text" }, t.answer || "No answer."));
+  if (r.evidence && r.evidence.length) card.append(el("div", { class: "pills" }, r.evidence.map((e) => el("span", { class: "pill" }, el("span", { class: "bullet b1" }, "✓"), e))));
+  if (r.caveats && r.caveats.length) card.append(el("ul", { class: "caveats" }, r.caveats.map((c) => el("li", {}, c))));
+  if (r.columns && r.columns.length) {
+    const defs = [];
+    const c = chart(r.chart, r.columns, r.rows);
+    if (c) defs.push(["Chart", c]);
+    defs.push([`Table (${NY.plural(r.rows.length, "row")})`, table(r.columns, r.rows)]);
+    if (t.sql) defs.push(["SQL", el("pre", { class: "code" }, t.sql)]);
+    card.append(tabs(defs));
+  }
+  const steps = el("ol", { class: "timeline" }, (t.stages || []).filter((s) => s.stage !== "start").map((s) =>
+    el("li", {}, el("strong", {}, s.label || s.stage), el("span", { class: "when" }, `${(s.ms / 1000).toFixed(1)} s`), details(s))));
+  const facts = el("dl", { class: "kv" },
+    el("dt", {}, "Total time"), el("dd", {}, `${(t.latency_ms / 1000).toFixed(1)} s`),
+    el("dt", {}, "Model calls"), el("dd", {}, `${fmt(t.model_calls)} costing $${Number(t.cost_usd || 0).toFixed(3)}`),
+    el("dt", {}, "Catalog version"), el("dd", {}, t.catalog_version || ""),
+    el("dt", {}, "Data as of"), el("dd", {}, String(t.as_of || "")),
+    el("dt", {}, "Trace id"), el("dd", {}, el("code", {}, t.id)));
+  main.replaceChildren(hero, card,
+    el("section", { class: "block" }, el("h2", { class: "rule" }, "Route taken"), steps),
+    el("section", { class: "block" }, el("h2", { class: "rule" }, "Run facts"), facts));
+})();
+</script>
+</body>
+</html>
