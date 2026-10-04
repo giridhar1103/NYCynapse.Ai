@@ -148,11 +148,17 @@ const NY = (() => {
     const all = pts.flatMap((r) => yis.map((i) => r[i]).filter((v) => typeof v === "number"));
     let lo = Math.min(...all, 0), hi = Math.max(...all);
     if (hi === lo) hi = lo + 1;
+    // Round steps: 50k rather than 52,316.
+    const raw = (hi - lo) / 4, mag = 10 ** Math.floor(Math.log10(raw));
+    const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw);
+    lo = Math.floor(lo / step) * step;
+    hi = lo + step * Math.ceil((hi - lo) / step);
+    const nTicks = Math.round((hi - lo) / step);
     const X = (i) => L + ((W - L - R) * i) / (pts.length - 1);
     const Y = (v) => T + (H - T - B) * (1 - (v - lo) / (hi - lo));
     const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": spec.title || "line chart" });
-    for (let k = 0; k <= 4; k++) {
-      const v = lo + ((hi - lo) * k) / 4, y = Y(v);
+    for (let k = 0; k <= nTicks; k++) {
+      const v = lo + step * k, y = Y(v);
       svg.append(s("line", { class: "grid", x1: L, x2: W - R, y1: y, y2: y }));
       const t = s("text", { x: L - 8, y: y + 4, "text-anchor": "end" }); t.textContent = compact(v); svg.append(t);
     }
@@ -196,7 +202,16 @@ const NY = (() => {
     return el("div", {}, row, panels);
   }
 
+  // Evidence lines that are warnings rather than checks passed.
+  const WARNINGS = /not found|does not cover|could not/i;
+  function evidence(items) {
+    return el("div", { class: "pills" }, items.map((e) => {
+      const warn = WARNINGS.test(e);
+      return el("span", { class: "pill" }, el("span", { class: `bullet ${warn ? "b2" : "b1"}` }, warn ? "!" : "✓"), e);
+    }));
+  }
+
   const plural = (n, word) => `${fmt(n)} ${word}${n === 1 ? "" : "s"}`;
 
-  return { plural, url, get, el, bullet, header, fmt, compact, ago, table, chart, tabs, ROUTES };
+  return { evidence, plural, url, get, el, bullet, header, fmt, compact, ago, table, chart, tabs, ROUTES };
 })();

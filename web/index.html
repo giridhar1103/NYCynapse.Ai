@@ -6,7 +6,7 @@
 <title>NYCynapse</title>
 <meta name="description" content="Ask questions about New York City in plain English. Answers come from open city data, with the SQL and every step shown.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%232a78d6'/%3E%3Ctext x='16' y='22' font-family='Helvetica,Arial' font-weight='700' font-size='17' fill='white' text-anchor='middle'%3EN%3C/text%3E%3C/svg%3E">
-<link rel="stylesheet" href="static/style.css?v=1">
+<link rel="stylesheet" href="static/style.css?v=2">
 </head>
 <body>
 <main class="wrap">
@@ -36,7 +36,7 @@
     <div class="recent" id="recent"><span class="hint">Loading…</span></div>
   </section>
 </main>
-<script src="static/app.js?v=1"></script>
+<script src="static/app.js?v=2"></script>
 <script>
 const { el, get, url, bullet, table, chart, tabs, fmt, ago } = NY;
 NY.header("");
@@ -135,7 +135,7 @@ function renderAnswer(a) {
   card.append(el("p", { class: "text" }, a.answer || "No answer."));
   const pills = el("div", { class: "pills" });
   if (a.window) pills.append(el("span", { class: "pill" }, el("span", { class: "bullet b0" }, "◷"), a.window));
-  for (const e of a.evidence || []) pills.append(el("span", { class: "pill" }, el("span", { class: "bullet b1" }, "✓"), e));
+  pills.append(...NY.evidence(a.evidence || []).childNodes);
   if (pills.childNodes.length) card.append(pills);
   if (a.caveats && a.caveats.length) card.append(el("ul", { class: "caveats" }, a.caveats.map((c) => el("li", {}, c))));
   if (result && result.columns && result.columns.length) {
@@ -148,7 +148,7 @@ function renderAnswer(a) {
   }
   const meta = el("div", { class: "meta-row" },
     el("span", {}, `${(a.latency_ms / 1000).toFixed(1)} s`),
-    a.cached ? el("span", {}, "answered from a recent identical question") : el("span", {}, `$${(a.cost_usd || 0).toFixed(3)} in model calls`),
+    a.cached ? el("span", {}, "replayed from an earlier answer to the same question") : el("span", {}, `$${(a.cost_usd || 0).toFixed(3)} in model calls`),
     a.trace_id ? el("a", { href: url(`trace?id=${a.trace_id}`) }, "Full trace") : null);
   card.append(meta);
 }
