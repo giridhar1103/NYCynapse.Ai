@@ -51,8 +51,10 @@ def _eq(a, b, tol: float) -> bool:
         x, y = a[1], b[1]
         if abs(x - y) <= tol * max(abs(y), 1e-9) or abs(x - y) < 1e-9:
             return True
-        # A share written as a percentage (92.5 for 0.925) is the same answer.
-        return 0 < y < 1 and abs(x - y * 100) <= tol * y * 100 + 0.051
+        # A share written as a percentage (92.5 for 0.925) is the same answer, either way round.
+        if 0 < y < 1 and abs(x - y * 100) <= tol * y * 100 + 0.051:
+            return True
+        return 0 < x < 1 and abs(y - x * 100) <= tol * x * 100 + 0.051
     if isinstance(a, tuple) and a[:1] == ("num",) and isinstance(b, bool):
         return False
     return a == b

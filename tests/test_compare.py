@@ -71,3 +71,10 @@ def test_midnight_timestamp_equals_date():
 def test_share_as_percentage():
     assert compare(["s"], [(0.925,)], ["pct"], [(92.5,)], c()).match
     assert not compare(["s"], [(0.925,)], ["pct"], [(85.0,)], c()).match
+
+
+def test_share_as_fraction_or_percent_either_way():
+    spec = Compare(tolerance=0.005)
+    assert compare(["share"], [(17.3,)], ["s"], [(0.173,)], spec).match
+    assert compare(["share"], [(0.173,)], ["s"], [(17.3,)], spec).match
+    assert not compare(["share"], [(0.173,)], ["s"], [(0.25,)], spec).match
