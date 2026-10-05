@@ -153,8 +153,16 @@ def main(argv: list[str] | None = None) -> int:
             if args.resume
             else (root / "runs" / f"{stamp}-{args.system}-{args.split}.json")
         )
+        from .llm.client import config as llm_config
+
+        llm = llm_config()
         meta = {
             "system": system.name,
+            "models": {
+                role: f"{llm['providers'][pid].get('label', pid)} "
+                f"({llm['providers'][pid].get('model')})"
+                for role, pid in llm["roles"].items()
+            },
             "split": args.split,
             "snapshot": snap,
             "catalog_version": catalog_version,

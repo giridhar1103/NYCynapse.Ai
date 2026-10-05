@@ -146,13 +146,19 @@ def _openai(pid: str, p: dict, system: str, prompt: str, schema: dict | None) ->
 
 def _command(pid: str, p: dict, system: str, prompt: str, schema: dict | None) -> LLMResult:
     if p.get("system_in_prompt"):
-        prompt = f"{system}\n\n{prompt}"
+        # For tools with no system prompt option: mark the instructions off clearly so they
+        # read as the rules for the task, not as part of the question.
+        prompt = f"<instructions>\n{system}\n</instructions>\n\n<task>\n{prompt}\n</task>"
     with tempfile.TemporaryDirectory() as td:
         schema_path, out_path = os.path.join(td, "schema.json"), os.path.join(td, "out.txt")
         if schema is not None:
             with open(schema_path, "w") as fh:
                 json.dump(schema, fh)
+        # Some tools only take the prompt as an argument; Linux caps one argument at 128 KB.
+        if p.get("prompt_arg") and len(prompt.encode()) > 120_000:
+            raise LLMError("prompt too long to pass as an argument")
         subst = {
+            "{prompt}": prompt if p.get("prompt_arg") else "",
             "{system}": system,
             "{schema_file}": schema_path,
             "{out_file}": out_path,
@@ -172,7 +178,7 @@ def _command(pid: str, p: dict, system: str, prompt: str, schema: dict | None) -
         try:
             proc = subprocess.run(
                 argv,
-                input=prompt,
+                input=None if p.get("prompt_arg") else prompt,
                 capture_output=True,
                 text=True,
                 timeout=p.get("timeout", 300),
@@ -207,9 +213,36 @@ def _command(pid: str, p: dict, system: str, prompt: str, schema: dict | None) -
         return LLMResult(
             text, p.get("model", ""), pid, ms, tin, u.get("output_tokens"), d.get("total_cost_usd")
         )
+    if p.get("parse") == "agy_json":
+        return _agy_result(pid, p, proc, ms)
     if proc.returncode != 0 and not out.strip():
         raise LLMError(f"exited {proc.returncode}: {proc.stderr[:300]}")
     return LLMResult(out.strip(), p.get("model", ""), pid, ms)
+
+
+def _agy_result(pid: str, p: dict, proc, ms: int) -> LLMResult:
+    """Antigravity print mode: a JSON envelope with status, structured_output and usage."""
+    try:
+        d = json.loads(proc.stdout)
+    except json.JSONDecodeError as e:
+        raise LLMError(f"unreadable reply: {(proc.stderr or proc.stdout)[:300]}") from e
+    if d.get("status") != "SUCCESS":
+        raise LLMError(f"{d.get('status')}: {str(d.get('error') or d.get('response'))[:300]}")
+    so = d.get("structured_output")
+    text = json.dumps(so) if isinstance(so, dict | list) else d.get("response", "")
+    u = d.get("usage") or {}
+    tin = u.get("input_tokens")
+    tout = (u.get("output_tokens") or 0) + (u.get("thinking_tokens") or 0)
+    return LLMResult(text, p.get("model", ""), pid, ms, tin, tout, _list_price(p, tin, tout))
+
+
+def _list_price(p: dict, tokens_in: int | None, tokens_out: int | None) -> float | None:
+    """Cost at the provider's published per-token price, for subscriptions that do not bill
+    per call. Prices are per million tokens."""
+    price = p.get("price_per_mtok")
+    if not price or tokens_in is None:
+        return None
+    return (tokens_in * price["input"] + (tokens_out or 0) * price["output"]) / 1_000_000
 
 
 _IMPL = {"anthropic": _anthropic, "openai": _openai, "command": _command}
