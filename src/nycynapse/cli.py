@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 import subprocess
 import sys
 import time
@@ -259,7 +260,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{case.id:8} {verdicts}", flush=True)
             return bool(result["flagged_by"])
 
-        with ThreadPoolExecutor(2) as pool:
+        with ThreadPoolExecutor(int(os.environ.get("NYCYNAPSE_AUDIT_PARALLEL", "4"))) as pool:
             flagged = sum(pool.map(one, todo))
         print(f"{len(todo)} cases audited, {flagged} flagged by at least one auditor")
         return 0

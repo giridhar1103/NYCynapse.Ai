@@ -8,6 +8,9 @@ from nycynapse.pipeline.compiler import CompileError, Compiler
 from nycynapse.pipeline.ir import Plan
 from nycynapse.pipeline.timeparse import Window
 
+needs_lake = pytest.mark.skipif(
+    not os.environ.get("NYC_LAKE_PG_DSN"), reason="NYC_LAKE_PG_DSN is not set"
+)
 JUNE = Window(datetime(2025, 6, 1), datetime(2025, 7, 1), "June 2025")
 
 
@@ -164,7 +167,7 @@ def test_unknown_dimension_is_an_error(compiler):
         )
 
 
-@pytest.mark.skipif(not os.environ.get("NYC_LAKE_PG_DSN"), reason="needs the lake")
+@needs_lake
 def test_compiled_plans_match_gold(catalog):
     from pathlib import Path
 
@@ -205,6 +208,7 @@ def test_compiled_plans_match_gold(catalog):
         assert compare(gold.columns, gold.rows, got.columns, got.rows, case.compare).match
 
 
+@needs_lake
 def test_new_plan_shapes_match_gold(catalog):
     """Shares, row counts, the latest status, top per group, explicit overrides of default
     filters and filter-only relationships, each checked against the reference answer."""
