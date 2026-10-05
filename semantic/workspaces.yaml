@@ -10,9 +10,9 @@ workspaces:
     models: [rideshare_trips, taxi_trips, trips_by_zone_hour]
     shared: [taxi_zones, boroughs, neighborhoods, calendar]
     sample_questions:
-      - Which pickup zones had the most Uber and Lyft trips last month?
+      - Which pickup zones had the most Uber and Lyft trips in August 2026?
       - How long did app riders wait at JFK on weekday evenings?
-      - How many taxi trips paid the congestion toll each week this year?
+      - How many taxi trips paid the congestion toll each week from January to August 2026?
 
   - id: subway
     label: Subway
@@ -24,7 +24,7 @@ workspaces:
     shared: [boroughs, neighborhoods, calendar]
     sample_questions:
       - Which subway lines had the worst delays yesterday?
-      - What were the busiest stations by ridership in September?
+      - What were the busiest stations by ridership in August 2026?
       - How many alerts did the A train have this week?
 
   - id: bike
@@ -35,7 +35,7 @@ workspaces:
     models: [bike_trips, bike_station_status, bike_stations]
     shared: [boroughs, neighborhoods, taxi_zones, calendar]
     sample_questions:
-      - How many Citi Bike rides started in Williamsburg last weekend?
+      - How many Citi Bike rides started in Williamsburg in August 2026?
       - What share of rides used e-bikes each month?
 
   - id: city_services
@@ -55,7 +55,7 @@ workspaces:
     models: [collisions, collision_people]
     shared: [boroughs, neighborhoods, community_districts, calendar]
     sample_questions:
-      - How many cyclists were injured in Brooklyn this year?
+      - How many cyclists were injured in Brooklyn from January to May 2026?
       - What are the most common contributing factors in fatal crashes?
 
   - id: traffic
