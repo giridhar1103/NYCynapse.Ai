@@ -6,8 +6,8 @@ instructions:
       the local date and hour columns. Filtering on a local date column alone reads every file.
   - id: one_name_several_values
     text: >
-      A name can match several values, such as Bed-Stuy covering the Bedford-Stuyvesant (East)
-      and (West) neighborhoods. Filter on all of them and add them up into one answer, unless
+      A name can match several values, such as Washington Heights covering the Washington
+      Heights (North) and (South) neighborhoods. Filter on all of them and add them up into one answer, unless
       the question asks to compare or list them.
   - id: partition_hint
     applies_to: [rideshare_trips, taxi_trips, trips_by_zone_hour, bike_trips]

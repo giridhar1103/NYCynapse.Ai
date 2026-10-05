@@ -38,6 +38,7 @@ models:
     coverage: [bike_station_status]
     synonyms: [bikes available, empty stations, full stations, docks]
     live: true
+    latest_by: [station_id]
     time:
       - {name: reported, instant: reported_at, local_date: reported_date, local_hour: reported_hour, default: true}
     entities:

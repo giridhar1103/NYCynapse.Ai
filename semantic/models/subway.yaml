@@ -89,7 +89,7 @@ models:
       - {name: riders, expr: riders, agg: sum}
     filters:
       - {name: subway_only, sql: "transit_mode = 'subway'", default: true,
-         description: Leave out the Staten Island Railway and the Roosevelt Island Tram.}
+         description: "Subway only by default. Filter transit_mode to count the Staten Island Railway or the Roosevelt Island Tram."}
 
   - name: subway_routes
     table: gold.dim_subway_route

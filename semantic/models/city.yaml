@@ -26,9 +26,12 @@ models:
       - {name: channel, column: channel, values: enumerate, synonyms: [submitted by, phone, app]}
       - {name: location_type, column: location_type, values: index}
       - {name: borough, column: borough, values: enumerate, geo_level: borough}
+      - {name: zip_code, column: incident_zip, values: index, synonyms: [zip, zip code, postcode, postal code],
+         description: "ZIP code of the address as reported. Use this for questions naming a ZIP code."}
       - {name: police_precinct, column: police_precinct, kind: numeric, geo_level: police_precinct, synonyms: [precinct]}
       - {name: council_district, column: council_district, kind: numeric, geo_level: council_district}
-      - {name: zip_area, column: modzcta, values: none, geo_level: zip_area, synonyms: [zip, zip code]}
+      - {name: zip_area, column: modzcta, values: none, geo_level: zip_area, synonyms: [ZCTA, MODZCTA],
+         description: "Modified ZIP code tabulation area, the health department's grouping of ZIP codes. Not the ZIP code itself; use zip_code for a named ZIP."}
       - {name: created_hour, column: created_hour, kind: numeric}
     measures:
       - {name: requests, expr: "*", agg: count}
