@@ -157,7 +157,7 @@ class Answerer:
             warnings = []
             gap = coverage_gap(self.ctx, state["guard"].tables, window)
             if gap:
-                warnings.append(gap)
+                warnings.append(gap.message)
             w = write_answer(question, window.label if window else None, columns, rows, warnings)
             state["cost_usd"] = state.get("cost_usd", 0) + w.cost_usd
             answer_text, chart, caveats = w.answer, w.chart, w.caveats

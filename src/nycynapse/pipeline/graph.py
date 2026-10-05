@@ -19,6 +19,7 @@ From E3 the model plans instead of writing SQL, and code compiles the plan:
 
 import json
 import time
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, TypedDict
 
@@ -270,13 +271,15 @@ def build(ctx: Context, *, grounding: bool, planning: bool = False, examples: bo
             }
         if grounding:
             gap = coverage_gap(ctx, g.tables, state.get("window"))
-            if gap:
+            # A total over part of a window is a wrong number; an average over part of it is
+            # still a fair estimate, answered with a note on what is missing.
+            if gap and (gap.covered == 0 or totals_only(sql)):
                 return {
                     "guard": g,
                     "execution": None,
                     "problem": None,
-                    "abstain": gap,
-                    "log": _log(state, "coverage", ok=False, reason=gap),
+                    "abstain": gap.message,
+                    "log": _log(state, "coverage", ok=False, reason=gap.message),
                 }
         ex = run(ctx.lake, sql, timeout_s=120)
         problem = None
@@ -484,14 +487,46 @@ def out_of_bounds(ctx: Context, metric_ids: list[str], ex) -> str | None:
     return None
 
 
-def coverage_gap(ctx: Context, tables: list[str], window) -> str | None:
-    """Say why not, when most of the time window is outside what the data covers.
+@dataclass
+class Gap:
+    message: str
+    covered: float  # share of the window the data covers, 0 to 1
+
+
+def coverage_gap(ctx: Context, tables: list[str], window) -> Gap | None:
+    """Say how much of the time window falls outside what the data covers.
 
     A model's coverage is the union of its source tables, so weather counts both the settled
-    archive and the recent model hours.
+    archive and the recent model hours. A window the data does not reach at all is declined;
+    one it partly covers is answered with a note, since a partial answer the reader is told
+    about beats no answer.
     """
     if window is None or window.is_now or window.start is None or window.end is None:
         return None
+    span = (window.end - window.start).total_seconds()
+    worst: Gap | None = None
+    for m in ctx.models_for_tables(tables):
+        spans = [ctx.table_coverage[t] for t in m.coverage if ctx.table_coverage.get(t, (None,))[0]]
+        if not spans or not span:
+            continue
+        # A few source rows carry impossible dates; the lake's history starts in 2024.
+        start = max(min(s for s, _ in spans), HISTORY_START)
+        end = max(e for _, e in spans)
+        missing = max(0.0, (window.end - max(end, window.start)).total_seconds())
+        missing += max(0.0, (min(start, window.end) - window.start).total_seconds())
+        covered = max(0.0, 1 - missing / span)
+        if covered > 0.9 or (worst is not None and covered >= worst.covered):
+            continue
+        dates = f"{start:%-d %b %Y} to {end:%-d %b %Y}"
+        if covered == 0:
+            message = f"{m.label} covers {dates}, which does not include {window.label}."
+        else:
+            message = (
+                f"{m.label} covers {dates}, so only part of {window.label} is included "
+                f"(about {round(covered * 100)}%)."
+            )
+        worst = Gap(message, covered)
+    return worst
     span = (window.end - window.start).total_seconds()
     for m in ctx.models_for_tables(tables):
         spans = [ctx.table_coverage[t] for t in m.coverage if ctx.table_coverage.get(t, (None,))[0]]
@@ -508,6 +543,21 @@ def coverage_gap(ctx: Context, tables: list[str], window) -> str | None:
                 f"cover most of {window.label}."
             )
     return None
+
+
+INTENSIVE = (exp.Avg, exp.Median, exp.Quantile, exp.Div, exp.Stddev, exp.Variance)
+
+
+def totals_only(sql: str) -> bool:
+    """True when the query reports counts or sums and nothing like an average or a ratio."""
+    try:
+        tree = sqlglot.parse_one(sql, dialect="duckdb")
+    except sqlglot.errors.ParseError:
+        return False
+    nodes = list(tree.walk())
+    if any(isinstance(n, INTENSIVE) for n in nodes):
+        return False
+    return any(isinstance(n, exp.Count | exp.Sum) for n in nodes)
 
 
 def _literals(sql: str) -> list[str]:
