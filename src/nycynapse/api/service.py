@@ -11,12 +11,19 @@ from zoneinfo import ZoneInfo
 from psycopg.types.json import Jsonb
 
 from ..catalog.sync import normalize
+from ..llm.client import ProviderLimit
 from ..pipeline.answer import write_answer
 from ..pipeline.context import Context
 from ..pipeline.graph import build, coverage_gap
 
 NY = ZoneInfo("America/New_York")
 MAX_ROWS = 200
+
+PAUSE_S = 1800
+PAUSED = (
+    "New questions are paused for a while: the model's usage allowance has run out. "
+    "Example answers and recent questions still work."
+)
 
 STAGE_LABELS = {
     "understand": "Understand",
@@ -86,8 +93,24 @@ class Answerer:
         ).fetchone()
         return int(row["n"])
 
+    paused_until: float = 0.0
+
+    def paused(self) -> bool:
+        return time.time() < self.paused_until
+
     def stream(self, question: str, client: str):
-        """Yield (event, data) pairs as the pipeline moves, then store the trace."""
+        """Yield (event, data) pairs as the pipeline moves, then store the trace.
+
+        When the model provider's allowance runs out, new questions pause for a while instead
+        of failing one by one; nothing is stored, since the question itself was fine.
+        """
+        try:
+            yield from self._stream(question, client)
+        except ProviderLimit:
+            self.paused_until = time.time() + PAUSE_S
+            yield "error", {"message": PAUSED}
+
+    def _stream(self, question: str, client: str):
         trace_id = str(uuid.uuid4())
         as_of = now_as_of()
         t0 = time.monotonic()
@@ -108,6 +131,8 @@ class Answerer:
                         }
                     )
                     yield "stage", stages[-1]
+        except ProviderLimit:
+            raise
         except Exception as e:  # noqa: BLE001 - reported to the reader, kept in the trace
             error = f"{type(e).__name__}: {e}"[:400]
             yield "error", {"message": "Something went wrong answering that. Try rephrasing."}

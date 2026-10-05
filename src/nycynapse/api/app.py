@@ -20,7 +20,7 @@ from .. import lake
 from ..catalog import store
 from ..config import REPO, Settings
 from ..pipeline.context import Context
-from .service import Answerer, client_hash
+from .service import PAUSED, Answerer, client_hash
 
 PER_HOUR = int(os.environ.get("NYCYNAPSE_PER_HOUR", "8"))
 DAILY_BUDGET = float(os.environ.get("NYCYNAPSE_DAILY_BUDGET_USD", "4"))
@@ -98,6 +98,8 @@ def ask(request: Request, q: str = Query(min_length=3, max_length=400)):
 
         return StreamingResponse(replay(), media_type="text/event-stream")
 
+    if a.paused():
+        raise HTTPException(503, PAUSED)
     client = _client(request)
     if a.asked_recently(client) >= PER_HOUR:
         raise HTTPException(
