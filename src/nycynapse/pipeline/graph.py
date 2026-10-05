@@ -22,6 +22,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, TypedDict
+from zoneinfo import ZoneInfo
 
 import sqlglot
 from langgraph.graph import END, START, StateGraph
@@ -270,10 +271,10 @@ def build(ctx: Context, *, grounding: bool, planning: bool = False, examples: bo
                 "log": _log(state, "guard", ok=False, reason=g.reason),
             }
         if grounding:
-            gap = coverage_gap(ctx, g.tables, state.get("window"))
-            # A total over part of a window is a wrong number; an average over part of it is
-            # still a fair estimate, answered with a note on what is missing.
-            if gap and (gap.covered == 0 or totals_only(sql)):
+            gap = coverage_gap(ctx, g.tables, state.get("window"), local_now(state["as_of"]))
+            # Declined only when the data does not reach the window at all. A partly covered
+            # window is answered, and the answer says which dates the data covers.
+            if gap and gap.covered == 0:
                 return {
                     "guard": g,
                     "execution": None,
@@ -487,13 +488,20 @@ def out_of_bounds(ctx: Context, metric_ids: list[str], ex) -> str | None:
     return None
 
 
+def local_now(as_of: str) -> datetime:
+    """The question's "now" as a naive New York time, the form windows are written in."""
+    return (
+        datetime.fromisoformat(as_of).astimezone(ZoneInfo("America/New_York")).replace(tzinfo=None)
+    )
+
+
 @dataclass
 class Gap:
     message: str
     covered: float  # share of the window the data covers, 0 to 1
 
 
-def coverage_gap(ctx: Context, tables: list[str], window) -> Gap | None:
+def coverage_gap(ctx: Context, tables: list[str], window, now=None) -> Gap | None:
     """Say how much of the time window falls outside what the data covers.
 
     A model's coverage is the union of its source tables, so weather counts both the settled
@@ -503,7 +511,10 @@ def coverage_gap(ctx: Context, tables: list[str], window) -> Gap | None:
     """
     if window is None or window.is_now or window.start is None or window.end is None:
         return None
-    span = (window.end - window.start).total_seconds()
+    # The part of the window still in the future is not missing data: "this week" on a
+    # Wednesday is covered if the data runs to Wednesday.
+    end_of_window = min(window.end, now) if now is not None and now > window.start else window.end
+    span = (end_of_window - window.start).total_seconds()
     worst: Gap | None = None
     for m in ctx.models_for_tables(tables):
         spans = [ctx.table_coverage[t] for t in m.coverage if ctx.table_coverage.get(t, (None,))[0]]
@@ -512,8 +523,8 @@ def coverage_gap(ctx: Context, tables: list[str], window) -> Gap | None:
         # A few source rows carry impossible dates; the lake's history starts in 2024.
         start = max(min(s for s, _ in spans), HISTORY_START)
         end = max(e for _, e in spans)
-        missing = max(0.0, (window.end - max(end, window.start)).total_seconds())
-        missing += max(0.0, (min(start, window.end) - window.start).total_seconds())
+        missing = max(0.0, (end_of_window - max(end, window.start)).total_seconds())
+        missing += max(0.0, (min(start, end_of_window) - window.start).total_seconds())
         covered = max(0.0, 1 - missing / span)
         if covered > 0.9 or (worst is not None and covered >= worst.covered):
             continue
@@ -543,21 +554,6 @@ def coverage_gap(ctx: Context, tables: list[str], window) -> Gap | None:
                 f"cover most of {window.label}."
             )
     return None
-
-
-INTENSIVE = (exp.Avg, exp.Median, exp.Quantile, exp.Div, exp.Stddev, exp.Variance)
-
-
-def totals_only(sql: str) -> bool:
-    """True when the query reports counts or sums and nothing like an average or a ratio."""
-    try:
-        tree = sqlglot.parse_one(sql, dialect="duckdb")
-    except sqlglot.errors.ParseError:
-        return False
-    nodes = list(tree.walk())
-    if any(isinstance(n, INTENSIVE) for n in nodes):
-        return False
-    return any(isinstance(n, exp.Count | exp.Sum) for n in nodes)
 
 
 def _literals(sql: str) -> list[str]:

@@ -14,7 +14,7 @@ from ..catalog.sync import normalize
 from ..llm.client import ProviderLimit
 from ..pipeline.answer import write_answer
 from ..pipeline.context import Context
-from ..pipeline.graph import build, coverage_gap
+from ..pipeline.graph import build, coverage_gap, local_now
 
 NY = ZoneInfo("America/New_York")
 MAX_ROWS = 200
@@ -155,7 +155,7 @@ class Answerer:
                 },
             )
             warnings = []
-            gap = coverage_gap(self.ctx, state["guard"].tables, window)
+            gap = coverage_gap(self.ctx, state["guard"].tables, window, local_now(as_of))
             if gap:
                 warnings.append(gap.message)
             w = write_answer(question, window.label if window else None, columns, rows, warnings)
