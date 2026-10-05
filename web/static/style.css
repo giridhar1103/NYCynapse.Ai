@@ -181,8 +181,16 @@ h2.rule { font-size: 13px; letter-spacing: .12em; text-transform: uppercase; col
 .timeline li::before { content: ""; position: absolute; left: -36px; top: 2px; width: 22px; height: 22px;
   border-radius: 50%; background: var(--surface); border: 5px solid var(--line); }
 .timeline .when { color: var(--muted); font-size: 13px; margin-left: 8px; }
-.kv { display: grid; grid-template-columns: 160px 1fr; gap: 4px 14px; font-size: 14px; margin-top: 6px; }
-.kv dt { color: var(--muted); } .kv dd { margin: 0; word-break: break-word; }
+.kv { display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: 4px 14px; font-size: 14px; margin-top: 6px; }
+.kv dt { color: var(--muted); } .kv dd { margin: 0; word-break: break-word; min-width: 0; }
+
+.hbars { display: grid; gap: 6px; }
+.hbar { display: grid; grid-template-columns: minmax(80px, 28%) 1fr 64px; gap: 10px; align-items: center;
+  font-size: 13.5px; }
+.hbar .k { color: var(--ink-2); text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hbar .track { height: 16px; }
+.hbar .track span { display: block; height: 100%; background: var(--line); border-radius: 3px; }
+.hbar .v { font-weight: 600; font-variant-numeric: tabular-nums; }
 
 /* evals */
 .bars { display: grid; gap: 10px; }
@@ -216,5 +224,7 @@ footer a { color: var(--ink-2); }
   .answer .text { font-size: 20px; }
   .barrow { grid-template-columns: 1fr 52px; }
   .barrow .track { grid-column: 1 / -1; }
-  .kv { grid-template-columns: 1fr; }
+  .kv { grid-template-columns: minmax(0, 1fr); }
+  .timeline li { min-width: 0; }
+  .hbar { grid-template-columns: minmax(60px, 32%) 1fr 48px; }
 }

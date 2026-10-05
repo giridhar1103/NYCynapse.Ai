@@ -126,20 +126,14 @@ const NY = (() => {
     if (spec.title) box.append(el("figcaption", { class: "hint", style: "margin-bottom:8px" }, spec.title));
 
     if (spec.type === "bar") {
-      const yi = yis[0], rowH = 26, labelW = 170, W = 720, H = pts.length * rowH + 8;
+      // HTML rows rather than SVG, so labels stay readable on a phone.
+      const yi = yis[0];
       const max = Math.max(...pts.map((r) => r[yi]), 0) || 1;
-      const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": spec.title || "bar chart" });
-      pts.forEach((r, i) => {
-        const y = i * rowH + 4, w = Math.max(2, ((W - labelW - 70) * r[yi]) / max);
-        const label = s("text", { x: labelW - 10, y: y + 15, "text-anchor": "end" });
-        const name = fmt(r[xi]); label.textContent = name.length > 24 ? name.slice(0, 23) + "…" : name;
-        const bar = s("rect", { class: "bar", x: labelW, y: y + 3, width: w, height: rowH - 9, rx: 3 });
-        bar.addEventListener("mousemove", (e) => showTip(e, `${name}: ${fmt(r[yi])}`));
-        bar.addEventListener("mouseleave", hideTip);
-        const v = s("text", { class: "value", x: labelW + w + 6, y: y + 15 }); v.textContent = compact(r[yi]);
-        svg.append(label, bar, v);
-      });
-      box.append(svg);
+      box.append(el("div", { class: "hbars", role: "img", "aria-label": spec.title || "bar chart" },
+        pts.map((r) => el("div", { class: "hbar", title: `${fmt(r[xi])}: ${fmt(r[yi])}` },
+          el("span", { class: "k" }, fmt(r[xi])),
+          el("span", { class: "track" }, el("span", { style: `width:${Math.max(0.5, (100 * r[yi]) / max)}%` })),
+          el("span", { class: "v" }, compact(r[yi]))))));
       return box;
     }
 
