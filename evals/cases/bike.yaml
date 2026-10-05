@@ -23,12 +23,31 @@ cases:
     question: How many Citi Bike rides started in Williamsburg in April 2025?
     category: geographic
     expect: {workspaces: [bike], metrics: [bike_ride_count], values: [Williamsburg]}
+    notes: >
+      Audit 2026-10-06: the 2020 neighborhood map splits Williamsburg into Williamsburg, South
+      Williamsburg and East Williamsburg. All three are the reference under the common-name
+      convention; the narrower readings are accepted as alternatives.
     gold_sql: |
       select count(*) from gold.fct_bike_trip
-      where start_nta_code = (select nta_code from gold.dim_neighborhood where nta_name = 'Williamsburg')
+      where start_nta_code in (select nta_code from gold.dim_neighborhood
+                               where nta_name in ('Williamsburg', 'South Williamsburg', 'East Williamsburg'))
         and started_at >= timezone('America/New_York', timestamp '2025-04-01')
         and started_at < timezone('America/New_York', timestamp '2025-05-01')
         and duration_minutes between 1 and 240
+    alt_gold_sql:
+      - |
+        select count(*) from gold.fct_bike_trip
+        where start_nta_code in (select nta_code from gold.dim_neighborhood
+                                 where nta_name in ('Williamsburg', 'South Williamsburg'))
+          and started_at >= timezone('America/New_York', timestamp '2025-04-01')
+          and started_at < timezone('America/New_York', timestamp '2025-05-01')
+          and duration_minutes between 1 and 240
+      - |
+        select count(*) from gold.fct_bike_trip
+        where start_nta_code = (select nta_code from gold.dim_neighborhood where nta_name = 'Williamsburg')
+          and started_at >= timezone('America/New_York', timestamp '2025-04-01')
+          and started_at < timezone('America/New_York', timestamp '2025-05-01')
+          and duration_minutes between 1 and 240
   - id: bk-005
     question: Do members or casual riders take longer Citi Bike rides? Use June 2024.
     category: single_table
@@ -71,6 +90,9 @@ cases:
     expect: {classification: unsupported, workspaces: [bike]}
   - id: bk-012
     question: What share of Citi Bike rides ended in a different borough than they started in 2024?
+    notes: >
+      Audit 2026-10-06: rides ending outside the city (New Jersey) have no NYC borough. Leaving
+      them out, counting them as a different borough, or as the same, are all accepted.
     category: single_table
     difficulty: hard
     expect: {workspaces: [bike]}
@@ -82,3 +104,16 @@ cases:
         and started_at < timezone('America/New_York', timestamp '2025-01-01')
         and duration_minutes between 1 and 240
         and start_boro_code is not null and end_boro_code is not null
+    alt_gold_sql:
+      - |
+        select avg(case when start_boro_code is distinct from end_boro_code then 1.0 else 0.0 end)
+        from gold.fct_bike_trip
+        where started_at >= timezone('America/New_York', timestamp '2024-01-01')
+          and started_at < timezone('America/New_York', timestamp '2025-01-01')
+          and duration_minutes between 1 and 240
+      - |
+        select avg(case when start_boro_code <> end_boro_code then 1.0 else 0.0 end)
+        from gold.fct_bike_trip
+        where started_at >= timezone('America/New_York', timestamp '2024-01-01')
+          and started_at < timezone('America/New_York', timestamp '2025-01-01')
+          and duration_minutes between 1 and 240

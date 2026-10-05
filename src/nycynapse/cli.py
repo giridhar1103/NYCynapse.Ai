@@ -86,11 +86,14 @@ def main(argv: list[str] | None = None) -> int:
         con = lake.connect(settings, snapshot=snap)
         bad = 0
         for c in cases:
-            r = run(con, c.gold_sql, timeout_s=300)
-            flag = "ERROR" if not r.ok else ("EMPTY" if not r.rows or r.rows == [(None,)] else "ok")
-            bad += flag != "ok"
-            preview = r.error if not r.ok else str(r.rows[:3])[:110]
-            print(f"{flag:5} {c.id:8} {r.ms:>7}ms  {preview}")
+            for n, sql in enumerate([c.gold_sql, *c.alt_gold_sql]):
+                r = run(con, sql, timeout_s=300)
+                empty = not r.rows or r.rows == [(None,)]
+                flag = "ERROR" if not r.ok else ("EMPTY" if empty else "ok")
+                bad += flag != "ok"
+                preview = r.error if not r.ok else str(r.rows[:3])[:110]
+                label = c.id if n == 0 else f"{c.id}/{n}"
+                print(f"{flag:5} {label:10} {r.ms:>7}ms  {preview}")
         print(f"{len(cases)} gold queries, {bad} problems")
         return 1 if bad else 0
 

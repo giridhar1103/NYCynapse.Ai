@@ -62,6 +62,9 @@ class Case(Strict):
     difficulty: Literal["easy", "medium", "hard"] = "medium"
     expect: Expect = Field(default_factory=Expect)
     gold_sql: str | None = None
+    # Other readings that are just as right, when the question genuinely allows them and the
+    # conventions do not settle it. An answer matching any of them counts.
+    alt_gold_sql: list[str] = Field(default_factory=list)
     compare: Compare = Field(default_factory=Compare)
     as_of: str = AS_OF
     notes: str | None = None

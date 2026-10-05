@@ -16,7 +16,7 @@ import duckdb
 
 from .. import guard
 from .cases import Case
-from .compare import compare
+from .compare import Verdict, compare
 from .execute import Execution, run
 from .system import Answer
 
@@ -81,7 +81,11 @@ def _recall(expected: list[str], got: list[str]) -> float | None:
 
 
 def score(
-    case: Case, answer: Answer, gold: Execution | None, con: duckdb.DuckDBPyConnection
+    case: Case,
+    answer: Answer,
+    gold: Execution | None,
+    con: duckdb.DuckDBPyConnection,
+    alternatives: list[Execution] = (),
 ) -> CaseResult:
     r = CaseResult(
         id=case.id,
@@ -116,6 +120,12 @@ def score(
             if ex.ok and gold is not None and gold.ok:
                 r.gold_rows = len(gold.rows)
                 v = compare(gold.columns, gold.rows, ex.columns, ex.rows, case.compare)
+                for alt in alternatives:
+                    if v.match or not alt.ok:
+                        break
+                    w = compare(alt.columns, alt.rows, ex.columns, ex.rows, case.compare)
+                    if w.match:
+                        v = Verdict(True, "matches an alternative reading")
                 r.result_match, r.match_reason = v.match, v.reason
                 strict = case.compare.model_copy(update={"columns": "all"})
                 r.strict_match = len(ex.columns) == len(gold.columns) and (
@@ -194,6 +204,7 @@ def evaluate(
             d = json.loads(line)
             done[d["id"]] = CaseResult(**d)
     gold_cache: dict[str, Execution] = {}
+    alt_cache: dict[str, list[Execution]] = {}
     results: list[CaseResult] = []
     with partial.open("a") as log:
         for i, case in enumerate(cases, 1):
@@ -202,6 +213,7 @@ def evaluate(
                 continue
             if case.gold_sql and case.id not in gold_cache:
                 gold_cache[case.id] = run(con, case.gold_sql, timeout_s=300)
+                alt_cache[case.id] = [run(con, s, timeout_s=300) for s in case.alt_gold_sql]
             try:
                 answer = system.answer(case.question, case.as_of)
             except ProviderLimit as e:
@@ -209,7 +221,7 @@ def evaluate(
                     f"stopped at {case.id}: provider limit ({e}). "
                     f"Rerun with --resume {out} to continue."
                 ) from e
-            res = score(case, answer, gold_cache.get(case.id), con)
+            res = score(case, answer, gold_cache.get(case.id), con, alt_cache.get(case.id, []))
             results.append(res)
             log.write(json.dumps(asdict(res), default=str) + "\n")
             log.flush()

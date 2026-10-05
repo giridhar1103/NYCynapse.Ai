@@ -63,6 +63,8 @@ read more than one way, these rules decide which reading is the reference.
     tabulation area.
   * A named landmark ("near Yankee Stadium") means the areas listed for it in
     `semantic/places.yaml`.
+* **Status words.** A 311 request that is "open" or "still open" is one that is not closed,
+  whatever its stage (open, assigned, in progress).
 * **Subway.**
   * Ridership counts the subway only, unless the question names the Staten Island Railway or
     the Roosevelt Island Tram.
@@ -76,5 +78,10 @@ read more than one way, these rules decide which reading is the reference.
   or an order. Extra columns are allowed unless the case says otherwise.
 * **Numbers.** Numbers must match within the case's tolerance. A share may be given as a
   fraction or as a percentage.
+* **Zero groups.** A group listed with zero (Staten Island with no Citi Bike rides) is the same
+  answer as leaving the group out.
+* **Alternative readings.** When a question genuinely allows more than one reading and these
+  rules do not settle it, the case lists each reading as an accepted answer. An answer matching
+  any of them is right.
 * **Declines.** For a question that should be declined, the answer is right when the system
   declines. For one that needs clarifying, it is right when the system asks.

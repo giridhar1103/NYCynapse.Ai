@@ -78,3 +78,11 @@ def test_share_as_fraction_or_percent_either_way():
     assert compare(["share"], [(17.3,)], ["s"], [(0.173,)], spec).match
     assert compare(["share"], [(0.173,)], ["s"], [(17.3,)], spec).match
     assert not compare(["share"], [(0.173,)], ["s"], [(0.25,)], spec).match
+
+
+def test_a_group_with_zero_equals_a_missing_group():
+    spec = Compare()
+    gold = [("Bronx", 10), ("Brooklyn", 20)]
+    cand = [("Bronx", 10), ("Brooklyn", 20), ("Staten Island", 0)]
+    assert compare(["b", "n"], gold, ["b", "n"], cand, spec).match
+    assert not compare(["b", "n"], gold, ["b", "n"], [*cand[:2], ("Queens", 5)], spec).match

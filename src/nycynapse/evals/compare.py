@@ -102,9 +102,25 @@ def _rows_match(gold_rows, cand_rows, mapping, tol, ordered) -> bool:
     return True
 
 
+def _without_zero_rows(rows):
+    def zero(row):
+        nums = [
+            v
+            for v in row
+            if isinstance(v, int | float | decimal.Decimal) and not isinstance(v, bool)
+        ]
+        return bool(nums) and all(float(v) == 0 for v in nums)
+
+    return [r for r in rows if not zero(r)]
+
+
 def compare(gold_cols, gold_rows, cand_cols, cand_rows, spec: Compare) -> Verdict:
     if spec.rows is not None:
         gold_rows, cand_rows = gold_rows[: spec.rows], cand_rows[: spec.rows]
+    if len(gold_rows) != len(cand_rows):
+        # A group listed with zero is the same answer as a group left out: Staten Island with 0
+        # Citi Bike rides, or no row for it at all.
+        gold_rows, cand_rows = _without_zero_rows(gold_rows), _without_zero_rows(cand_rows)
     if not gold_rows and not cand_rows:
         return Verdict(True, "both empty")
     if len(gold_rows) != len(cand_rows):
