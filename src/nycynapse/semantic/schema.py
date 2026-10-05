@@ -109,6 +109,9 @@ class SemanticModel(Strict):
     # Lake tables this model is built from, used to check a question's time window against
     # what the data actually covers.
     coverage: list[str] = Field(default_factory=list)
+    # Status tables that keep a row per change (a bike station's status). A question about
+    # "right now" reads the latest row per these keys instead of every change.
+    latest_by: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _unique_names(self):

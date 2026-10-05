@@ -3,6 +3,9 @@
 Fields are written model.dimension, optionally with a role when a model is reached in more
 than one way: taxi_zones@dropoff.borough. Time grains are written time:day, time:week,
 time:month, time:year, time:hour, time:hour_of_day, time:day_of_week.
+
+The metric id `row_count` counts rows of the plan's model, for questions like "how many
+stations are there" on models that have no count metric of their own.
 """
 
 from typing import Literal
@@ -60,3 +63,9 @@ class Plan(Strict):
     order: list[Order] = Field(default_factory=list)
     limit: int | None = None
     having_min: dict[str, float] = Field(default_factory=dict)  # metric id -> minimum value
+    # Aggregate plans: also report what share of each metric matches these conditions, for
+    # questions like "what share of trips were paid in cash".
+    share_of: list[Filter] = Field(default_factory=list)
+    # Apply order and limit within each value of these fields instead of overall, for
+    # questions like "the hottest hour in each borough". They must be grouped or selected.
+    per_group: list[str] = Field(default_factory=list)

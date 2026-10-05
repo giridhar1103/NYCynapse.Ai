@@ -9,6 +9,9 @@ and how a metric that must not be summed across a dimension is rolled up instead
 from collections import deque
 from dataclasses import dataclass
 
+import sqlglot
+from sqlglot import exp
+
 from ..semantic.schema import Catalog, Metric, MetricSource, Relationship, SemanticModel
 from .ir import Plan
 from .timeparse import Window
@@ -105,11 +108,9 @@ class Compiler:
                 a = f"t{len(aliases)}"
                 aliases[k] = a
                 cond = rel.condition.replace("{left}", prev_alias).replace("{right}", a)
-                join_sql.append(
-                    f"LEFT JOIN {self.models[rel.right].table} {a} ON {cond}"
-                    if rel.kind in ("temporal",)
-                    else f"JOIN {self.models[rel.right].table} {a} ON {cond}"
-                )
+                # Inner joins throughout: a crash with no weather hour to match cannot say
+                # whether it rained, and a LEFT JOIN would show it as its own NULL group.
+                join_sql.append(f"JOIN {self.models[rel.right].table} {a} ON {cond}")
                 prev_alias = a
             return aliases[key] if key in aliases else prev_alias
 
@@ -131,6 +132,7 @@ class Compiler:
             model, _, dim = _split(ref)
             return any(d.name == dim and d.kind == "list" for d in self._model(model).dimensions)
 
+        table = self._table(base, plan, window)
         where: list[str] = []
         # time
         if plan.use_time_window and window is not None and not window.is_now:
@@ -160,6 +162,14 @@ class Compiler:
                 where.append(f"{neg}list_has_any({field_sql(f.field)}, [{values}])")
             else:
                 where.append(_predicate(field_sql(f.field), f.op, f.values))
+        # Columns the question filters on itself; a default filter on the same column gives
+        # way (ridership leaves out the Staten Island Railway unless it is asked for).
+        explicit = {
+            c
+            for f in plan.filters
+            if _split(f.field)[0] == base.name
+            for c in _columns(self._dim_sql(base, _split(f.field)[2]))
+        }
         for p in plan.places:
             codes = [c for c, _ in (places or {}).get(p.place, {}).get(p.level, [])]
             if not codes:
@@ -168,18 +178,23 @@ class Compiler:
             where.append(_predicate(field_sql(p.field), "in", values))
 
         if plan.kind == "list":
+            if plan.share_of:
+                raise CompileError("share_of needs an aggregate plan")
+            missing = [g for g in plan.per_group if g not in plan.select]
+            if missing:
+                raise CompileError(f"per_group fields must be selected: {', '.join(missing)}")
             cols = [f"{field_sql(s)} AS {_name(s)}" for s in plan.select] or ["t0.*"]
-            sql = f"SELECT {', '.join(cols)}\nFROM {base.table} t0"
-            filters = self._default_filters(base, None)
+            sql = f"SELECT {', '.join(cols)}\nFROM {table} t0"
+            filters = self._default_filters(base, None, explicit)
             return self._finish(sql, join_sql, where + filters + exists, [], plan, {})
 
         if not plan.metrics:
             raise CompileError("an aggregate plan needs at least one metric")
-        metrics = [self._metric(m) for m in plan.metrics]
+        metrics = [self._metric(m, base.name) for m in plan.metrics]
         sources = [self._source(m, base.name) for m in metrics]
         filters = []
         for src in sources:
-            for f in self._default_filters(base, src):
+            for f in self._default_filters(base, src, explicit):
                 if f not in filters:
                     filters.append(f)
         groups = []
@@ -191,18 +206,33 @@ class Compiler:
                 groups.append((f"{u}.value", _name(g)))
             else:
                 groups.append((field_sql(g), _name(g)))
+        missing = [g for g in plan.per_group if g not in plan.group_by]
+        if missing:
+            raise CompileError(f"per_group fields must be grouped: {', '.join(missing)}")
         semi = [m for m in metrics if m.additivity == "semi_additive"]
         if semi:
+            if plan.share_of or plan.per_group:
+                raise CompileError("share_of and per_group are not supported with " + semi[0].id)
             return self._semi_additive(
-                plan, base, metrics, sources, groups, join_sql, where + filters + exists
+                plan, base, table, metrics, sources, groups, join_sql, where + filters + exists
             )
         selects = [f"{expr} AS {name}" for expr, name in groups]
-        selects += [
-            f"{_qualify_expr(src.expression, 't0')} AS {m.id}"
-            for m, src in zip(metrics, sources, strict=True)
-        ]
-        sql = f"SELECT {', '.join(selects)}\nFROM {base.table} t0"
         names = {m.id: m.id for m in metrics}
+        for m, src in zip(metrics, sources, strict=True):
+            total = _qualify_expr(src.expression, "t0")
+            selects.append(f"{total} AS {m.id}")
+            if plan.share_of:
+                if m.additivity != "additive":
+                    raise CompileError(f"a share of {m.id} makes no sense; it does not add up")
+                cond = " AND ".join(
+                    _predicate(field_sql(f.field), f.op, f.values) for f in plan.share_of
+                )
+                part = _with_condition(total, cond)
+                selects.append(f"{part} AS {m.id}_matching")
+                selects.append(f"{part} * 1.0 / NULLIF({total}, 0) AS {m.id}_share")
+                names[f"{m.id}_matching"] = f"{m.id}_matching"
+                names[f"{m.id}_share"] = f"{m.id}_share"
+        sql = f"SELECT {', '.join(selects)}\nFROM {table} t0"
         return self._finish(sql, join_sql, where + filters + exists, groups, plan, names)
 
     def _finish(self, sql, join_sql, where, groups, plan: Plan, metric_names) -> str:
@@ -217,6 +247,25 @@ class Compiler:
                 + " AND ".join(
                     f"{metric_names.get(k, k)} >= {v}" for k, v in plan.having_min.items()
                 )
+            )
+        if plan.per_group:
+            per = ", ".join(_name(g) for g in plan.per_group)
+            order = ", ".join(
+                f"{metric_names.get(o.by, _name(o.by))} {'DESC' if o.desc else 'ASC'}"
+                for o in plan.order
+            )
+            if not order:
+                raise CompileError("per_group needs an order to rank by")
+            return "\n".join(
+                [
+                    "SELECT * FROM (",
+                    *parts,
+                    ") ranked",
+                    f"QUALIFY row_number() OVER (PARTITION BY {per} ORDER BY {order}) "
+                    f"<= {plan.limit or 1}",
+                    f"ORDER BY {per}, {order}",
+                    "LIMIT 1000",
+                ]
             )
         if plan.order:
             parts.append(
@@ -234,7 +283,7 @@ class Compiler:
         parts.append(f"LIMIT {min(plan.limit or 1000, 1000)}")
         return "\n".join(parts)
 
-    def _semi_additive(self, plan, base, metrics, sources, groups, join_sql, where) -> str:
+    def _semi_additive(self, plan, base, table, metrics, sources, groups, join_sql, where) -> str:
         # Aggregate per (groups + the dimensions the metric must not be summed over), then roll
         # those up with the metric's rollup.
         extra = []
@@ -249,7 +298,7 @@ class Compiler:
             f"{_qualify_expr(s.expression, 't0')} AS {m.id}"
             for m, s in zip(metrics, sources, strict=True)
         ]
-        sql = f"SELECT {', '.join(inner)}\nFROM {base.table} t0"
+        sql = f"SELECT {', '.join(inner)}\nFROM {table} t0"
         parts = [sql, *join_sql]
         if where:
             parts.append("WHERE " + "\n  AND ".join(where))
@@ -283,11 +332,38 @@ class Compiler:
             raise CompileError(f"unknown model {name}")
         return self.models[name]
 
-    def _metric(self, metric_id: str) -> Metric:
+    def _metric(self, metric_id: str, model: str | None = None) -> Metric:
+        if metric_id == "row_count" and model:
+            return Metric(
+                id="row_count",
+                label="Rows",
+                description="Rows of the model.",
+                unit="rows",
+                format="count",
+                additivity="additive",
+                sources=[MetricSource(model=model, expression="count(*)")],
+            )
         try:
             return self.catalog.metric(metric_id)
         except KeyError as e:
             raise CompileError(f"unknown metric {metric_id}") from e
+
+    def _table(self, base: SemanticModel, plan: Plan, window: Window | None) -> str:
+        """The base table, or for "right now" on a status table its latest row per key."""
+        if window is None or not window.is_now or not base.latest_by:
+            return base.table
+        t = self._time(base, plan)
+        bound = ""
+        if window.end is not None:
+            bound = (
+                f"WHERE {t.instant} <= timezone('America/New_York', "
+                f"TIMESTAMP '{window.end:%Y-%m-%d %H:%M:%S}') "
+            )
+        keys = ", ".join(base.latest_by)
+        return (
+            f"(SELECT * FROM {base.table} {bound}"
+            f"QUALIFY row_number() OVER (PARTITION BY {keys} ORDER BY {t.instant} DESC) = 1)"
+        )
 
     def _source(self, metric: Metric, model: str) -> MetricSource:
         for s in metric.sources:
@@ -298,11 +374,22 @@ class Compiler:
             + ", ".join(s.model for s in metric.sources)
         )
 
-    def _default_filters(self, m: SemanticModel, src: MetricSource | None) -> list[str]:
+    def _default_filters(
+        self, m: SemanticModel, src: MetricSource | None, explicit: set[str] = frozenset()
+    ) -> list[str]:
         named = {f.name: f for f in m.filters}
-        wanted = [f.name for f in m.filters if f.default]
+        # A default filter steps aside when the question filters the same column itself. A
+        # metric's own filters always apply: they are part of its definition.
+        wanted = [f.name for f in m.filters if f.default and not (_columns(f.sql) & explicit)]
         if src:
-            wanted += [f for f in src.filters if f not in wanted]
+            # Listing a default filter in a metric does not make it part of the metric's
+            # meaning: it still steps aside for an explicit filter on the same column.
+            wanted += [
+                f
+                for f in src.filters
+                if f not in wanted
+                and not (f in named and named[f].default and _columns(named[f].sql) & explicit)
+            ]
         return [_qualify(named[f].sql, "t0") for f in wanted if f in named]
 
     def _dim_sql(self, m: SemanticModel, dim: str) -> str:
@@ -390,15 +477,37 @@ def _qualify(sql: str, alias: str) -> str:
 
 def _qualify_expr(sql: str, alias: str) -> str:
     """Prefix bare column names in an expression with the table alias."""
-    import sqlglot
-    from sqlglot import exp
-
     if sql.strip() in ("*", "count(*)"):
         return sql
     tree = sqlglot.parse_one(sql, dialect="duckdb")
     for col in tree.find_all(exp.Column):
         if not col.table:
             col.set("table", exp.to_identifier(alias))
+    return tree.sql(dialect="duckdb")
+
+
+def _columns(sql: str) -> set[str]:
+    try:
+        return {c.name for c in sqlglot.parse_one(sql, dialect="duckdb").find_all(exp.Column)}
+    except sqlglot.errors.ParseError:
+        return set()
+
+
+def _with_condition(expr_sql: str, cond_sql: str) -> str:
+    """The same aggregate restricted to rows matching a condition, kept inside each aggregate
+    so a metric's own definition (FILTER clauses included) is untouched."""
+    tree = sqlglot.parse_one(expr_sql, dialect="duckdb")
+    cond = sqlglot.parse_one(cond_sql, dialect="duckdb")
+    for agg in list(tree.find_all(exp.AggFunc)):
+        if isinstance(agg.parent, exp.Filter):
+            where = agg.parent.expression
+            where.set("this", exp.and_(where.this, cond.copy()))
+            continue
+        wrapped = exp.Filter(this=agg.copy(), expression=exp.Where(this=cond.copy()))
+        if agg is tree:  # the whole expression is one aggregate, such as count(*)
+            tree = wrapped
+        else:
+            agg.replace(wrapped)
     return tree.sql(dialect="duckdb")
 
 
