@@ -1,5 +1,6 @@
 import argparse
 import json
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -22,6 +23,8 @@ def main(argv: list[str] | None = None) -> int:
     er.add_argument("--only", help="comma separated case ids")
     er.add_argument("--limit", type=int)
     er.add_argument("--resume", help="report path of a stopped run to continue")
+    er.add_argument("--model", help="provider id to run every pipeline role on")
+    er.add_argument("--rep", type=int, default=1, help="repeat number, for repeated runs")
     ep = sub.add_parser("eval-publish", help="copy a run's summary to evals/results for the site")
     ep.add_argument("report", nargs="+")
     sub.add_parser("eval-table", help="write the results table into README.md")
@@ -120,6 +123,13 @@ def main(argv: list[str] | None = None) -> int:
         if args.limit:
             cases = cases[: args.limit]
         manifest = gold.load(settings.semantic_path / "gold_manifest.json")
+        from .llm.client import config as llm_config
+        from .llm.client import use_model
+
+        if args.model:
+            use_model(args.model)
+        llm = llm_config()
+        model_id = llm["roles"]["default"]
         if args.system == "e0":
             from .baselines.full_schema import FullSchemaBaseline
 
@@ -147,16 +157,33 @@ def main(argv: list[str] | None = None) -> int:
             )
         from .prompts import prompt_version
 
-        stamp = time.strftime("%Y%m%d-%H%M%S")
-        out = (
-            Path(args.resume)
-            if args.resume
-            else (root / "runs" / f"{stamp}-{args.system}-{args.split}.json")
+        # One file per model, build, split and repeat. A stopped run resumes from its partial
+        # file; a finished one is not run again.
+        name = f"{args.system}-{args.split}-r{args.rep}.json"
+        if args.only or args.limit:
+            name = f"{args.system}-{args.split}-trial-{time.strftime('%Y%m%d-%H%M%S')}.json"
+        out = Path(args.resume) if args.resume else root / "runs" / model_id / name
+        if out.exists():
+            print(f"already finished: {out}")
+            return 0
+        out.parent.mkdir(parents=True, exist_ok=True)
+        git = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, cwd=root
+        ).stdout.strip()
+        dirty = bool(
+            subprocess.run(
+                ["git", "status", "--porcelain", "--untracked-files=no"],
+                capture_output=True,
+                text=True,
+                cwd=root,
+            ).stdout.strip()
         )
-        from .llm.client import config as llm_config
-
-        llm = llm_config()
         meta = {
+            "model": model_id,
+            "model_label": llm["providers"][model_id].get("label", model_id),
+            "repeat": args.rep,
+            "git": git + ("-dirty" if dirty else ""),
+            "system_id": args.system,
             "system": system.name,
             "models": {
                 role: f"{llm['providers'][pid].get('label', pid)} "
@@ -166,7 +193,7 @@ def main(argv: list[str] | None = None) -> int:
             "split": args.split,
             "snapshot": snap,
             "catalog_version": catalog_version,
-            "prompts": {p: prompt_version(p) for p in ("understand", "generate", "plan")},
+            "prompts": {p: prompt_version(p) for p in ("understand", "generate", "plan", "answer")},
         }
         summary = evaluate(system, cases, con, out, meta=meta)
         print(json.dumps(summary, indent=1))
@@ -206,7 +233,6 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == "publish":
         import logging
-        import subprocess
 
         from . import lake
         from .catalog import store, sync
