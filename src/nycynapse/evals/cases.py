@@ -65,6 +65,11 @@ class Case(Strict):
     compare: Compare = Field(default_factory=Compare)
     as_of: str = AS_OF
     notes: str | None = None
+    # Cases added after the first set name their split. The original cases are split by a hash
+    # of their group, which a new batch cannot use without some of it landing in the holdout.
+    split: Literal["dev", "regression", "holdout"] | None = None
+    # Who wrote the question and the reference, for the record.
+    source: str | None = None
 
     @model_validator(mode="after")
     def _gold_matches_classification(self):

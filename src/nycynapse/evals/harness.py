@@ -23,6 +23,8 @@ from .system import Answer
 
 def split_of(case: Case) -> str:
     """dev, regression or holdout. Fixed by paraphrase group, so a group never spans splits."""
+    if case.split:
+        return case.split
     key = (case.group or case.id).encode()
     bucket = int(hashlib.sha256(key).hexdigest(), 16) % 10
     return "dev" if bucket < 5 else "regression" if bucket < 7 else "holdout"
