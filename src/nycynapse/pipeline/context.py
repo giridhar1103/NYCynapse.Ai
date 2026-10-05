@@ -216,12 +216,15 @@ class Context:
         workspaces: list[str],
         *,
         per_dimension: int = 2,
-        per_mention: int = 10,
+        per_mention: int = 16,
+        containing: int = 8,
     ) -> list[Grounding]:
         """Candidate values for each mention, the best few per dimension.
 
         Keeping a few per dimension matters: a neighborhood name also matches station and taxi
-        zone names, and the right reading depends on the rest of the question.
+        zone names, and the right reading depends on the rest of the question. Values that
+        contain the whole mention are all kept, up to a limit: "Williamsburg" is three
+        neighborhoods, and a common name means all of them.
         """
         scope = [m.name for m in self.workspace_models(workspaces)]
         out: list[Grounding] = []
@@ -229,10 +232,10 @@ class Context:
             norm = " ".join(w for w in normalize(mention).split() if w not in GENERIC)
             if not norm:
                 continue
-            found = self._route(mention, scope)
+            found = self._route(mention, scope) + self._aliases(norm, scope)
             rows = self.conn.execute(
                 """
-                SELECT model, dimension, value, rows,
+                SELECT model, dimension, value, rows, normalized,
                        greatest(similarity(normalized, %(m)s), word_similarity(%(m)s, normalized),
                                 CASE WHEN normalized = %(m)s THEN 1.0 ELSE 0 END) AS s
                 FROM catalog.dimension_values
@@ -243,9 +246,11 @@ class Context:
                 {"v": self.version, "models": scope, "m": norm},
             ).fetchall()
             seen: dict[tuple, int] = {}
+            whole = re.compile(rf"\b{re.escape(norm)}\b")
             for r in rows:
                 key = (r["model"], r["dimension"])
-                if seen.get(key, 0) >= per_dimension:
+                limit = containing if whole.search(r["normalized"]) else per_dimension
+                if seen.get(key, 0) >= limit:
                     continue
                 seen[key] = seen.get(key, 0) + 1
                 found.append(
@@ -266,6 +271,14 @@ class Context:
             found.sort(key=lambda g: (-g.score, -g.rows))
             out += found[:per_mention]
         return out
+
+    def _aliases(self, norm: str, scope: list[str]) -> list[Grounding]:
+        return [
+            Grounding(norm, "value", a.model, a.dimension, value, 1.0)
+            for a in self.catalog.aliases
+            if a.model in scope and any(normalize(n) == norm for n in a.names)
+            for value in a.values
+        ]
 
     def _route(self, mention: str, scope: list[str]) -> list[Grounding]:
         """Subway routes are one or two characters, too short for trigram matching."""

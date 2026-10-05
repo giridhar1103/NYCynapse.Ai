@@ -74,7 +74,17 @@ class Validator:
         self._relationships()
         self._workspaces()
         self._periods()
+        self._aliases()
         return self.problems
+
+    def _aliases(self) -> None:
+        models = {m.name: m for m in self.catalog.models}
+        for a in self.catalog.aliases:
+            m = models.get(a.model)
+            if m is None:
+                self.problem(f"alias {a.names[0]}", f"unknown model {a.model}")
+            elif a.dimension not in {d.name for d in m.dimensions}:
+                self.problem(f"alias {a.names[0]}", f"{a.model} has no dimension {a.dimension}")
 
     def _models(self) -> None:
         names = [m.name for m in self.catalog.models]

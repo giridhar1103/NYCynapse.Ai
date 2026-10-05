@@ -228,6 +228,16 @@ class Instruction(Strict):
     text: str
 
 
+class ValueAlias(Strict):
+    """Names people use that are not in the data, mapped to the values they mean: Bed-Stuy for
+    the two Bedford-Stuyvesant neighborhoods."""
+
+    model: Ident
+    dimension: Ident
+    names: list[str]
+    values: list[str]
+
+
 class Catalog(Strict):
     version: str
     workspaces: list[Workspace]
@@ -237,6 +247,7 @@ class Catalog(Strict):
     periods: list[NamedPeriod] = Field(default_factory=list)
     places: list[Place] = Field(default_factory=list)
     instructions: list[Instruction] = Field(default_factory=list)
+    aliases: list[ValueAlias] = Field(default_factory=list)
 
     def model(self, name: str) -> SemanticModel:
         for m in self.models:

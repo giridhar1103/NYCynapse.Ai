@@ -1,0 +1,20 @@
+# Names New Yorkers use that are not in the data, and the values they mean. Names that already
+# appear inside an official name (Midtown, DUMBO, Yorkville) need no entry: matching finds them.
+aliases:
+  - {model: neighborhoods, dimension: neighborhood, names: [Bed-Stuy, Bed Stuy, BedStuy],
+     values: [Bedford-Stuyvesant (East), Bedford-Stuyvesant (West)]}
+  - {model: neighborhoods, dimension: neighborhood, names: [UES],
+     values: [Upper East Side-Carnegie Hill, Upper East Side-Lenox Hill-Roosevelt Island, Upper East Side-Yorkville]}
+  - {model: neighborhoods, dimension: neighborhood, names: [UWS],
+     values: [Upper West Side (Central), Upper West Side-Lincoln Square, Upper West Side-Manhattan Valley]}
+  - {model: neighborhoods, dimension: neighborhood, names: [LES], values: [Lower East Side]}
+  - {model: neighborhoods, dimension: neighborhood, names: [FiDi, Fi-Di, Wall Street area],
+     values: [Financial District-Battery Park City]}
+  - {model: neighborhoods, dimension: neighborhood, names: [Spanish Harlem, El Barrio],
+     values: [East Harlem (North), East Harlem (South)]}
+  - {model: neighborhoods, dimension: neighborhood, names: [LIC], values: [Long Island City-Hunters Point]}
+  - {model: neighborhoods, dimension: neighborhood, names: [Stuy Town, Stuytown],
+     values: [Stuyvesant Town-Peter Cooper Village]}
+  - {model: neighborhoods, dimension: neighborhood, names: [PLG], values: [Prospect Lefferts Gardens-Wingate]}
+  - {model: neighborhoods, dimension: neighborhood, names: [BoCoCa],
+     values: [Carroll Gardens-Cobble Hill-Gowanus-Red Hook, Downtown Brooklyn-DUMBO-Boerum Hill]}

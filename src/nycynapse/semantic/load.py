@@ -28,4 +28,7 @@ def load_catalog(root: Path) -> Catalog:
         periods=_read(root / "time.yaml").get("periods", []),
         places=_read(root / "places.yaml").get("places", []),
         instructions=_read(root / "instructions.yaml").get("instructions", []),
+        aliases=_read(root / "aliases.yaml").get("aliases", [])
+        if (root / "aliases.yaml").exists()
+        else [],
     )

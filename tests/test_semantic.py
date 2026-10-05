@@ -76,3 +76,10 @@ def test_misspelled_key_is_rejected(catalog):
     data["metrics"][0]["synonymns"] = ["typo"]
     with pytest.raises(ValidationError):
         Catalog(**data)
+
+
+def test_aliases_point_at_real_dimensions(catalog, manifest):
+    from nycynapse.semantic.validate import validate
+
+    assert catalog.aliases, "aliases.yaml is loaded"
+    assert not [p for p in validate(catalog, manifest) if "alias" in str(p)]
