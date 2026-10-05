@@ -63,6 +63,20 @@ def config() -> dict:
     return _config
 
 
+# Roles that stay put when a run switches the model under test: grading and auditing must not
+# change with the model being graded.
+FIXED_ROLES = ("judge", "auditor")
+
+
+def use_model(pid: str) -> None:
+    """Point every pipeline role at one provider, for an evaluation run of that model."""
+    cfg = config()
+    if pid not in cfg["providers"]:
+        raise LLMError(f"unknown provider {pid}; known: {', '.join(cfg['providers'])}")
+    fixed = {r: cfg["roles"][r] for r in FIXED_ROLES if r in cfg["roles"]}
+    cfg["roles"] = {"default": pid, **fixed}
+
+
 def provider_for(role: str) -> tuple[str, dict]:
     cfg = config()
     pid = cfg["roles"].get(role, cfg["roles"]["default"])
@@ -163,6 +177,7 @@ def _command(pid: str, p: dict, system: str, prompt: str, schema: dict | None) -
             "{schema_file}": schema_path,
             "{out_file}": out_path,
             "{model}": p.get("model", ""),
+            "{effort}": p.get("effort", "low"),
             "{schema_json}": json.dumps(schema) if schema is not None else "",
         }
         argv: list[str] = []
@@ -215,6 +230,8 @@ def _command(pid: str, p: dict, system: str, prompt: str, schema: dict | None) -
         )
     if p.get("parse") == "agy_json":
         return _agy_result(pid, p, proc, ms)
+    if p.get("parse") == "codex_jsonl":
+        return _codex_result(pid, p, proc, out, ms)
     if proc.returncode != 0 and not out.strip():
         raise LLMError(f"exited {proc.returncode}: {proc.stderr[:300]}")
     return LLMResult(out.strip(), p.get("model", ""), pid, ms)
@@ -234,6 +251,25 @@ def _agy_result(pid: str, p: dict, proc, ms: int) -> LLMResult:
     tin = u.get("input_tokens")
     tout = (u.get("output_tokens") or 0) + (u.get("thinking_tokens") or 0)
     return LLMResult(text, p.get("model", ""), pid, ms, tin, tout, _list_price(p, tin, tout))
+
+
+def _codex_result(pid: str, p: dict, proc, out: str, ms: int) -> LLMResult:
+    """codex exec --json: the reply is in the -o file, usage in the turn.completed event."""
+    usage, error = {}, None
+    for line in proc.stdout.splitlines():
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if event.get("type") == "turn.completed":
+            usage = event.get("usage") or {}
+        elif event.get("type") in ("turn.failed", "error"):
+            error = json.dumps(event)[:300]
+    if not out.strip() or out.strip() == proc.stdout.strip():
+        raise LLMError(error or f"no reply: {proc.stderr[-300:]}")
+    tin = usage.get("input_tokens")
+    tout = (usage.get("output_tokens") or 0) + (usage.get("reasoning_output_tokens") or 0)
+    return LLMResult(out.strip(), p.get("model", ""), pid, ms, tin, tout, _list_price(p, tin, tout))
 
 
 def _list_price(p: dict, tokens_in: int | None, tokens_out: int | None) -> float | None:
