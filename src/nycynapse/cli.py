@@ -25,9 +25,9 @@ def main(argv: list[str] | None = None) -> int:
     er.add_argument("--resume", help="report path of a stopped run to continue")
     er.add_argument("--model", help="provider id to run every pipeline role on")
     er.add_argument("--rep", type=int, default=1, help="repeat number, for repeated runs")
-    ep = sub.add_parser("eval-publish", help="copy a run's summary to evals/results for the site")
-    ep.add_argument("report", nargs="+")
-    sub.add_parser("eval-table", help="write the results table into README.md")
+    sub.add_parser(
+        "eval-report", help="build evals/results from the runs and refresh the README table"
+    )
     au = sub.add_parser("audit-gold", help="have the strongest models review the answer key")
     au.add_argument("--split", default="dev,regression", help="comma separated splits")
     au.add_argument("--only", help="comma separated case ids")
@@ -264,35 +264,19 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{len(todo)} cases audited, {flagged} flagged by at least one auditor")
         return 0
 
-    if args.cmd == "eval-table":
-        from .evals.report import readme_table
+    if args.cmd == "eval-report":
+        from .evals.report import build, readme_table
 
+        evals = settings.semantic_path.parent / "evals"
+        summary = build(evals / "runs", evals / "results")
         readme = settings.semantic_path.parent / "README.md"
-        results = settings.semantic_path.parent / "evals" / "results"
         text = readme.read_text()
         start, end = "<!-- results:start -->", "<!-- results:end -->"
-        head, rest = text.split(start, 1)
-        tail = rest.split(end, 1)[1]
-        readme.write_text(f"{head}{start}\n{readme_table(results)}{end}{tail}")
-        print(f"updated {readme}")
-        return 0
-
-    if args.cmd == "eval-publish":
-        results = settings.semantic_path.parent / "evals" / "results"
-        results.mkdir(exist_ok=True)
-        for path in args.report:
-            run = json.loads(Path(path).read_text())
-            meta = run["meta"]
-            if meta.get("split") == "all":
-                print(f"skipped {path}: publish one split at a time")
-                continue
-            key = meta["system"].split()[0].lower()
-            # Summaries only. Per-case results would reveal the holdout questions.
-            out = results / f"{meta['split']}-{key}.json"
-            out.write_text(
-                json.dumps({"id": key, **meta, "summary": run["summary"]}, indent=1) + "\n"
-            )
-            print(f"wrote {out}")
+        if start in text:
+            head, rest = text.split(start, 1)
+            tail = rest.split(end, 1)[1]
+            readme.write_text(f"{head}{start}\n{readme_table(summary)}{end}{tail}")
+        print(f"{len(summary['groups'])} result groups, {len(summary['paired'])} paired tests")
         return 0
 
     if args.cmd == "publish":

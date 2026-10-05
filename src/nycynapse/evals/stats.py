@@ -154,9 +154,7 @@ def repeats(runs: Sequence[Sequence[dict]]) -> dict:
             by_case[r["id"]].append(is_correct(r))
     full = [v for v in by_case.values() if len(v) == len(runs)]
     mean = sum(accs) / len(accs) if accs else None
-    sd = (
-        math.sqrt(sum((x - mean) ** 2 for x in accs) / (len(accs) - 1)) if len(accs) > 1 else None
-    )
+    sd = math.sqrt(sum((x - mean) ** 2 for x in accs) / (len(accs) - 1)) if len(accs) > 1 else None
     return {
         "runs": len(runs),
         "accuracy_mean": mean,

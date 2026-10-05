@@ -56,6 +56,13 @@ class CaseResult:
     tokens_in: int = 0
     tokens_out: int = 0
     error: str | None = None
+    # Strict: the same columns as the reference and nothing extra, as BIRD scores it. The
+    # main score allows extra columns, as Spider 2.0 does.
+    strict_match: bool | None = None
+    rows: int | None = None  # rows the answer returned
+    gold_rows: int | None = None
+    preview: list[list[str]] = field(default_factory=list)  # first rows, for later review
+    explanation: str | None = None
 
     @property
     def correct(self) -> bool:
@@ -89,6 +96,7 @@ def score(
         tokens_in=answer.tokens_in,
         tokens_out=answer.tokens_out,
         error=answer.error,
+        explanation=(answer.explanation or "")[:600] or None,
         workspace_recall=_recall(case.expect.workspaces, answer.workspaces),
         metric_recall=_recall(case.expect.metrics, answer.metrics),
         value_recall=_recall(case.expect.values, answer.values),
@@ -100,9 +108,17 @@ def score(
         if g.ok:
             ex = run(con, answer.sql, timeout_s=120)
             r.executed, r.exec_error, r.exec_ms = ex.ok, ex.error, ex.ms
+            if ex.ok:
+                r.rows = len(ex.rows)
+                r.preview = [[str(v)[:60] for v in row] for row in ex.rows[:10]]
             if ex.ok and gold is not None and gold.ok:
+                r.gold_rows = len(gold.rows)
                 v = compare(gold.columns, gold.rows, ex.columns, ex.rows, case.compare)
                 r.result_match, r.match_reason = v.match, v.reason
+                strict = case.compare.model_copy(update={"columns": "all"})
+                r.strict_match = len(ex.columns) == len(gold.columns) and (
+                    compare(gold.columns, gold.rows, ex.columns, ex.rows, strict).match
+                )
             elif ex.ok and case.gold_sql:
                 r.match_reason = "gold failed"
             elif ex.ok:
