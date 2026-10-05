@@ -2,6 +2,24 @@ relationships:
   # geography
   - {id: neighborhood_borough, left: neighborhoods, right: boroughs, kind: many_to_one,
      condition: "{left}.boro_code = {right}.boro_code", description: Neighborhood to its borough.}
+  - {id: bike_stations_borough, left: bike_stations, right: boroughs, kind: many_to_one,
+     condition: "{left}.boro_code = {right}.boro_code",
+     description: "Borough recorded for the station. Preferred over going through the neighborhood, which can disagree at borough edges such as Marble Hill."}
+  - {id: service_requests_borough, left: service_requests, right: boroughs, kind: many_to_one,
+     condition: "{left}.boro_code = {right}.boro_code",
+     description: "Borough recorded for the request. Preferred over going through the neighborhood, which can disagree at borough edges such as Marble Hill."}
+  - {id: collisions_borough, left: collisions, right: boroughs, kind: many_to_one,
+     condition: "{left}.boro_code = {right}.boro_code",
+     description: "Borough recorded for the crash. Preferred over going through the neighborhood, which can disagree at borough edges such as Marble Hill."}
+  - {id: subway_stations_borough, left: subway_stations, right: boroughs, kind: many_to_one,
+     condition: "{left}.boro_code = {right}.boro_code",
+     description: "Borough recorded for the station. Preferred over going through the neighborhood, which can disagree at borough edges such as Marble Hill."}
+  - {id: subway_complexes_borough, left: subway_complexes, right: boroughs, kind: many_to_one,
+     condition: "{left}.boro_code = {right}.boro_code",
+     description: "Borough recorded for the complex. Preferred over going through the neighborhood, which can disagree at borough edges such as Marble Hill."}
+  - {id: weather_alerts_borough, left: weather_alerts, right: boroughs, kind: many_to_one,
+     condition: "{left}.boro_code = {right}.boro_code",
+     description: "Borough recorded for the alert. Preferred over going through the neighborhood, which can disagree at borough edges such as Marble Hill."}
   - {id: community_district_borough, left: community_districts, right: boroughs, kind: many_to_one,
      condition: "{left}.boro_code = {right}.boro_code", description: Community district to its borough.}
 
@@ -47,6 +65,9 @@ relationships:
      condition: "{left}.nta_code = {right}.nta_code", description: Neighborhood a complex is in.}
   - {id: ridership_complex, left: subway_ridership, right: subway_complexes, kind: many_to_one,
      condition: "{left}.complex_id = {right}.complex_id", description: Complex the riders entered.}
+  - {id: ridership_station, left: subway_ridership, right: subway_stations, kind: range,
+     condition: "{right}.complex_id = {left}.complex_id",
+     description: "Stations in the complex the riders entered, such as whether it is in the congestion zone. Filter only: a complex has several stations."}
   - {id: ridership_date, left: subway_ridership, right: calendar, kind: many_to_one,
      condition: "{left}.hour_date = {right}.date", description: Calendar day of the ridership hour.}
   - {id: ridership_weather, left: subway_ridership, right: weather_hourly, kind: temporal,
