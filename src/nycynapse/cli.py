@@ -24,6 +24,7 @@ def main(argv: list[str] | None = None) -> int:
     er.add_argument("--resume", help="report path of a stopped run to continue")
     ep = sub.add_parser("eval-publish", help="copy a run's summary to evals/results for the site")
     ep.add_argument("report", nargs="+")
+    sub.add_parser("eval-table", help="write the results table into README.md")
     pub = sub.add_parser("publish", help="validate, then publish the catalog to Postgres")
     pub.add_argument("--no-lake", action="store_true", help="skip the value index and places")
     args = parser.parse_args(argv)
@@ -162,6 +163,19 @@ def main(argv: list[str] | None = None) -> int:
         summary = evaluate(system, cases, con, out, meta=meta)
         print(json.dumps(summary, indent=1))
         print(f"report: {out}")
+        return 0
+
+    if args.cmd == "eval-table":
+        from .evals.report import readme_table
+
+        readme = settings.semantic_path.parent / "README.md"
+        results = settings.semantic_path.parent / "evals" / "results"
+        text = readme.read_text()
+        start, end = "<!-- results:start -->", "<!-- results:end -->"
+        head, rest = text.split(start, 1)
+        tail = rest.split(end, 1)[1]
+        readme.write_text(f"{head}{start}\n{readme_table(results)}{end}{tail}")
+        print(f"updated {readme}")
         return 0
 
     if args.cmd == "eval-publish":
