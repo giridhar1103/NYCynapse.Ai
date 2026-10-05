@@ -35,6 +35,9 @@ def main(argv: list[str] | None = None) -> int:
     dr.add_argument("--batch", required=True, help="name for the drafts file")
     dr.add_argument("--drafters", default="audit-gpt,audit-gemini")
     dr.add_argument("--writer", default="audit-opus")
+    jr = sub.add_parser("judge-run", help="have a panel check the grading of a finished run")
+    jr.add_argument("run", nargs="+")
+    jr.add_argument("--judges", help="comma separated provider ids (default: the auditors)")
     au = sub.add_parser("audit-gold", help="have the strongest models review the answer key")
     au.add_argument("--split", default="dev,regression", help="comma separated splits")
     au.add_argument("--only", help="comma separated case ids")
@@ -282,6 +285,37 @@ def main(argv: list[str] | None = None) -> int:
         out.write_text(draft.to_json(kept))
         failed = sum(1 for d in kept if d["gold"].get("failed") or d["gold"].get("error"))
         print(f"wrote {out}; {failed} without a working reference")
+        return 0
+
+    if args.cmd == "judge-run":
+        import yaml
+
+        from . import lake
+        from .evals.cases import load_dir
+        from .evals.judge import grader_error_rates, needs_review, review
+        from .llm.client import config as llm_config
+
+        root = settings.semantic_path.parent / "evals"
+        cases = {c.id: c for c in load_dir(root / "cases")}
+        if settings.holdout_path and settings.holdout_path.exists():
+            cases.update({c.id: c for c in load_dir(settings.holdout_path)})
+        judges = args.judges.split(",") if args.judges else llm_config()["auditors"]
+        conventions = (root / "CONVENTIONS.md").read_text()
+        for path in map(Path, args.run):
+            data = json.loads(path.read_text())
+            con = lake.connect(settings, snapshot=data["meta"]["snapshot"])
+            done = {r["id"]: r for r in data.get("adjudication", {}).get("reviews", [])}
+            todo = [r for r in data["results"] if needs_review(r) and r["id"] not in done]
+            for i, r in enumerate(todo, 1):
+                done[r["id"]] = review(cases[r["id"]], r, con, judges, conventions)
+                data["adjudication"] = {
+                    "judges": judges,
+                    "reviews": list(done.values()),
+                    "rates": grader_error_rates(list(done.values())),
+                }
+                path.write_text(json.dumps(data, indent=1, default=str))
+                print(f"[{i}/{len(todo)}] {r['id']:8} {done[r['id']]['panel']}", flush=True)
+            print(path, json.dumps(data.get("adjudication", {}).get("rates", {})))
         return 0
 
     if args.cmd == "audit-gold":

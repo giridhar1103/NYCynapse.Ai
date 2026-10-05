@@ -37,6 +37,7 @@ def load_runs(runs: Path) -> list[dict]:
                 "repeat": meta.get("repeat", 1),
                 "meta": meta,
                 "results": run["results"],
+                "adjudication": run.get("adjudication", {}),
             }
         )
     return out
@@ -107,6 +108,7 @@ def build(runs_dir: Path, out_dir: Path) -> dict:
                 "finished_at": meta.get("finished_at"),
                 **describe(reps[0]["results"]),
                 "repeats": stats.repeats([r["results"] for r in reps]) if len(reps) > 1 else None,
+                "grader_check": reps[0].get("adjudication", {}).get("rates"),
             }
         )
     paired = []
