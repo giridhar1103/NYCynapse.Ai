@@ -87,6 +87,11 @@ def case_prompt(case: Case, context: dict, con) -> tuple[str, dict]:
                 + "\n".join(str(row) for row in facts["preview"])
             ),
             f"Comparison rules for this case: {case.compare.model_dump()}",
+            (
+                "Other accepted readings:\n" + "\n---\n".join(s.strip() for s in case.alt_gold_sql)
+                if case.alt_gold_sql
+                else ""
+            ),
             "Documentation of the tables it reads:\n" + table_docs(context["manifest"], g.tables),
         ]
     parts += [
