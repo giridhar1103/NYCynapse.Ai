@@ -22,7 +22,20 @@ from typing import Any
 
 import httpx
 
-_lock = threading.BoundedSemaphore(int(os.environ.get("NYCYNAPSE_LLM_CONCURRENCY", "2")))
+# Calls in flight per provider. Each vendor has its own limits, so different vendors can run
+# side by side.
+_CONCURRENCY = int(os.environ.get("NYCYNAPSE_LLM_CONCURRENCY", "2"))
+_locks: dict[str, threading.BoundedSemaphore] = {}
+_locks_guard = threading.Lock()
+
+
+def _lock_for(pid: str) -> threading.BoundedSemaphore:
+    with _locks_guard:
+        if pid not in _locks:
+            _locks[pid] = threading.BoundedSemaphore(_CONCURRENCY)
+        return _locks[pid]
+
+
 _config: dict | None = None
 
 
@@ -287,15 +300,23 @@ _IMPL = {"anthropic": _anthropic, "openai": _openai, "command": _command}
 def complete(
     role: str, system: str, prompt: str, schema: dict | None = None, retries: int = 2
 ) -> LLMResult:
-    pid, p = provider_for(role)
+    pid, _ = provider_for(role)
+    return complete_with(pid, system, prompt, schema, retries)
+
+
+def complete_with(
+    pid: str, system: str, prompt: str, schema: dict | None = None, retries: int = 2
+) -> LLMResult:
+    """Call one named provider, with retries, stopping cleanly on quota errors."""
+    p = config()["providers"][pid]
     last: Exception | None = None
     for attempt in range(retries + 1):
         try:
-            with _lock:
+            with _lock_for(pid):
                 return _IMPL[p["type"]](pid, p, system, prompt, schema)
         except LLMError as e:
             if any(m in str(e).lower() for m in LIMIT_MARKERS):
                 raise ProviderLimit(str(e)[:300]) from e
             last = e
             time.sleep(3 * (attempt + 1))
-    raise LLMError(f"{role} failed after {retries + 1} attempts: {last}")
+    raise LLMError(f"{pid} failed after {retries + 1} attempts: {last}")

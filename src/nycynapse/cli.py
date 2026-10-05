@@ -28,6 +28,10 @@ def main(argv: list[str] | None = None) -> int:
     ep = sub.add_parser("eval-publish", help="copy a run's summary to evals/results for the site")
     ep.add_argument("report", nargs="+")
     sub.add_parser("eval-table", help="write the results table into README.md")
+    au = sub.add_parser("audit-gold", help="have the strongest models review the answer key")
+    au.add_argument("--split", default="dev,regression", help="comma separated splits")
+    au.add_argument("--only", help="comma separated case ids")
+    au.add_argument("--auditors", help="comma separated provider ids (default: all auditors)")
     pub = sub.add_parser("publish", help="validate, then publish the catalog to Postgres")
     pub.add_argument("--no-lake", action="store_true", help="skip the value index and places")
     args = parser.parse_args(argv)
@@ -198,6 +202,66 @@ def main(argv: list[str] | None = None) -> int:
         summary = evaluate(system, cases, con, out, meta=meta)
         print(json.dumps(summary, indent=1))
         print(f"report: {out}")
+        return 0
+
+    if args.cmd == "audit-gold":
+        import yaml
+
+        from . import lake
+        from .evals.audit import audit_case, save
+        from .evals.cases import load_dir
+        from .evals.harness import split_of
+        from .llm.client import config as llm_config
+        from .pipeline.cards import metric_catalog
+        from .pipeline.context import Context
+        from .pipeline.understand import workspace_brief
+        from .semantic import gold
+
+        root = settings.semantic_path.parent / "evals"
+        snap = yaml.safe_load((root / "snapshot.yaml").read_text())["snapshot_id"]
+        splits = args.split.split(",")
+        cases = load_dir(root / "cases")
+        if "holdout" in splits and settings.holdout_path and settings.holdout_path.exists():
+            cases += load_dir(settings.holdout_path)
+        cases = [c for c in cases if split_of(c) in splits]
+        if args.only:
+            cases = [c for c in cases if c.id in args.only.split(",")]
+        con = lake.connect(settings, snapshot=snap)
+        ctx = Context(settings, con)
+        context = {
+            "manifest": gold.load(settings.semantic_path / "gold_manifest.json"),
+            "brief": workspace_brief(ctx.catalog, ctx.coverage),
+            "metrics": metric_catalog(ctx.catalog, {m.name for m in ctx.catalog.models}),
+            "rules": "\n".join(
+                f"- {'(applies to ' + ', '.join(i.applies_to) + ') ' if i.applies_to else ''}"
+                f"{' '.join(i.text.split())}"
+                for i in ctx.catalog.instructions
+            ),
+            "conventions": (root / "CONVENTIONS.md").read_text(),
+        }
+        auditors = args.auditors.split(",") if args.auditors else llm_config()["auditors"]
+        from concurrent.futures import ThreadPoolExecutor
+
+        def folder_for(case):
+            # Holdout opinions stay beside the holdout file, out of the repository.
+            if split_of(case) == "holdout":
+                return settings.holdout_path / "audit"
+            return root / "audit" / split_of(case)
+
+        todo = [c for c in cases if not (folder_for(c) / f"{c.id}.json").exists()]
+
+        def one(case):
+            cur = con.cursor()
+            cur.execute("USE lake")
+            result = audit_case(case, context, cur, auditors)
+            save(result, folder_for(case))
+            verdicts = " ".join(o.get("verdict", "?")[:5] for o in result["opinions"])
+            print(f"{case.id:8} {verdicts}", flush=True)
+            return bool(result["flagged_by"])
+
+        with ThreadPoolExecutor(2) as pool:
+            flagged = sum(pool.map(one, todo))
+        print(f"{len(todo)} cases audited, {flagged} flagged by at least one auditor")
         return 0
 
     if args.cmd == "eval-table":
