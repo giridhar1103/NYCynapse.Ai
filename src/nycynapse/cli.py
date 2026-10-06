@@ -35,6 +35,8 @@ def main(argv: list[str] | None = None) -> int:
     dr.add_argument("--batch", required=True, help="name for the drafts file")
     dr.add_argument("--drafters", default="audit-gpt,audit-gemini")
     dr.add_argument("--writer", default="audit-opus")
+    rs = sub.add_parser("rescore", help="grade stored answers again against the current references")
+    rs.add_argument("run", nargs="+")
     jr = sub.add_parser("judge-run", help="have a panel check the grading of a finished run")
     jr.add_argument("run", nargs="+")
     jr.add_argument("--judges", help="comma separated provider ids (default: the auditors)")
@@ -285,6 +287,44 @@ def main(argv: list[str] | None = None) -> int:
         out.write_text(draft.to_json(kept))
         failed = sum(1 for d in kept if d["gold"].get("failed") or d["gold"].get("error"))
         print(f"wrote {out}; {failed} without a working reference")
+        return 0
+
+    if args.cmd == "rescore":
+        from . import lake
+        from .evals.cases import load_dir
+        from .evals.execute import run as run_sql
+        from .evals.harness import CaseResult, rescore, summarize
+
+        root = settings.semantic_path.parent / "evals"
+        cases = {c.id: c for c in load_dir(root / "cases")}
+        if settings.holdout_path and settings.holdout_path.exists():
+            cases.update({c.id: c for c in load_dir(settings.holdout_path)})
+        golds: dict = {}
+        for path in map(Path, args.run):
+            data = json.loads(path.read_text())
+            con = lake.connect(settings, snapshot=data["meta"]["snapshot"])
+            changed, out = 0, []
+            for r in data["results"]:
+                case = cases.get(r["id"])
+                if case is None:
+                    continue  # dropped from the set since the run
+                if case.id not in golds and case.gold_sql:
+                    golds[case.id] = (
+                        run_sql(con, case.gold_sql, timeout_s=300),
+                        [run_sql(con, s, timeout_s=300) for s in case.alt_gold_sql],
+                    )
+                gold, alts = golds.get(case.id, (None, []))
+                new = rescore(case, r, con, gold, alts)
+                changed += (new["result_match"], new["classification_ok"]) != (
+                    r.get("result_match"),
+                    r.get("classification_ok"),
+                )
+                out.append(new)
+            data["results"] = out
+            data["summary"] = summarize([CaseResult(**x) for x in out])
+            data["meta"]["rescored_at"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+            path.write_text(json.dumps(data, indent=1, default=str))
+            print(f"{path}: {changed} verdicts changed, {len(out)} cases")
         return 0
 
     if args.cmd == "judge-run":

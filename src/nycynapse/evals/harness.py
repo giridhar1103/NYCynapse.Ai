@@ -140,6 +140,35 @@ def score(
     return r
 
 
+def rescore(
+    case: Case,
+    r: dict,
+    con: duckdb.DuckDBPyConnection,
+    gold: Execution | None,
+    alternatives: list[Execution] = (),
+) -> dict:
+    """Grade a stored answer again against the current reference, without calling a model.
+
+    The answer's own SQL is run again on the same snapshot, so a reference fixed after the run
+    (by the gold audit) is applied to every model's answers alike.
+    """
+    answer = Answer(
+        classification=r["predicted"],
+        sql=r.get("sql"),
+        explanation=r.get("explanation") or "",
+        latency_ms=r.get("latency_ms", 0),
+        cost_usd=r.get("cost_usd", 0.0),
+        tokens_in=r.get("tokens_in", 0),
+        tokens_out=r.get("tokens_out", 0),
+        error=r.get("error"),
+    )
+    new = asdict(score(case, answer, gold, con, alternatives))
+    # Retrieval scores came from the run itself and do not change.
+    for k in ("workspace_recall", "metric_recall", "value_recall"):
+        new[k] = r.get(k)
+    return new
+
+
 def summarize(results: list[CaseResult]) -> dict:
     def rate(xs):
         xs = list(xs)
