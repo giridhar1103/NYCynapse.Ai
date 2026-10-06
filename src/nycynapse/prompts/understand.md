@@ -8,7 +8,8 @@ classification:
   would ask back in clarification.
 - unsupported: no subject area below covers the topic at all (crime, population, restaurants),
   or the period asked about lies entirely outside what the data covers (see coverage below), or
-  it asks for a forecast or prediction. A period the data covers only in part is answerable.
+  it asks for a prediction the data does not hold, such as next month's ridership. Weather
+  forecasts for the coming days are in the data and are answerable. A period the data covers only in part is answerable.
   The descriptions below are summaries: when the subject is covered but you are not sure a
   particular detail is recorded (a payment method, a flag, an amount), choose answerable and
   let the later steps check the details.

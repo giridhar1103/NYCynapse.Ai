@@ -28,6 +28,12 @@ SCHEMA = {
         "fixed_sql": {"type": ["string", "null"]},
         "reworded_question": {"type": ["string", "null"]},
         "confidence": {"type": "number"},
+        "required_columns": {
+            "type": "array",
+            "items": {"type": "integer"},
+            "description": "positions (from 0) of the reference result columns a right answer "
+            "must contain; columns that only add context are left out",
+        },
     },
     "required": [
         "verdict",
@@ -36,6 +42,7 @@ SCHEMA = {
         "fixed_sql",
         "reworded_question",
         "confidence",
+        "required_columns",
     ],
     "additionalProperties": False,
 }
@@ -103,7 +110,14 @@ def case_prompt(case: Case, context: dict, con) -> tuple[str, dict]:
     return "\n\n".join(p for p in parts if p), facts
 
 
-def audit_case(case: Case, context: dict, con, auditors: list[str]) -> dict:
+def audit_case(
+    case: Case, context: dict, con, auditors: list[str], earlier: dict | None = None
+) -> dict:
+    """Ask each auditor not yet heard from; opinions already on file are kept."""
+    have = {
+        o["auditor"]: o for o in (earlier or {}).get("opinions", []) if o.get("verdict") != "error"
+    }
+    auditors = [a for a in auditors if a not in have]
     text, facts = case_prompt(case, context, con)
 
     def one(auditor: str) -> dict:
@@ -114,8 +128,8 @@ def audit_case(case: Case, context: dict, con, auditors: list[str]) -> dict:
         except (LLMError, ValueError) as e:
             return {"auditor": auditor, "verdict": "error", "problem": str(e)[:300]}
 
-    with ThreadPoolExecutor(len(auditors)) as pool:
-        opinions = list(pool.map(one, auditors))
+    with ThreadPoolExecutor(max(1, len(auditors))) as pool:
+        opinions = list(have.values()) + list(pool.map(one, auditors))
     flagged = [o for o in opinions if o.get("verdict") in ("wrong", "ambiguous")]
     return {
         "id": case.id,

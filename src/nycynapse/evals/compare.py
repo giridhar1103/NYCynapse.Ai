@@ -115,6 +115,11 @@ def _without_zero_rows(rows):
 
 
 def compare(gold_cols, gold_rows, cand_cols, cand_rows, spec: Compare) -> Verdict:
+    if isinstance(spec.columns, list):
+        keep = [i for i in spec.columns if i < len(gold_cols)]
+        gold_cols = [gold_cols[i] for i in keep]
+        gold_rows = [tuple(r[i] for i in keep) for r in gold_rows]
+        spec = spec.model_copy(update={"columns": "all"})
     if spec.rows is not None:
         gold_rows, cand_rows = gold_rows[: spec.rows], cand_rows[: spec.rows]
     if len(gold_rows) != len(cand_rows):

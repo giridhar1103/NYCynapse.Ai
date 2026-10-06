@@ -27,4 +27,6 @@ Use the table documentation and the result preview. Judge the result the query r
 fast it is: rules about partition columns or speed are hints for writing fast queries and never
 make a reference wrong. Do not penalise style. When a reference is wrong, give the corrected
 SQL (DuckDB, gold tables only, same conventions) or a reworded question that removes the
-ambiguity. Reply with JSON only.
+ambiguity. Also list which columns of the reference result a right answer must contain: for
+"which stations..." the station names, not counts shown for context; for "how did A compare
+with B" the groups and their values. Reply with JSON only.

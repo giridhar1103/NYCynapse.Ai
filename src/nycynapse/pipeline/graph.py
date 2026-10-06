@@ -259,6 +259,17 @@ def build(ctx: Context, *, grounding: bool, planning: bool = False, examples: bo
             previous=state.get("sql") if state.get("problem") else None,
             problem=state.get("problem"),
         )
+        if not g.sql and not g.error and g.explanation:
+            # The writer looked at the data and decided it cannot answer: a decline, with its
+            # reason, rather than an answer with no SQL.
+            return {
+                "sql": None,
+                "explanation": g.explanation,
+                "abstain": g.explanation,
+                "problem": None,
+                **_spend(state, g),
+                "log": _log(state, "generate", declined=g.explanation),
+            }
         return {
             "sql": g.sql,
             "explanation": g.explanation,

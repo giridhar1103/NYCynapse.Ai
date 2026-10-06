@@ -338,12 +338,23 @@ def main(argv: list[str] | None = None) -> int:
                 return settings.holdout_path / "audit"
             return root / "audit" / split_of(case)
 
-        todo = [c for c in cases if not (folder_for(c) / f"{c.id}.json").exists()]
+        def earlier(case):
+            path = folder_for(case) / f"{case.id}.json"
+            return json.loads(path.read_text()) if path.exists() else None
+
+        def missing(case):
+            e = earlier(case)
+            heard = {
+                o["auditor"] for o in (e or {}).get("opinions", []) if o.get("verdict") != "error"
+            }
+            return [a for a in auditors if a not in heard]
+
+        todo = [c for c in cases if missing(c)]
 
         def one(case):
             cur = con.cursor()
             cur.execute("USE lake")
-            result = audit_case(case, context, cur, auditors)
+            result = audit_case(case, context, cur, auditors, earlier(case))
             save(result, folder_for(case))
             verdicts = " ".join(o.get("verdict", "?")[:5] for o in result["opinions"])
             print(f"{case.id:8} {verdicts}", flush=True)

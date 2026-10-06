@@ -30,6 +30,8 @@ models:
       - {name: black_car_fund_usd, column: black_car_fund_usd, kind: numeric, description: "Black Car Fund surcharge."}
       - {name: shared_requested, column: shared_requested, kind: boolean, synonyms: [requested a shared ride, shared request], description: "Rider asked to share."}
       - {name: wav_requested, column: wav_requested, kind: boolean, synonyms: [wheelchair accessible request], description: "Rider asked for a wheelchair accessible vehicle."}
+      - {name: tip_amount, column: tips_usd, kind: numeric, synonyms: [tip, tips], description: "Tip in dollars."}
+      - {name: driver_pay_amount, column: driver_pay_usd, kind: numeric, synonyms: [driver pay, driver earnings], description: "What the driver was paid, before tips, in dollars."}
     measures:
       - {name: trips, expr: "*", agg: count}
       - {name: wait_minutes, expr: wait_minutes, agg: avg}
@@ -74,6 +76,8 @@ models:
       - {name: cbd_congestion_fee_usd, column: cbd_congestion_fee_usd, kind: numeric, description: "Congestion relief zone toll. Charged from 5 January 2025."}
       - {name: trip_minutes, column: trip_minutes, kind: numeric, description: "Minutes from pickup to dropoff."}
       - {name: is_street_hail, column: is_street_hail, kind: boolean, synonyms: [street hail, hailed], description: "Green taxis only. True for street hails, false for dispatched trips."}
+      - {name: tip_amount, column: tip_usd, kind: numeric, synonyms: [tip, tips], description: "Tip in dollars. Recorded for card payments only; cash tips are not recorded."}
+      - {name: total_amount, column: total_usd, kind: numeric, synonyms: [total paid, total charged], description: "Total charged to the rider in dollars."}
     measures:
       - {name: trips, expr: "*", agg: count}
       - {name: total_usd, expr: total_usd, agg: sum}

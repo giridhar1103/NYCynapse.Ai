@@ -86,3 +86,10 @@ def test_a_group_with_zero_equals_a_missing_group():
     cand = [("Bronx", 10), ("Brooklyn", 20), ("Staten Island", 0)]
     assert compare(["b", "n"], gold, ["b", "n"], cand, spec).match
     assert not compare(["b", "n"], gold, ["b", "n"], [*cand[:2], ("Queens", 5)], spec).match
+
+
+def test_only_the_required_columns_must_match():
+    spec = Compare(columns=[0])
+    gold = [("Station A", 5), ("Station B", 3)]
+    assert compare(["station", "ebikes"], gold, ["s"], [("Station B",), ("Station A",)], spec).match
+    assert not compare(["station", "ebikes"], gold, ["s"], [("Station C",), ("Station A",)], spec).match

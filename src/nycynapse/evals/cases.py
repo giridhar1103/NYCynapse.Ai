@@ -34,8 +34,9 @@ class Compare(Strict):
     rows: int | None = None  # only the first n rows count, for top-n questions
     tolerance: float = 0.001  # relative, for numbers
     # all: every gold column must be matched. subset: gold's first column must be matched,
-    # used when the exact extra columns are a matter of taste.
-    columns: Literal["all", "subset"] = "all"
+    # used when the exact extra columns are a matter of taste. A list names the gold columns,
+    # by position, that a right answer must contain; the others are context.
+    columns: Literal["all", "subset"] | list[int] = "all"
 
 
 Category = Literal[

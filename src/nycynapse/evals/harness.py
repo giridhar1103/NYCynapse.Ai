@@ -127,10 +127,12 @@ def score(
                     if w.match:
                         v = Verdict(True, "matches an alternative reading")
                 r.result_match, r.match_reason = v.match, v.reason
-                strict = case.compare.model_copy(update={"columns": "all"})
-                r.strict_match = len(ex.columns) == len(gold.columns) and (
-                    compare(gold.columns, gold.rows, ex.columns, ex.rows, strict).match
+                required = (
+                    len(case.compare.columns)
+                    if isinstance(case.compare.columns, list)
+                    else len(gold.columns)
                 )
+                r.strict_match = len(ex.columns) == required and v.match
             elif ex.ok and case.gold_sql:
                 r.match_reason = "gold failed"
             elif ex.ok:
