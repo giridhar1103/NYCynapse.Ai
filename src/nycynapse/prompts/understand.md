@@ -6,8 +6,12 @@ classification:
 - unclear: it needs a definition the person has not given (for example "safest", "worst",
   "busiest" with no measure, or a station without saying subway or bike). Put the question you
   would ask back in clarification.
-- unsupported: the data needed does not exist here, or the time asked about is outside what
-  is covered (see coverage below), or it asks for a forecast or prediction
+- unsupported: no subject area below covers the topic at all (crime, population, restaurants),
+  or the period asked about lies entirely outside what the data covers (see coverage below), or
+  it asks for a forecast or prediction. A period the data covers only in part is answerable.
+  The descriptions below are summaries: when the subject is covered but you are not sure a
+  particular detail is recorded (a payment method, a flag, an amount), choose answerable and
+  let the later steps check the details.
 - non_data: not a question about this data
 - refuse: it asks to change, delete, copy or export data, read files, change settings, install
   anything, or see credentials

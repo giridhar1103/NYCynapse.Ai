@@ -40,6 +40,9 @@ def main(argv: list[str] | None = None) -> int:
     jr = sub.add_parser("judge-run", help="have a panel check the grading of a finished run")
     jr.add_argument("run", nargs="+")
     jr.add_argument("--judges", help="comma separated provider ids (default: the auditors)")
+    dg = sub.add_parser("draft-gold", help="write the missing references in a drafts file")
+    dg.add_argument("file")
+    dg.add_argument("--writer", default="audit-opus")
     au = sub.add_parser("audit-gold", help="have the strongest models review the answer key")
     au.add_argument("--split", default="dev,regression", help="comma separated splits")
     au.add_argument("--only", help="comma separated case ids")
@@ -219,75 +222,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"report: {out}")
         return 0
 
-    if args.cmd == "draft-cases":
-        import yaml
-
-        from . import lake
-        from .evals import draft
-        from .evals.audit import table_docs
-        from .evals.cases import load_dir
-        from .pipeline.cards import metric_catalog
-        from .pipeline.context import Context
-        from .pipeline.understand import workspace_brief
-        from .pipeline.verified import load as load_verified
-        from .semantic import gold
-
-        root = settings.semantic_path.parent / "evals"
-        snap = yaml.safe_load((root / "snapshot.yaml").read_text())["snapshot_id"]
-        con = lake.connect(settings, snapshot=snap)
-        ctx = Context(settings, con)
-        manifest = gold.load(settings.semantic_path / "gold_manifest.json")
-        description = "\n\n".join(
-            [
-                "Subject areas and what the data covers:\n"
-                + workspace_brief(ctx.catalog, ctx.coverage),
-                "Tables:\n"
-                + table_docs(manifest, [f"gold.{t}" for t in manifest["tables"] if t[0] != "_"]),
-                "Governed metrics:\n"
-                + metric_catalog(ctx.catalog, {m.name for m in ctx.catalog.models}),
-                "Domain rules:\n"
-                + "\n".join(f"- {' '.join(i.text.split())}" for i in ctx.catalog.instructions),
-                "Conventions:\n" + (root / "CONVENTIONS.md").read_text(),
-            ]
-        )
-        existing = [c.question for c in load_dir(root / "cases")]
-        if settings.holdout_path and settings.holdout_path.exists():
-            existing += [c.question for c in load_dir(settings.holdout_path)]
-        existing += [v.question for v in load_verified(settings.semantic_path)]
-        quotas = {k: int(v) for k, v in (x.split("=") for x in args.quota.split(","))}
-        drafters = args.drafters.split(",")
-        shares = [{k: 0 for k in quotas} for _ in drafters]
-        for k, n in quotas.items():
-            for i in range(n):
-                shares[i % len(drafters)][k] += 1
-        from concurrent.futures import ThreadPoolExecutor
-
-        def ask_drafter(pair):
-            drafter, share = pair
-            return draft.draft_questions(drafter, share, description, existing, draft.AS_OF)
-
-        with ThreadPoolExecutor(len(drafters)) as pool:
-            batches = list(pool.map(ask_drafter, zip(drafters, shares, strict=True)))
-        drafts = []
-        for batch in batches:
-            for d in batch:
-                group = f"{args.batch}-{len(drafts):03d}" if d["paraphrases"] else None
-                drafts.append({**d, "group": group, "split": args.split})
-                for p in d["paraphrases"]:
-                    drafts.append(
-                        {**d, "question": p, "group": group, "paraphrase_of": d["question"]}
-                    )
-        drop = draft.near_duplicates(drafts, existing)
-        kept = [d for i, d in enumerate(drafts) if i not in drop]
-        print(f"{len(drafts)} drafted, {len(drop)} near duplicates dropped, {len(kept)} kept")
-        kept = draft.gold_for_all(kept, description, con, args.writer)
-        folder = settings.holdout_path / "drafts" if args.split == "holdout" else root / "drafts"
-        folder.mkdir(parents=True, exist_ok=True)
-        out = folder / f"{args.batch}.json"
-        out.write_text(draft.to_json(kept))
-        failed = sum(1 for d in kept if d["gold"].get("failed") or d["gold"].get("error"))
-        print(f"wrote {out}; {failed} without a working reference")
-        return 0
+    if args.cmd in ("draft-cases", "draft-gold"):
+        return _drafting(args, settings)
 
     if args.cmd == "rescore":
         from . import lake
@@ -482,3 +418,90 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+def _drafting(args, settings) -> int:
+    """draft-cases drafts questions and writes their references. draft-gold only fills in the
+    references a drafts file is missing, for when the writer was stopped by a usage limit."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    import yaml
+
+    from . import lake
+    from .evals import draft
+    from .evals.audit import table_docs
+    from .evals.cases import load_dir
+    from .pipeline.cards import metric_catalog
+    from .pipeline.context import Context
+    from .pipeline.understand import workspace_brief
+    from .pipeline.verified import load as load_verified
+    from .semantic import gold
+
+    root = settings.semantic_path.parent / "evals"
+    snap = yaml.safe_load((root / "snapshot.yaml").read_text())["snapshot_id"]
+    con = lake.connect(settings, snapshot=snap)
+    ctx = Context(settings, con)
+    manifest = gold.load(settings.semantic_path / "gold_manifest.json")
+    tables = [f"gold.{t}" for t in manifest["tables"] if t[0] != "_"]
+    rules = "\n".join(f"- {' '.join(i.text.split())}" for i in ctx.catalog.instructions)
+    description = "\n\n".join(
+        [
+            "Subject areas and what the data covers:\n"
+            + workspace_brief(ctx.catalog, ctx.coverage),
+            "Tables:\n" + table_docs(manifest, tables),
+            "Governed metrics:\n"
+            + metric_catalog(ctx.catalog, {m.name for m in ctx.catalog.models}),
+            "Domain rules:\n" + rules,
+            "Conventions:\n" + (root / "CONVENTIONS.md").read_text(),
+        ]
+    )
+
+    if args.cmd == "draft-gold":
+        out = Path(args.file)
+        drafts = json.loads(out.read_text())
+        todo = [d for d in drafts if d["gold"].get("error") or d["gold"].get("failed")]
+        filled = draft.gold_for_all(todo, description, con, args.writer)
+        by_question = {d["question"]: d["gold"] for d in filled}
+        for d in drafts:
+            if d["question"] in by_question:
+                d["gold"] = by_question[d["question"]]
+        out.write_text(draft.to_json(drafts))
+        failed = sum(1 for d in drafts if d["gold"].get("failed") or d["gold"].get("error"))
+        print(f"filled {len(todo)} references in {out}; {failed} still without one")
+        return 1 if failed and failed == len(todo) else 0
+
+    existing = [c.question for c in load_dir(root / "cases")]
+    if settings.holdout_path and settings.holdout_path.exists():
+        existing += [c.question for c in load_dir(settings.holdout_path)]
+    existing += [v.question for v in load_verified(settings.semantic_path)]
+    quotas = {k: int(v) for k, v in (x.split("=") for x in args.quota.split(","))}
+    drafters = args.drafters.split(",")
+    shares = [{k: 0 for k in quotas} for _ in drafters]
+    for k, n in quotas.items():
+        for i in range(n):
+            shares[i % len(drafters)][k] += 1
+
+    def ask_drafter(pair):
+        drafter, share = pair
+        return draft.draft_questions(drafter, share, description, existing, draft.AS_OF)
+
+    with ThreadPoolExecutor(len(drafters)) as pool:
+        batches = list(pool.map(ask_drafter, zip(drafters, shares, strict=True)))
+    drafts = []
+    for batch in batches:
+        for d in batch:
+            group = f"{args.batch}-{len(drafts):03d}" if d["paraphrases"] else None
+            drafts.append({**d, "group": group, "split": args.split})
+            for p in d["paraphrases"]:
+                drafts.append({**d, "question": p, "group": group, "paraphrase_of": d["question"]})
+    drop = draft.near_duplicates(drafts, existing)
+    kept = [d for i, d in enumerate(drafts) if i not in drop]
+    print(f"{len(drafts)} drafted, {len(drop)} near duplicates dropped, {len(kept)} kept")
+    kept = draft.gold_for_all(kept, description, con, args.writer)
+    folder = settings.holdout_path / "drafts" if args.split == "holdout" else root / "drafts"
+    folder.mkdir(parents=True, exist_ok=True)
+    out = folder / f"{args.batch}.json"
+    out.write_text(draft.to_json(kept))
+    failed = sum(1 for d in kept if d["gold"].get("failed") or d["gold"].get("error"))
+    print(f"wrote {out}; {failed} without a working reference")
+    return 0

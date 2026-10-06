@@ -44,6 +44,18 @@ class PlaceFilter(Strict):
     field: str
 
 
+class Aggregate(Strict):
+    """A plain aggregate of a numeric field, for questions no governed metric covers, such as
+    the average age of people hurt in crashes. Governed metrics come first when one fits."""
+
+    fn: Literal["avg", "sum", "min", "max", "median", "count_distinct"]
+    field: str  # model.dimension
+
+    @property
+    def name(self) -> str:
+        return f"{self.fn}_{self.field.split('.')[-1]}"
+
+
 class Order(Strict):
     by: str  # a metric id, a field or a time grain
     desc: bool = True
@@ -53,6 +65,7 @@ class Plan(Strict):
     kind: Literal["aggregate", "list"] = "aggregate"
     model: str
     metrics: list[str] = Field(default_factory=list)
+    aggregates: list[Aggregate] = Field(default_factory=list)
     group_by: list[str] = Field(default_factory=list)
     filters: list[Filter] = Field(default_factory=list)
     places: list[PlaceFilter] = Field(default_factory=list)

@@ -18,6 +18,8 @@ class Planned:
     cost_usd: float = 0.0
     error: str | None = None
     declined: str | None = None
+    # The data has what is asked but the plan format cannot express it: write SQL instead.
+    fallback: bool = False
 
 
 def plan_schema() -> dict:
@@ -25,7 +27,13 @@ def plan_schema() -> dict:
     schema["properties"]["model"]["description"] = "semantic model name, or none"
     schema["properties"]["reason"] = {
         "type": "string",
-        "description": "when model is none: what the data lacks, in one sentence for the reader",
+        "description": "when model is none: what is missing, in one sentence for the reader",
+    }
+    schema["properties"]["decline_kind"] = {
+        "type": "string",
+        "enum": ["data_missing", "plan_cannot_express"],
+        "description": "when model is none: data_missing if the data does not hold what is "
+        "asked; plan_cannot_express if the data holds it but this plan format cannot say it",
     }
     return schema
 
@@ -53,6 +61,9 @@ def make_plan(
         "cost_usd": r.cost_usd or 0.0,
     }
     reason = raw.pop("reason", None)
+    kind = raw.pop("decline_kind", None)
+    if raw.get("model") in (None, "none") and kind == "plan_cannot_express":
+        return Planned(None, raw, error=None, fallback=True, **spent)
     if raw.get("model") in (None, "none"):
         # A deliberate "the data cannot answer this", not a broken plan: say so instead of
         # pushing for another attempt, which tends to produce a confident wrong answer.

@@ -12,6 +12,7 @@ models:
       - {name: traffic_link, column: link_id}
     dimensions:
       - {name: observed_hour, column: observed_hour, kind: numeric}
+      - {name: travel_time_seconds, column: travel_time_seconds, kind: numeric, synonyms: [travel time], description: "Seconds to drive the link."}
     measures:
       - {name: readings, expr: "*", agg: count}
       - {name: speed_mph, expr: speed_mph, agg: avg}
@@ -53,6 +54,17 @@ models:
       - {name: is_snow_hour, column: is_snow_hour, kind: boolean, synonyms: [snowing, snowy]}
       - {name: is_forecast, column: is_forecast, kind: boolean}
       - {name: temperature, column: temperature_f, kind: numeric, label: Temperature (F)}
+      - {name: precipitation_mm, column: precipitation_mm, kind: numeric, synonyms: [precipitation], description: "Precipitation in the hour, millimetres."}
+      - {name: rain_mm, column: rain_mm, kind: numeric, synonyms: [rainfall], description: "Liquid rain in the hour, millimetres."}
+      - {name: snowfall_in, column: snowfall_in, kind: numeric, synonyms: [snowfall], description: "New snow in the hour, inches."}
+      - {name: snow_depth_in, column: snow_depth_in, kind: numeric, synonyms: [snow depth], description: "Snow on the ground, inches."}
+      - {name: wind_speed_mph, column: wind_speed_mph, kind: numeric, synonyms: [wind], description: "Mean wind speed, miles per hour."}
+      - {name: wind_gust_mph, column: wind_gust_mph, kind: numeric, synonyms: [gusts], description: "Strongest gust, miles per hour."}
+      - {name: relative_humidity_pct, column: relative_humidity_pct, kind: numeric, synonyms: [humidity], description: "Relative humidity, percent."}
+      - {name: feels_like_f, column: feels_like_f, kind: numeric, synonyms: [feels like, heat index, wind chill], description: "Feels-like temperature in Fahrenheit, with wind chill and humidity."}
+      - {name: dew_point_f, column: dew_point_f, kind: numeric, description: "Dew point in Fahrenheit."}
+      - {name: cloud_cover_pct, column: cloud_cover_pct, kind: numeric, synonyms: [cloudy], description: "Cloud cover, percent."}
+      - {name: is_day, column: is_day, kind: boolean, synonyms: [daylight], description: "Sun up at the start of the hour."}
     measures:
       - {name: hours, expr: "*", agg: count}
       - {name: temperature_f, expr: temperature_f, agg: avg}
@@ -76,6 +88,7 @@ models:
       - {name: event_name, column: event_name, values: enumerate, synonyms: [alert, warning type]}
       - {name: alert_level, column: alert_level, values: enumerate, synonyms: [severity]}
       - {name: borough, column: borough, values: enumerate, geo_level: borough}
+      - {name: severity, column: severity, values: enumerate, description: "CAP severity, live alerts only."}
     measures:
       - {name: alert_events, expr: event_key, agg: count_distinct}
       - {name: duration_hours, expr: duration_hours, agg: avg}
@@ -92,6 +105,13 @@ models:
       - {name: domain, column: domain, values: enumerate}
       - {name: is_stale, column: is_stale, kind: boolean, synonyms: [stale, out of date, delayed]}
       - {name: last_status, column: last_status, values: enumerate}
+      - {name: last_success_at, column: last_success_at, synonyms: [last successful load, last update], description: "When the source last finished a run successfully."}
+      - {name: last_loaded_at, column: last_loaded_at, description: "When a load last wrote to the table."}
+      - {name: coverage_start, column: coverage_start, description: "Earliest event time in the table."}
+      - {name: coverage_end, column: coverage_end, synonyms: [data ends], description: "Latest event time in the table."}
+      - {name: row_count, column: row_count, kind: numeric, synonyms: [rows], description: "Rows in the table."}
+      - {name: cadence, column: cadence, values: enumerate, description: "How often the source publishes."}
+      - {name: last_error, column: last_error, kind: text, synonyms: [error], description: "Error of the latest run, if it failed."}
     measures:
       - {name: tables, expr: "*", agg: count}
       - {name: hours_since_latest_event, expr: hours_since_latest_event, agg: max}

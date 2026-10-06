@@ -21,6 +21,15 @@ models:
       - {name: access_a_ride, column: access_a_ride, kind: boolean}
       - {name: paid_cbd_toll, expr: "cbd_congestion_fee_usd > 0", kind: boolean,
          synonyms: [congestion pricing, congestion toll, entered the zone]}
+      - {name: base_fare_usd, column: base_fare_usd, kind: numeric, description: "Fare before tolls, fees, taxes and tip."}
+      - {name: tolls_usd, column: tolls_usd, kind: numeric, description: "Tolls."}
+      - {name: sales_tax_usd, column: sales_tax_usd, kind: numeric, description: "Sales tax."}
+      - {name: congestion_surcharge_usd, column: congestion_surcharge_usd, kind: numeric, description: "State congestion surcharge for trips through Manhattan below 96th Street."}
+      - {name: airport_fee_usd, column: airport_fee_usd, kind: numeric, description: "Airport pickup or dropoff fee."}
+      - {name: cbd_congestion_fee_usd, column: cbd_congestion_fee_usd, kind: numeric, description: "Congestion relief zone toll passed to the rider. Charged from 5 January 2025."}
+      - {name: black_car_fund_usd, column: black_car_fund_usd, kind: numeric, description: "Black Car Fund surcharge."}
+      - {name: shared_requested, column: shared_requested, kind: boolean, synonyms: [requested a shared ride, shared request], description: "Rider asked to share."}
+      - {name: wav_requested, column: wav_requested, kind: boolean, synonyms: [wheelchair accessible request], description: "Rider asked for a wheelchair accessible vehicle."}
     measures:
       - {name: trips, expr: "*", agg: count}
       - {name: wait_minutes, expr: wait_minutes, agg: avg}
@@ -55,6 +64,16 @@ models:
       - {name: passenger_count, column: passenger_count, kind: numeric, synonyms: [passengers]}
       - {name: paid_cbd_toll, expr: "cbd_congestion_fee_usd > 0", kind: boolean,
          synonyms: [congestion pricing, congestion toll]}
+      - {name: fare_usd, column: fare_usd, kind: numeric, description: "Metered fare."}
+      - {name: tolls_usd, column: tolls_usd, kind: numeric, description: "Tolls."}
+      - {name: extra_usd, column: extra_usd, kind: numeric, description: "Rush hour and overnight surcharges."}
+      - {name: mta_tax_usd, column: mta_tax_usd, kind: numeric, description: "MTA tax."}
+      - {name: improvement_surcharge_usd, column: improvement_surcharge_usd, kind: numeric, description: "Improvement surcharge."}
+      - {name: congestion_surcharge_usd, column: congestion_surcharge_usd, kind: numeric, description: "State congestion surcharge."}
+      - {name: airport_fee_usd, column: airport_fee_usd, kind: numeric, description: "Airport fee. Yellow taxis only."}
+      - {name: cbd_congestion_fee_usd, column: cbd_congestion_fee_usd, kind: numeric, description: "Congestion relief zone toll. Charged from 5 January 2025."}
+      - {name: trip_minutes, column: trip_minutes, kind: numeric, description: "Minutes from pickup to dropoff."}
+      - {name: is_street_hail, column: is_street_hail, kind: boolean, synonyms: [street hail, hailed], description: "Green taxis only. True for street hails, false for dispatched trips."}
     measures:
       - {name: trips, expr: "*", agg: count}
       - {name: total_usd, expr: total_usd, agg: sum}

@@ -262,6 +262,8 @@ def _evidence(state: dict, unsupported: list[str]) -> list[str]:
     out = []
     if state.get("compiled"):
         out.append("Compiled from governed metrics")
+    elif state.get("fallback") and state.get("sql"):
+        out.append("Written as SQL: the question did not fit a governed plan")
     elif state.get("sql"):
         out.append("Generated SQL")
     if state.get("groundings"):

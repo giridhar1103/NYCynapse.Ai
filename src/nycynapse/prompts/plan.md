@@ -10,6 +10,10 @@ The plan:
 - metrics: governed metric ids. Use them instead of inventing calculations. To count rows of a
   model that has no count metric of its own (how many stations, how many routes), use
   "row_count".
+- aggregates: {"fn": avg | sum | min | max | median | count_distinct, "field":
+  "model.dimension"} for a numeric field no governed metric covers, such as the largest
+  straight-line distance of a bike ride or the total of a fee. Order by its name, written
+  fn_dimension.
 - group_by: fields written model.dimension (a dimension of the model or of a model reached by a
   relationship), or time grains: time:day, time:week, time:month, time:year, time:hour,
   time:hour_of_day, time:day_of_week. When a model is reached in more than one way write the
@@ -50,5 +54,10 @@ what share.
 Some models leave rows out by default, such as ridership counting the subway only. When the
 question asks for those rows (the Roosevelt Island Tram, say), filter for them and the default
 gives way. Never decline because of a default.
-If the question cannot be answered with these models after all, set model to "none" and say
-why in reason, for example that the data starts after the period asked about.
+If you cannot write a plan, set model to "none", say why in reason, and choose decline_kind:
+- data_missing: the data really does not hold what is asked, or the period lies entirely
+  outside what it covers. The reader is told it cannot be answered.
+- plan_cannot_express: the data holds it, but this plan format cannot say it, for example a
+  ratio between two subjects, a condition that depends on a count from another subject, or a
+  ranking used to pick days. SQL is then written directly instead.
+Never use data_missing because a metric is missing: use aggregates over the numeric field.

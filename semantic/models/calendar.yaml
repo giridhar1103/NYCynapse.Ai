@@ -17,3 +17,6 @@ models:
       - {name: is_holiday, column: is_holiday, kind: boolean, synonyms: [holiday]}
       - {name: holiday, column: holiday_name, values: enumerate}
       - {name: is_workday, column: is_workday, kind: boolean, synonyms: [business day, weekday]}
+      - {name: day_of_month, column: day_of_month, kind: numeric, description: "Day of the month."}
+      - {name: month_number, column: month, kind: numeric, description: "Month number, 1 to 12."}
+      - {name: quarter, column: quarter, kind: numeric, description: "Calendar quarter, 1 to 4."}

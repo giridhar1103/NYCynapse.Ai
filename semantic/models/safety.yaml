@@ -26,6 +26,9 @@ models:
       - {name: street, column: on_street_name, values: index, synonyms: [road]}
       - {name: police_precinct, column: police_precinct, kind: numeric, geo_level: police_precinct}
       - {name: crash_hour, column: crash_hour, kind: numeric}
+      - {name: contributing_factor_2, column: contributing_factor_2, values: enumerate, description: "Contributing factor for the second vehicle."}
+      - {name: vehicle_type_2, column: vehicle_type_2, values: index, description: "Second vehicle type, free text."}
+      - {name: crash_zip_code, column: zip_code, values: index, synonyms: [zip, zip code], description: "ZIP code as recorded."}
     measures:
       - {name: crashes, expr: "*", agg: count}
       - {name: persons_injured, expr: persons_injured, agg: sum}
@@ -54,5 +57,15 @@ models:
       - {name: age, column: age, kind: numeric}
       - {name: sex, column: sex, values: enumerate}
       - {name: safety_equipment, column: safety_equipment, values: index, synonyms: [helmet, seat belt]}
+      - {name: role, column: role, values: enumerate, description: "Driver, Passenger, Pedestrian, Registrant and so on."}
+      - {name: injury_type, column: injury_type, values: enumerate, description: "Type of injury, for example Complaint of Pain, Fracture."}
+      - {name: bodily_injury, column: bodily_injury, values: enumerate, description: "Body part injured."}
+      - {name: ejection, column: ejection, values: enumerate, description: "Whether the person was thrown from the vehicle."}
+      - {name: pedestrian_action, column: pedestrian_action, values: enumerate, description: "What a pedestrian was doing."}
+      - {name: pedestrian_location, column: pedestrian_location, values: enumerate, description: "Where a pedestrian was."}
+      - {name: position_in_vehicle, column: position_in_vehicle, values: enumerate, description: "Seat position for occupants."}
+      - {name: contributing_factor, column: contributing_factor, values: enumerate, description: "Contributing factor recorded for this person."}
+      - {name: was_injured, column: was_injured, kind: boolean, synonyms: [injured, hurt], description: "The person was injured."}
+      - {name: was_killed, column: was_killed, kind: boolean, synonyms: [killed, died, fatal], description: "The person was killed."}
     measures:
       - {name: people, expr: "*", agg: count}

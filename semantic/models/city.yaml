@@ -33,6 +33,9 @@ models:
       - {name: zip_area, column: modzcta, values: none, geo_level: zip_area, synonyms: [ZCTA, MODZCTA],
          description: "Modified ZIP code tabulation area, the health department's grouping of ZIP codes. Not the ZIP code itself; use zip_code for a named ZIP."}
       - {name: created_hour, column: created_hour, kind: numeric}
+      - {name: descriptor_2, column: descriptor_2, values: index, description: "Third level of detail, when used."}
+      - {name: close_hours, column: hours_to_close, kind: numeric, synonyms: [hours to close, time to close, resolution time], description: "Hours from filing to closing. Empty while open."}
+      - {name: street_name, column: street_name, values: index, synonyms: [street], description: "Street name given."}
     measures:
       - {name: requests, expr: "*", agg: count}
       - {name: hours_to_close, expr: hours_to_close, agg: avg}

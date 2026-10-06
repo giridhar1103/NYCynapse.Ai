@@ -23,6 +23,7 @@ models:
       - {name: end_station, column: end_station_name, values: index, geo_level: bike_station}
       - {name: is_round_trip, column: is_round_trip, kind: boolean}
       - {name: start_hour, column: start_hour, kind: numeric}
+      - {name: straight_line_miles, column: straight_line_miles, kind: numeric, synonyms: [distance], description: "Distance between start and end as the crow flies. Not the route ridden."}
     measures:
       - {name: rides, expr: "*", agg: count}
       - {name: duration_minutes, expr: duration_minutes, agg: avg}
@@ -46,6 +47,15 @@ models:
     dimensions:
       - {name: is_empty, column: is_empty, kind: boolean, synonyms: [no bikes]}
       - {name: is_full, column: is_full, kind: boolean, synonyms: [no docks]}
+      - {name: ebikes_available, column: ebikes_available, kind: numeric, synonyms: [e-bikes available, electric bikes], description: "Electric bikes ready to rent, included in bikes_available."}
+      - {name: classic_bikes_available, column: classic_bikes_available, kind: numeric, synonyms: [classic bikes], description: "Classic bikes ready to rent."}
+      - {name: available_bikes, column: bikes_available, kind: numeric, synonyms: [bikes available], description: "Bikes ready to rent."}
+      - {name: docks_available, column: docks_available, kind: numeric, synonyms: [open docks, free docks], description: "Empty docks."}
+      - {name: bikes_disabled, column: bikes_disabled, kind: numeric, description: "Broken or reserved bikes in docks."}
+      - {name: docks_disabled, column: docks_disabled, kind: numeric, synonyms: [broken docks, out of service docks], description: "Docks out of service."}
+      - {name: is_renting, column: is_renting, kind: boolean, synonyms: [renting], description: "Renting bikes."}
+      - {name: is_returning, column: is_returning, kind: boolean, synonyms: [accepting returns], description: "Accepting returns."}
+      - {name: is_installed, column: is_installed, kind: boolean, description: "Station physically in place."}
     measures:
       - {name: status_changes, expr: "*", agg: count}
       - {name: bikes_available, expr: bikes_available, agg: avg}
@@ -65,3 +75,4 @@ models:
       - {name: region, column: region, values: enumerate}
       - {name: is_new_jersey, column: is_new_jersey, kind: boolean}
       - {name: dock_count, column: dock_count, kind: numeric, synonyms: [capacity]}
+      - {name: has_charging, column: has_charging, kind: boolean, synonyms: [e-bike charging, charging station, charging docks], description: "True where e-bikes charge while docked."}

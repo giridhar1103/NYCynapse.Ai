@@ -42,6 +42,8 @@ models:
     dimensions:
       - {name: route, column: route_id, values: enumerate, synonyms: [line, train]}
       - {name: direction, column: direction, values: enumerate}
+      - {name: stops_tracked, column: stops_tracked, kind: numeric, description: "All stops the tracker followed for the trip."}
+      - {name: stops_unreached, column: stops_unreached, kind: numeric, synonyms: [skipped stops], description: "Stops still ahead when it left the feed."}
     measures:
       - {name: trips, expr: "*", agg: count}
       - {name: stops_skipped, expr: stops_skipped, agg: sum}
@@ -85,6 +87,7 @@ models:
       - {name: fare_class, column: fare_class, values: enumerate}
       - {name: transit_mode, column: transit_mode, values: enumerate}
       - {name: hour_of_day, column: hour_hour, kind: numeric}
+      - {name: transfers, column: transfers, kind: numeric, synonyms: [free transfers], description: "Entries that were free transfers, included in riders."}
     measures:
       - {name: riders, expr: riders, agg: sum}
     filters:
@@ -120,6 +123,9 @@ models:
       - {name: is_accessible, column: is_accessible, kind: boolean, synonyms: [ADA, elevator, accessible]}
       - {name: in_congestion_zone, column: in_congestion_zone, kind: boolean}
       - {name: structure, column: structure, values: enumerate, synonyms: [elevated, underground]}
+      - {name: division, column: division, values: enumerate, synonyms: [IRT, BMT, IND], description: "Historical division: IRT, BMT or IND."}
+      - {name: line, column: line, values: enumerate, description: "Line the station is on, for example Astoria or Lexington Av."}
+      - {name: accessibility, column: accessibility, values: enumerate, description: "ADA accessibility: none, full or partial."}
 
   - name: subway_complexes
     table: gold.dim_subway_complex
@@ -134,3 +140,4 @@ models:
       - {name: station_complex, column: complex_name, values: index, geo_level: subway_complex}
       - {name: borough, column: borough, values: enumerate, geo_level: borough}
       - {name: is_accessible, column: is_accessible, kind: boolean}
+      - {name: station_count, column: station_count, kind: numeric, description: "Stations in the complex."}

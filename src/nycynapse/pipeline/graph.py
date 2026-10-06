@@ -79,6 +79,7 @@ class State(TypedDict, total=False):
     tokens_out: int
     calls: int
     log: list[dict]
+    fallback: bool
 
 
 def _spend(state: State, obj) -> dict:
@@ -189,6 +190,18 @@ def build(ctx: Context, *, grounding: bool, planning: bool = False, examples: bo
             previous=state.get("plan_raw") if retry else None,
             problem=retry,
         )
+        if p.fallback:
+            # The data holds the answer but the plan format cannot express the question:
+            # write SQL directly from the same context, still guarded and checked.
+            return {
+                "plan": None,
+                "plan_raw": p.raw,
+                "problem": None,
+                "fallback": True,
+                "plan_attempts": state.get("plan_attempts", 0) + 1,
+                **_spend(state, p),
+                "log": _log(state, "plan", plan=p.raw, fallback=True),
+            }
         if p.declined:
             return {
                 "plan": None,
@@ -230,6 +243,8 @@ def build(ctx: Context, *, grounding: bool, planning: bool = False, examples: bo
     def after_compile(state: State) -> str:
         if state.get("abstain"):
             return END
+        if state.get("fallback"):
+            return "generate"
         if state.get("sql"):
             return "run"
         if state.get("plan_attempts", 0) < 2:
@@ -306,7 +321,9 @@ def build(ctx: Context, *, grounding: bool, planning: bool = False, examples: bo
         return END
 
     def after_repair(state: State) -> str:
-        return "plan" if planning and state.get("compiled") else "generate"
+        if planning and state.get("compiled") and not state.get("fallback"):
+            return "plan"
+        return "generate"
 
     def n_repair(state: State) -> dict:
         return {"repairs": state.get("repairs", 0) + 1}

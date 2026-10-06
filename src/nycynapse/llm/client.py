@@ -174,7 +174,12 @@ def _openai(pid: str, p: dict, system: str, prompt: str, schema: dict | None) ->
 def _command(pid: str, p: dict, system: str, prompt: str, schema: dict | None) -> LLMResult:
     if p.get("system_in_prompt"):
         # For tools with no system prompt option: mark the instructions off clearly so they
-        # read as the rules for the task, not as part of the question.
+        # read as the rules for the task, not as part of the question. These tools are coding
+        # agents; left alone they try to run commands to explore, which ends the turn empty.
+        system = (
+            f"{system}\n\nAnswer from this message alone. Do not use tools, run commands or "
+            "read files: everything you need is below. Reply with the answer only."
+        )
         prompt = f"<instructions>\n{system}\n</instructions>\n\n<task>\n{prompt}\n</task>"
     with tempfile.TemporaryDirectory() as td:
         schema_path, out_path = os.path.join(td, "schema.json"), os.path.join(td, "out.txt")
@@ -260,6 +265,9 @@ def _agy_result(pid: str, p: dict, proc, ms: int) -> LLMResult:
         raise LLMError(f"{d.get('status')}: {str(d.get('error') or d.get('response'))[:300]}")
     so = d.get("structured_output")
     text = json.dumps(so) if isinstance(so, dict | list) else d.get("response", "")
+    if not text.strip():
+        # A turn that ended in a refused tool call reports success with nothing in it.
+        raise LLMError(f"empty reply: {proc.stderr.strip()[-200:]}")
     u = d.get("usage") or {}
     tin = u.get("input_tokens")
     tout = (u.get("output_tokens") or 0) + (u.get("thinking_tokens") or 0)

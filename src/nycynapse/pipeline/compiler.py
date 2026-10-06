@@ -133,6 +133,12 @@ class Compiler:
             return any(d.name == dim and d.kind == "list" for d in self._model(model).dimensions)
 
         table = self._table(base, plan, window)
+
+        def is_numeric(ref: str) -> bool:
+            model, _, dim = _split(ref)
+            m = self._model(model)
+            return any(d.name == dim and d.kind == "numeric" for d in m.dimensions)
+
         where: list[str] = []
         # time
         if plan.use_time_window and window is not None and not window.is_now:
@@ -188,9 +194,11 @@ class Compiler:
             filters = self._default_filters(base, None, explicit)
             return self._finish(sql, join_sql, where + filters + exists, [], plan, {})
 
-        if not plan.metrics:
-            raise CompileError("an aggregate plan needs at least one metric")
+        if not plan.metrics and not plan.aggregates:
+            raise CompileError("an aggregate plan needs at least one metric or aggregate")
         metrics = [self._metric(m, base.name) for m in plan.metrics]
+        if plan.aggregates and any(m.additivity == "semi_additive" for m in metrics):
+            raise CompileError("plain aggregates cannot be mixed with semi-additive metrics")
         sources = [self._source(m, base.name) for m in metrics]
         filters = []
         for src in sources:
@@ -232,6 +240,13 @@ class Compiler:
                 selects.append(f"{part} * 1.0 / NULLIF({total}, 0) AS {m.id}_share")
                 names[f"{m.id}_matching"] = f"{m.id}_matching"
                 names[f"{m.id}_share"] = f"{m.id}_share"
+        for agg in plan.aggregates:
+            if agg.fn != "count_distinct" and not is_numeric(agg.field):
+                raise CompileError(f"{agg.fn} needs a numeric field; {agg.field} is not")
+            col = field_sql(agg.field)
+            expr = f"count(DISTINCT {col})" if agg.fn == "count_distinct" else f"{agg.fn}({col})"
+            selects.append(f"{expr} AS {agg.name}")
+            names[agg.name] = agg.name
         sql = f"SELECT {', '.join(selects)}\nFROM {table} t0"
         return self._finish(sql, join_sql, where + filters + exists, groups, plan, names)
 
