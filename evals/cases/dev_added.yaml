@@ -1,0 +1,1395 @@
+# Added 2026-10-06. Questions drafted by GPT-6-Astra and Gemini 3.1 Pro, references by Claude
+# Opus 5.5, then audited by three models and reviewed by hand. See evals/audit/DECISIONS.md.
+cases:
+- id: d2-001
+  question: In July 2025, how did Brooklyn's average subway entries per hour compare between hours at
+    least 90°F and cooler hours?
+  category: cross_domain
+  difficulty: hard
+  split: dev
+  source: question by GPT-6-Astra, reference by Claude Opus 5.5
+  group: d2g-001
+  gold_sql: |
+    WITH w AS (
+      SELECT hour_start, temperature_f >= 90 AS is_hot
+      FROM gold.fct_weather_hourly
+      WHERE boro_code = 3
+        AND temperature_f IS NOT NULL
+        AND hour_start >= timezone('America/New_York', TIMESTAMP '2025-07-01')
+        AND hour_start <  timezone('America/New_York', TIMESTAMP '2025-08-01')
+    ),
+    r AS (
+      SELECT hour_start, SUM(riders) AS riders
+      FROM gold.fct_subway_ridership_hourly
+      WHERE borough = 'Brooklyn'
+        AND transit_mode = 'subway'
+        AND hour_start >= timezone('America/New_York', TIMESTAMP '2025-07-01')
+        AND hour_start <  timezone('America/New_York', TIMESTAMP '2025-08-01')
+      GROUP BY hour_start
+    )
+    SELECT CASE WHEN w.is_hot THEN '90F or hotter' ELSE 'cooler' END AS temperature_group,
+           SUM(COALESCE(r.riders, 0)) / COUNT(*) AS avg_entries_per_hour
+    FROM w
+    LEFT JOIN r ON r.hour_start = w.hour_start
+    GROUP BY 1
+  notes: Matches ridership to Brooklyn weather by hour and divides each group's entries by its number
+    of hours.
+- id: d2-002
+  question: Did Brooklyn average more subway entries per hour above or below 90°F in July 2025, counting
+    exactly 90°F with the hotter hours?
+  category: cross_domain
+  difficulty: hard
+  split: dev
+  source: question by GPT-6-Astra, reference by Claude Opus 5.5
+  group: d2g-001
+  gold_sql: |
+    WITH w AS (
+      SELECT hour_start, temperature_f >= 90 AS is_hot
+      FROM gold.fct_weather_hourly
+      WHERE boro_code = 3
+        AND temperature_f IS NOT NULL
+        AND hour_start >= timezone('America/New_York', TIMESTAMP '2025-07-01')
+        AND hour_start <  timezone('America/New_York', TIMESTAMP '2025-08-01')
+    ),
+    r AS (
+      SELECT hour_start, SUM(riders) AS riders
+      FROM gold.fct_subway_ridership_hourly
+      WHERE borough = 'Brooklyn'
+        AND transit_mode = 'subway'
+        AND hour_start >= timezone('America/New_York', TIMESTAMP '2025-07-01')
+        AND hour_start <  timezone('America/New_York', TIMESTAMP '2025-08-01')
+      GROUP BY hour_start
+    )
+    SELECT CASE WHEN w.is_hot THEN '90F or hotter' ELSE 'cooler' END AS temperature_group,
+           SUM(COALESCE(r.riders, 0)) / COUNT(*) AS avg_entries_per_hour
+    FROM w
+    LEFT JOIN r ON r.hour_start = w.hour_start
+    GROUP BY 1
+  notes: Matches ridership to Brooklyn weather by hour and divides each group's entries by its number
+    of hours.
+- id: d2-003
+  question: Which Manhattan taxi zone had the highest ratio of Citi Bike departures to yellow taxi pickups
+    in August 2026?
+  category: cross_domain
+  difficulty: hard
+  split: dev
+  source: question by GPT-6-Astra, reference by Claude Opus 5.5
+  gold_sql: |
+    WITH bike AS (
+      SELECT start_taxi_zone_id AS zone_id, COUNT(*) AS bike_rides
+      FROM gold.fct_bike_trip
+      WHERE started_at >= timezone('America/New_York', TIMESTAMP '2026-08-01')
+        AND started_at <  timezone('America/New_York', TIMESTAMP '2026-09-01')
+        AND file_month = DATE '2026-08-01'
+        AND duration_minutes BETWEEN 1 AND 240
+      GROUP BY 1
+    ), taxi AS (
+      SELECT pickup_zone_id AS zone_id, SUM(trips) AS taxi_trips
+      FROM gold.agg_trips_zone_hourly
+      WHERE service = 'yellow'
+        AND file_month = DATE '2026-08-01'
+        AND pickup_date >= DATE '2026-08-01'
+        AND pickup_date <  DATE '2026-09-01'
+      GROUP BY 1
+    )
+    SELECT z.zone_name,
+           b.bike_rides::DOUBLE / t.taxi_trips AS bike_to_taxi_ratio
+    FROM gold.dim_taxi_zone z
+    JOIN bike b ON b.zone_id = z.zone_id
+    JOIN taxi t ON t.zone_id = z.zone_id
+    WHERE z.borough = 'Manhattan'
+      AND t.taxi_trips > 0
+    ORDER BY bike_to_taxi_ratio DESC
+    LIMIT 1
+  notes: Combines bike departures and plausible taxi pickups at the same geographic scale, then ranks
+    their ratios.
+- id: d2-004
+  question: Were average app pickup waits in Queens longer during hours with snowfall than hours without
+    snowfall in January 2025?
+  category: cross_domain
+  difficulty: hard
+  split: dev
+  source: question by GPT-6-Astra, reference by Claude Opus 5.5
+  gold_sql: |
+    SELECT w.is_snow_hour,
+           SUM(a.wait_minutes_sum) / SUM(a.trips_with_wait) AS avg_app_wait_minutes
+    FROM gold.agg_trips_zone_hourly a
+    JOIN gold.dim_taxi_zone z ON z.zone_id = a.pickup_zone_id
+    JOIN gold.fct_weather_hourly w
+      ON w.boro_code = 4
+     AND w.hour_date = a.pickup_date
+     AND w.hour_hour = a.pickup_hour
+    WHERE z.borough = 'Queens'
+      AND a.service IN ('uber', 'lyft', 'via', 'juno')
+      AND a.file_month = DATE '2025-01-01'
+      AND a.pickup_date >= DATE '2025-01-01'
+      AND a.pickup_date < DATE '2025-02-01'
+      AND w.hour_start >= timezone('America/New_York', TIMESTAMP '2025-01-01')
+      AND w.hour_start < timezone('America/New_York', TIMESTAMP '2025-02-01')
+    GROUP BY w.is_snow_hour
+  notes: Matches pickup-zone boroughs and hours to weather, then computes trip-weighted waits using known
+    waits.
+- id: d2-005
+  question: In 2025, what share of Queens crashes occurred during hours when monitored roads in Queens
+    averaged below 20 mph?
+  category: cross_domain
+  difficulty: hard
+  split: dev
+  source: question by GPT-6-Astra, reference by Claude Opus 5.5
+  gold_sql: |
+    WITH queens_hourly_speed AS (
+      SELECT s.observed_date, s.observed_hour, AVG(s.speed_mph) AS avg_speed
+      FROM gold.fct_traffic_speed s
+      JOIN gold.dim_traffic_link l ON l.link_id = s.link_id
+      WHERE s.is_valid
+        AND upper(l.borough) = 'QUEENS'
+        AND s.observed_at >= timezone('America/New_York', TIMESTAMP '2025-01-01')
+        AND s.observed_at <  timezone('America/New_York', TIMESTAMP '2026-01-01')
+      GROUP BY s.observed_date, s.observed_hour
+    ),
+    queens_crashes AS (
+      SELECT c.collision_id, c.crash_date, c.crash_hour
+      FROM gold.fct_collision c
+      WHERE upper(c.borough) = 'QUEENS'
+        AND c.crashed_at >= timezone('America/New_York', TIMESTAMP '2025-01-01')
+        AND c.crashed_at <  timezone('America/New_York', TIMESTAMP '2026-01-01')
+    )
+    SELECT
+      COUNT(*) FILTER (WHERE h.avg_speed < 20)::DOUBLE / COUNT(*) AS share_of_crashes_in_slow_hours
+    FROM queens_crashes q
+    LEFT JOIN queens_hourly_speed h
+      ON h.observed_date = q.crash_date AND h.observed_hour = q.crash_hour
+  notes: Aggregates valid speed readings by borough-hour before matching crashes and calculating their
+    share.
+- id: d2-006
+  question: How many Bronx heat and hot water complaints were filed during hours below freezing in January
+    2026?
+  category: cross_domain
+  difficulty: medium
+  split: dev
+  source: question by GPT-6-Astra, reference by Claude Opus 5.5
+  group: d2g-002
+  gold_sql: |
+    SELECT count(*) AS heat_hot_water_requests
+    FROM gold.fct_service_request r
+    JOIN gold.fct_weather_hourly w
+      ON w.boro_code = 2
+     AND w.hour_date = r.created_date
+     AND w.hour_hour = r.created_hour
+    WHERE r.complaint_type = 'HEAT/HOT WATER'
+      AND r.boro_code = 2
+      AND r.created_at >= timezone('America/New_York', TIMESTAMP '2026-01-01')
+      AND r.created_at <  timezone('America/New_York', TIMESTAMP '2026-02-01')
+      AND w.temperature_f < 32
+  notes: Grounds the complaint category and matches filing hours to Bronx temperatures below 32°F.
+- id: d2-007
+  question: During January 2026, how many heat or hot water complaints came from the Bronx when the hourly
+    temperature was below 32°F?
+  category: cross_domain
+  difficulty: medium
+  split: dev
+  source: question by GPT-6-Astra, reference by Claude Opus 5.5
+  group: d2g-002
+  gold_sql: |
+    SELECT count(*) AS heat_hot_water_requests
+    FROM gold.fct_service_request r
+    JOIN gold.fct_weather_hourly w
+      ON w.boro_code = 2
+     AND w.hour_date = r.created_date
+     AND w.hour_hour = r.created_hour
+    WHERE r.complaint_type = 'HEAT/HOT WATER'
+      AND r.boro_code = 2
+      AND r.created_at >= timezone('America/New_York', TIMESTAMP '2026-01-01')
+      AND r.created_at <  timezone('America/New_York', TIMESTAMP '2026-02-01')
+      AND w.temperature_f < 32
+  notes: Grounds the complaint category and matches filing hours to Bronx temperatures below 32°F.
+- id: d2-008
+  question: Which borough had the most pedestrians under 18 injured in crashes during 2025?
+  category: multi_join
+  difficulty: medium
+  split: dev
+  source: question by GPT-6-Astra, reference by Claude Opus 5.5
+  gold_sql: |
+    SELECT c.borough, COUNT(*) AS pedestrians_under_18_injured
+    FROM gold.fct_collision_person p
+    JOIN gold.fct_collision c ON c.collision_id = p.collision_id
+    WHERE c.crashed_at >= timezone('America/New_York', TIMESTAMP '2025-01-01')
+      AND c.crashed_at < timezone('America/New_York', TIMESTAMP '2026-01-01')
+      AND p.person_type = 'pedestrian'
+      AND p.was_injured
+      AND p.age < 18
+      AND c.borough IS NOT NULL
+    GROUP BY c.borough
+    ORDER BY pedestrians_under_18_injured DESC
+    LIMIT 1
+  notes: Joins person-level ages and injuries to crash locations, then ranks boroughs.
+- id: d2-009
+  question: For each pickup borough, which destination borough received the most green taxi rides in June
+    2026?
+  category: multi_join
+  difficulty: hard
+  split: dev
+  source: question by GPT-6-Astra, reference by Claude Opus 5.5
+  gold_sql: |
+    SELECT pz.borough AS pickup_borough, dz.borough AS dropoff_borough, count(*) AS rides
+    FROM gold.fct_taxi_trip t
+    JOIN gold.dim_taxi_zone pz ON t.pickup_zone_id = pz.zone_id
+    JOIN gold.dim_taxi_zone dz ON t.dropoff_zone_id = dz.zone_id
+    WHERE t.taxi_type = 'green'
+      AND t.is_plausible
+      AND t.file_month = DATE '2026-06-01'
+      AND t.pickup_at >= timezone('America/New_York', TIMESTAMP '2026-06-01')
+      AND t.pickup_at < timezone('America/New_York', TIMESTAMP '2026-07-01')
+      AND pz.borough IS NOT NULL AND pz.borough <> ''
+      AND dz.borough IS NOT NULL AND dz.borough <> ''
+    GROUP BY pz.borough, dz.borough
+    QUALIFY rank() OVER (PARTITION BY pz.borough ORDER BY count(*) DESC) = 1
+  notes: Resolves both trip endpoints through taxi zones and ranks destination boroughs within each pickup
+    borough.
+- id: d2-010
+  question: Which residential neighborhood in each borough had the most subway entries at accessible station
+    complexes in April 2026?
+  category: multi_join
+  difficulty: hard
+  split: dev
+  source: question by GPT-6-Astra, reference by Claude Opus 5.5
+  gold_sql: |
+    WITH nta_riders AS (
+      SELECT n.borough, n.nta_code, n.nta_name, SUM(r.riders) AS riders
+      FROM gold.fct_subway_ridership_hourly r
+      JOIN gold.dim_subway_complex c ON c.complex_id = r.complex_id
+      JOIN gold.dim_neighborhood n ON n.nta_code = c.nta_code
+      WHERE r.hour_start >= timezone('America/New_York', TIMESTAMP '2026-04-01')
+        AND r.hour_start < timezone('America/New_York', TIMESTAMP '2026-05-01')
+        AND r.transit_mode = 'subway'
+        AND c.is_accessible
+        AND n.is_residential
+      GROUP BY n.borough, n.nta_code, n.nta_name
+    )
+    SELECT nta_name, borough, riders
+    FROM nta_riders
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY borough ORDER BY riders DESC) = 1
+  notes: Joins entries to complex accessibility and residential neighborhoods, then ranks neighborhoods
+    within boroughs.
+- id: d2-011
+  question: What share of NYC Citi Bike departures in August 2026 came from stations equipped to charge
+    e-bikes?
+  category: multi_join
+  difficulty: medium
+  split: dev
+  source: question by GPT-6-Astra, reference by Claude Opus 5.5
+  group: d2g-003
+  gold_sql: |
+    SELECT
+      AVG(CASE WHEN COALESCE(s.has_charging, FALSE) THEN 1.0 ELSE 0.0 END) AS charging_station_departure_share
+    FROM gold.fct_bike_trip t
+    JOIN gold.dim_bike_station s
+      ON t.start_station_number = s.station_number
+    WHERE t.file_month = DATE '2026-08-01'
+      AND t.started_at >= timezone('America/New_York', TIMESTAMP '2026-08-01')
+      AND t.started_at <  timezone('America/New_York', TIMESTAMP '2026-09-01')
+      AND t.duration_minutes >= 1
+      AND t.duration_minutes <= 240
+      AND NOT COALESCE(s.is_new_jersey, FALSE)
+  notes: Links ride departure stations to charging capabilities and excludes New Jersey departures.
+- id: d2-012
+  question: In August 2026, what percentage of Citi Bike rides starting in New York City began at stations
+    with e-bike charging?
+  category: multi_join
+  difficulty: medium
+  split: dev
+  source: question by GPT-6-Astra, reference by Claude Opus 5.5
+  group: d2g-003
+  gold_sql: |
+    SELECT
+      AVG(CASE WHEN COALESCE(s.has_charging, FALSE) THEN 1.0 ELSE 0.0 END) AS charging_station_departure_share
+    FROM gold.fct_bike_trip t
+    JOIN gold.dim_bike_station s
+      ON t.start_station_number = s.station_number
+    WHERE t.file_month = DATE '2026-08-01'
+      AND t.started_at >= timezone('America/New_York', TIMESTAMP '2026-08-01')
+      AND t.started_at <  timezone('America/New_York', TIMESTAMP '2026-09-01')
+      AND t.duration_minutes >= 1
+      AND t.duration_minutes <= 240
+      AND NOT COALESCE(s.is_new_jersey, FALSE)
+  notes: Links ride departure stations to charging capabilities and excludes New Jersey departures.
+- id: d2-013
+  question: Which Bronx Citi Bike stations are renting bikes and have at least three e-bikes available
+    right now?
+  category: live
+  difficulty: medium
+  split: dev
+  source: question by GPT-6-Astra, reference by Claude Opus 5.5
+  gold_sql: |
+    WITH latest AS (
+      SELECT s.*
+      FROM gold.fct_bike_station_status s
+      WHERE s.reported_at <= timezone('America/New_York', TIMESTAMP '2026-10-03 06:00:00')
+      QUALIFY row_number() OVER (PARTITION BY s.station_id ORDER BY s.reported_at DESC) = 1
+    )
+    SELECT d.station_name, l.ebikes_available
+    FROM latest l
+    JOIN gold.dim_bike_station d ON d.station_id = l.station_id
+    WHERE d.boro_code = 2
+      AND l.is_renting
+      AND l.ebikes_available >= 3
+  notes: Uses each station's latest status at or before the specified now and filters borough, rental
+    status, and availability.
+- id: d2-014
+  question: Since midnight today, what share of scheduled F train arrivals were more than five minutes
+    late?
+  category: live
+  difficulty: medium
+  split: dev
+  source: question by GPT-6-Astra, reference by Claude Opus 5.5
+  group: d2g-004
+  gold_sql: |
+    SELECT COUNT(*) FILTER (WHERE delay_seconds > 300)::DOUBLE / COUNT(*) AS late_share
+    FROM gold.fct_subway_arrival
+    WHERE route_id = 'F'
+      AND is_scheduled_trip
+      AND delay_seconds IS NOT NULL
+      AND arrived_at >= timezone('America/New_York', TIMESTAMP '2026-10-03 00:00:00')
+      AND arrived_at <  timezone('America/New_York', TIMESTAMP '2026-10-03 06:00:00')
+  notes: Uses observed scheduled arrivals from midnight to 6 a.m. on October 3 and the governed lateness
+    threshold.
+- id: d2-015
+  question: What percentage of scheduled F train arrivals so far today were over five minutes behind schedule?
+  category: live
+  difficulty: medium
+  split: dev
+  source: question by GPT-6-Astra, reference by Claude Opus 5.5
+  group: d2g-004
+  gold_sql: |
+    SELECT COUNT(*) FILTER (WHERE delay_seconds > 300)::DOUBLE / COUNT(*) AS late_share
+    FROM gold.fct_subway_arrival
+    WHERE route_id = 'F'
+      AND is_scheduled_trip
+      AND delay_seconds IS NOT NULL
+      AND arrived_at >= timezone('America/New_York', TIMESTAMP '2026-10-03 00:00:00')
+      AND arrived_at <  timezone('America/New_York', TIMESTAMP '2026-10-03 06:00:00')
+  notes: Uses observed scheduled arrivals from midnight to 6 a.m. on October 3 and the governed lateness
+    threshold.
+- id: d2-016
+  question: Which Queens monitored road links averaged under 15 mph in the last two hours?
+  category: live
+  difficulty: medium
+  split: dev
+  source: question by GPT-6-Astra, reference by Claude Opus 5.5
+  gold_sql: |
+    SELECT l.link_id, l.link_name, AVG(s.speed_mph) AS avg_speed_mph
+    FROM gold.fct_traffic_speed s
+    JOIN gold.dim_traffic_link l ON l.link_id = s.link_id
+    WHERE l.borough = 'Queens'
+      AND s.is_valid
+      AND s.observed_at >= timezone('America/New_York', TIMESTAMP '2026-10-03 04:00:00')
+      AND s.observed_at < timezone('America/New_York', TIMESTAMP '2026-10-03 06:00:00')
+    GROUP BY l.link_id, l.link_name
+    HAVING AVG(s.speed_mph) < 15
+  notes: Joins road locations to valid readings between 4 a.m. and 6 a.m. on October 3.
+- id: d2-017
+  question: How many N train arrivals were late between eight and nine yesterday?
+  category: ambiguous
+  difficulty: easy
+  split: dev
+  source: question by GPT-6-Astra, reference by Claude Opus 5.5
+  expect:
+    classification: unclear
+  notes: Eight to nine could mean morning or evening; the conventions do not resolve this.
+- id: d2-018
+  question: Compare taxi fares in May and June 2026.
+  category: ambiguous
+  difficulty: medium
+  split: dev
+  source: question by GPT-6-Astra, reference by Claude Opus 5.5
+  expect:
+    classification: unclear
+  notes: Could request average or total fares, and metered fares or complete charges; these yield different
+    comparisons.
+- id: d2-019
+  question: How many rides started on the West Side in August 2026?
+  category: ambiguous
+  difficulty: easy
+  split: dev
+  source: question by GPT-6-Astra, reference by Claude Opus 5.5
+  expect:
+    classification: unclear
+  notes: Neither the ride service nor the geographic extent of the West Side is specified.
+- id: d2-020
+  question: How many subway passengers exited at Union Square in July 2026?
+  category: unsupported
+  difficulty: easy
+  split: dev
+  source: question by GPT-6-Astra, reference by Claude Opus 5.5
+  group: d2g-005
+  expect:
+    classification: unsupported
+  notes: The available ridership data records entries, not passenger exits.
+- id: d2-021
+  question: How many people left the subway through Union Square's exits during July 2026?
+  category: unsupported
+  difficulty: easy
+  split: dev
+  source: question by GPT-6-Astra, reference by Claude Opus 5.5
+  group: d2g-005
+  expect:
+    classification: unsupported
+  notes: The available ridership data records entries, not passenger exits.
+- id: d2-022
+  question: What was the average Citi Bike battery charge at Brooklyn stations yesterday?
+  category: unsupported
+  difficulty: easy
+  split: dev
+  source: question by GPT-6-Astra, reference by Claude Opus 5.5
+  expect:
+    classification: unsupported
+  notes: Station availability includes e-bike counts but no battery charge measurements.
+- id: d2-023
+  question: What was the median closure time for 311 requests filed in November 2023?
+  category: unsupported
+  difficulty: easy
+  split: dev
+  source: question by GPT-6-Astra, reference by Claude Opus 5.5
+  expect:
+    classification: unsupported
+  notes: The requested filing period predates the January 2024 history boundary.
+- id: d2-024
+  question: What share of 311 requests filed in ZIP code 10453 during February 2026 concerned heat or
+    hot water?
+  category: geographic
+  difficulty: medium
+  split: dev
+  source: question by GPT-6-Astra, reference by Claude Opus 5.5
+  gold_sql: |
+    SELECT
+      avg(CASE WHEN upper(complaint_type) = 'HEAT/HOT WATER' THEN 1.0 ELSE 0.0 END) AS heat_hot_water_share
+    FROM gold.fct_service_request
+    WHERE incident_zip = '10453'
+      AND created_at >= timezone('America/New_York', TIMESTAMP '2026-02-01')
+      AND created_at <  timezone('America/New_York', TIMESTAMP '2026-03-01')
+  notes: Uses the recorded ZIP code and divides matching complaints by all requests in that ZIP and month.
+- id: d2-025
+  question: How many Citi Bike rides started in Washington Heights and ended in Harlem in July 2026?
+  category: geographic
+  difficulty: hard
+  split: dev
+  source: question by GPT-6-Astra, reference by Claude Opus 5.5
+  gold_sql: |
+    SELECT COUNT(*) AS bike_rides
+    FROM gold.fct_bike_trip t
+    WHERE t.started_at >= timezone('America/New_York', TIMESTAMP '2026-07-01')
+      AND t.started_at <  timezone('America/New_York', TIMESTAMP '2026-08-01')
+      AND t.file_month = DATE '2026-07-01'
+      AND t.duration_minutes >= 1 AND t.duration_minutes <= 240
+      AND t.start_nta_code IN (SELECT nta_code FROM gold.dim_neighborhood WHERE nta_name LIKE 'Washington Heights%')
+      AND t.end_nta_code IN (SELECT nta_code FROM gold.dim_neighborhood WHERE nta_name LIKE 'Harlem%')
+  notes: Resolves all neighborhoods matching each common place name and applies both endpoint filters.
+- id: d2-026
+  question: What was the percentage change in weekend subway entries at Union Sq-14 St from April 2025
+    to April 2026?
+  category: geographic
+  difficulty: medium
+  split: dev
+  source: question by GPT-6-Astra, reference by Claude Opus 5.5
+  group: d2g-006
+  gold_sql: |
+    WITH t AS (
+      SELECT
+        SUM(riders) FILTER (WHERE hour_start >= timezone('America/New_York', TIMESTAMP '2025-04-01')
+                              AND hour_start <  timezone('America/New_York', TIMESTAMP '2025-05-01')) AS riders_apr_2025,
+        SUM(riders) FILTER (WHERE hour_start >= timezone('America/New_York', TIMESTAMP '2026-04-01')
+                              AND hour_start <  timezone('America/New_York', TIMESTAMP '2026-05-01')) AS riders_apr_2026
+      FROM gold.fct_subway_ridership_hourly
+      WHERE complex_name ILIKE '%Union Sq%'
+        AND transit_mode = 'subway'
+        AND isodow(hour_at_local) IN (6, 7)
+        AND ((hour_start >= timezone('America/New_York', TIMESTAMP '2025-04-01')
+              AND hour_start < timezone('America/New_York', TIMESTAMP '2025-05-01'))
+          OR (hour_start >= timezone('America/New_York', TIMESTAMP '2026-04-01')
+              AND hour_start < timezone('America/New_York', TIMESTAMP '2026-05-01')))
+    )
+    SELECT (riders_apr_2026 - riders_apr_2025) / riders_apr_2025 * 100 AS pct_change,
+           riders_apr_2025,
+           riders_apr_2026
+    FROM t
+  notes: Resolves the station complex and compares total weekend entries across two fully covered months.
+- id: d2-027
+  question: By what percentage did Union Sq-14 St's weekend subway entries rise or fall between April
+    2025 and April 2026?
+  category: geographic
+  difficulty: medium
+  split: dev
+  source: question by GPT-6-Astra, reference by Claude Opus 5.5
+  group: d2g-006
+  gold_sql: |
+    WITH t AS (
+      SELECT
+        SUM(riders) FILTER (WHERE hour_start >= timezone('America/New_York', TIMESTAMP '2025-04-01')
+                              AND hour_start <  timezone('America/New_York', TIMESTAMP '2025-05-01')) AS riders_apr_2025,
+        SUM(riders) FILTER (WHERE hour_start >= timezone('America/New_York', TIMESTAMP '2026-04-01')
+                              AND hour_start <  timezone('America/New_York', TIMESTAMP '2026-05-01')) AS riders_apr_2026
+      FROM gold.fct_subway_ridership_hourly
+      WHERE complex_name ILIKE '%Union Sq%'
+        AND transit_mode = 'subway'
+        AND isodow(hour_at_local) IN (6, 7)
+        AND ((hour_start >= timezone('America/New_York', TIMESTAMP '2025-04-01')
+              AND hour_start < timezone('America/New_York', TIMESTAMP '2025-05-01'))
+          OR (hour_start >= timezone('America/New_York', TIMESTAMP '2026-04-01')
+              AND hour_start < timezone('America/New_York', TIMESTAMP '2026-05-01')))
+    )
+    SELECT (riders_apr_2026 - riders_apr_2025) / riders_apr_2025 * 100 AS pct_change,
+           riders_apr_2025,
+           riders_apr_2026
+    FROM t
+  notes: Resolves the station complex and compares total weekend entries across two fully covered months.
+- id: d2-028
+  question: In February 2026, what share of Queens 311 complaints were about noise?
+  category: grounding
+  difficulty: medium
+  split: dev
+  source: question by GPT-6-Astra, reference by Claude Opus 5.5
+  gold_sql: |
+    SELECT count(*) FILTER (WHERE lower(complaint_type) LIKE 'noise%') * 1.0 / count(*) AS noise_share
+    FROM gold.fct_service_request
+    WHERE created_at >= timezone('America/New_York', TIMESTAMP '2026-02-01')
+      AND created_at < timezone('America/New_York', TIMESTAMP '2026-03-01')
+      AND upper(borough) = 'QUEENS'
+  notes: Noise includes every complaint type beginning with Noise, rather than only residential noise.
+- id: d2-029
+  question: From September 1 through September 20, 2026, what share of subway entries used tap-to-pay?
+  category: grounding
+  difficulty: easy
+  split: dev
+  source: question by GPT-6-Astra, reference by Claude Opus 5.5
+  group: d2g-007
+  gold_sql: |
+    SELECT SUM(riders) FILTER (WHERE payment_method = 'omny') / SUM(riders) AS omny_share
+    FROM gold.fct_subway_ridership_hourly
+    WHERE transit_mode = 'subway'
+      AND hour_start >= timezone('America/New_York', TIMESTAMP '2026-09-01')
+      AND hour_start < timezone('America/New_York', TIMESTAMP '2026-09-21')
+  notes: Maps tap-to-pay to OMNY and uses a fully covered, inclusive date range.
+- id: d2-030
+  question: What percentage of subway entries were paid with OMNY from September 1 through September 20,
+    2026?
+  category: grounding
+  difficulty: easy
+  split: dev
+  source: question by GPT-6-Astra, reference by Claude Opus 5.5
+  group: d2g-007
+  gold_sql: |
+    SELECT SUM(riders) FILTER (WHERE payment_method = 'omny') / SUM(riders) AS omny_share
+    FROM gold.fct_subway_ridership_hourly
+    WHERE transit_mode = 'subway'
+      AND hour_start >= timezone('America/New_York', TIMESTAMP '2026-09-01')
+      AND hour_start < timezone('America/New_York', TIMESTAMP '2026-09-21')
+  notes: Maps tap-to-pay to OMNY and uses a fully covered, inclusive date range.
+- id: d2-031
+  question: In 2025, which month had the largest absolute difference between morning-rush and evening-rush
+    subway entries?
+  category: temporal
+  difficulty: hard
+  split: dev
+  source: question by GPT-6-Astra, reference by Claude Opus 5.5
+  gold_sql: |
+    SELECT date_trunc('month', hour_date) AS month,
+           abs(SUM(CASE WHEN hour_hour BETWEEN 7 AND 9 THEN riders ELSE 0 END)
+             - SUM(CASE WHEN hour_hour BETWEEN 16 AND 18 THEN riders ELSE 0 END)) AS abs_rush_difference
+    FROM gold.fct_subway_ridership_hourly
+    WHERE hour_start >= timezone('America/New_York', TIMESTAMP '2025-01-01')
+      AND hour_start <  timezone('America/New_York', TIMESTAMP '2026-01-01')
+      AND transit_mode = 'subway'
+      AND isodow(hour_date) BETWEEN 1 AND 5
+      AND (hour_hour BETWEEN 7 AND 9 OR hour_hour BETWEEN 16 AND 18)
+    GROUP BY 1
+    ORDER BY abs_rush_difference DESC
+    LIMIT 1
+  notes: Applies both weekday rush windows, calculates monthly totals, and ranks the absolute differences.
+- id: d2-032
+  question: How did average overnight yellow taxi trip distance differ between weekdays and weekends in
+    February 2026?
+  category: temporal
+  difficulty: medium
+  split: dev
+  source: question by GPT-6-Astra, reference by Claude Opus 5.5
+  gold_sql: |
+    SELECT CASE WHEN d.is_weekend THEN 'weekend' ELSE 'weekday' END AS day_type,
+           SUM(a.trip_miles_sum) / SUM(a.trips) AS avg_trip_miles
+    FROM gold.agg_trips_zone_hourly a
+    JOIN gold.dim_date d ON d.date = a.pickup_date
+    WHERE a.service = 'yellow'
+      AND a.file_month = DATE '2026-02-01'
+      AND a.pickup_date >= DATE '2026-02-01'
+      AND a.pickup_date < DATE '2026-03-01'
+      AND a.pickup_hour BETWEEN 0 AND 5
+    GROUP BY 1
+  notes: Combines the midnight-to-6 a.m. window with weekday classifications and computes trip-weighted
+    distances.
+- id: d2-033
+  question: For 311 requests filed in January 2026, what percentage closed within 48 hours, compared with
+    January 2025?
+  category: temporal
+  difficulty: hard
+  split: dev
+  source: question by GPT-6-Astra, reference by Claude Opus 5.5
+  group: d2g-008
+  gold_sql: |
+    SELECT date_trunc('month', created_date) AS filing_month,
+           100.0 * count(*) FILTER (WHERE is_closed AND hours_to_close <= 48) / count(*) AS pct_closed_within_48h
+    FROM gold.fct_service_request
+    WHERE (created_at >= timezone('America/New_York', TIMESTAMP '2025-01-01')
+           AND created_at < timezone('America/New_York', TIMESTAMP '2025-02-01'))
+       OR (created_at >= timezone('America/New_York', TIMESTAMP '2026-01-01')
+           AND created_at < timezone('America/New_York', TIMESTAMP '2026-02-01'))
+    GROUP BY 1
+  notes: Compares filing cohorts, counting closures within 48 hours against all requests in each cohort.
+- id: d2-034
+  question: What share of January-filed 311 requests closed within 48 hours in 2025 versus 2026?
+  category: temporal
+  difficulty: hard
+  split: dev
+  source: question by GPT-6-Astra, reference by Claude Opus 5.5
+  group: d2g-008
+  gold_sql: |
+    SELECT date_trunc('month', created_date) AS filing_month,
+           100.0 * count(*) FILTER (WHERE is_closed AND hours_to_close <= 48) / count(*) AS pct_closed_within_48h
+    FROM gold.fct_service_request
+    WHERE (created_at >= timezone('America/New_York', TIMESTAMP '2025-01-01')
+           AND created_at < timezone('America/New_York', TIMESTAMP '2025-02-01'))
+       OR (created_at >= timezone('America/New_York', TIMESTAMP '2026-01-01')
+           AND created_at < timezone('America/New_York', TIMESTAMP '2026-02-01'))
+    GROUP BY 1
+  notes: Compares filing cohorts, counting closures within 48 hours against all requests in each cohort.
+- id: d2-035
+  question: Among Lyft rides requesting a shared trip in June 2026, what percentage were actually shared?
+  category: single_table
+  difficulty: medium
+  split: dev
+  source: question by GPT-6-Astra, reference by Claude Opus 5.5
+  gold_sql: |
+    SELECT 100.0 * count(*) FILTER (WHERE shared_matched) / count(*) AS pct_shared
+    FROM gold.fct_rideshare_trip
+    WHERE company = 'Lyft'
+      AND shared_requested
+      AND is_plausible
+      AND file_month = DATE '2026-06-01'
+      AND pickup_at >= timezone('America/New_York', TIMESTAMP '2026-06-01')
+      AND pickup_at < timezone('America/New_York', TIMESTAMP '2026-07-01')
+  notes: Calculates the matched share among plausible Lyft trips with sharing requested.
+- id: d2-036
+  question: Which five complaint types had the highest proportion of still-open requests among those filed
+    in February 2026?
+  category: single_table
+  difficulty: hard
+  split: dev
+  source: question by GPT-6-Astra, reference by Claude Opus 5.5
+  gold_sql: |
+    SELECT complaint_type,
+           AVG(CASE WHEN COALESCE(is_closed, FALSE) THEN 0.0 ELSE 1.0 END) AS open_share
+    FROM gold.fct_service_request
+    WHERE created_at >= timezone('America/New_York', TIMESTAMP '2026-02-01')
+      AND created_at <  timezone('America/New_York', TIMESTAMP '2026-03-01')
+    GROUP BY complaint_type
+    ORDER BY open_share DESC, complaint_type
+    LIMIT 5
+  notes: Ranks complaint types by the proportion not closed, including assigned and in-progress requests.
+- id: d2-037
+  question: How many datasets show an error from their latest update?
+  category: single_table
+  difficulty: easy
+  split: dev
+  source: question by GPT-6-Astra, reference by Claude Opus 5.5
+  gold_sql: |
+    SELECT COUNT(DISTINCT table_name) AS datasets_with_error
+    FROM gold.ops_source_freshness
+    WHERE last_error IS NOT NULL AND trim(last_error) <> ''
+  notes: Counts dataset freshness records containing an error from the latest run.
+- id: d2-038
+  question: What was the average traffic speed on Brooklyn highways during hours that had fatal crashes
+    in 2025?
+  category: cross_domain
+  difficulty: hard
+  split: dev
+  source: question by Gemini 3.1 Pro, reference by Claude Opus 5.5
+  gold_sql: |
+    WITH fatal_hours AS (
+      SELECT DISTINCT crash_date, crash_hour
+      FROM gold.fct_collision
+      WHERE has_fatality
+        AND boro_code = 3
+        AND crashed_at >= timezone('America/New_York', TIMESTAMP '2025-01-01')
+        AND crashed_at <  timezone('America/New_York', TIMESTAMP '2026-01-01')
+    )
+    SELECT AVG(s.speed_mph) AS avg_road_speed_mph
+    FROM gold.fct_traffic_speed s
+    JOIN gold.dim_traffic_link l ON l.link_id = s.link_id
+    JOIN fatal_hours f ON s.observed_date = f.crash_date AND s.observed_hour = f.crash_hour
+    WHERE s.is_valid
+      AND upper(l.borough) = 'BROOKLYN'
+      AND s.observed_at >= timezone('America/New_York', TIMESTAMP '2025-01-01')
+      AND s.observed_at <  timezone('America/New_York', TIMESTAMP '2026-01-01')
+  notes: Joins hourly traffic speeds with crash times and locations.
+- id: d2-039
+  question: What was the total subway ridership on the ten days with the most Citi Bike rides in 2024?
+  category: cross_domain
+  difficulty: hard
+  split: dev
+  source: question by Gemini 3.1 Pro, reference by Claude Opus 5.5
+  gold_sql: |
+    WITH bike_days AS (
+      SELECT start_date, COUNT(*) AS rides
+      FROM gold.fct_bike_trip
+      WHERE started_at >= timezone('America/New_York', TIMESTAMP '2024-01-01')
+        AND started_at < timezone('America/New_York', TIMESTAMP '2025-01-01')
+        AND file_month BETWEEN DATE '2023-12-01' AND DATE '2025-01-01'
+        AND duration_minutes >= 1 AND duration_minutes <= 240
+      GROUP BY start_date
+      ORDER BY rides DESC
+      LIMIT 10
+    )
+    SELECT SUM(r.riders) AS subway_riders
+    FROM gold.fct_subway_ridership_hourly r
+    WHERE r.hour_start >= timezone('America/New_York', TIMESTAMP '2024-01-01')
+      AND r.hour_start < timezone('America/New_York', TIMESTAMP '2025-01-01')
+      AND r.transit_mode = 'subway'
+      AND r.hour_date IN (SELECT start_date FROM bike_days)
+  notes: Ranks days by bike rides and aggregates subway ridership for those dates.
+- id: d2-040
+  question: How many heating complaints were made while the temperature was below freezing in January
+    2025?
+  category: cross_domain
+  difficulty: medium
+  split: dev
+  source: question by Gemini 3.1 Pro, reference by Claude Opus 5.5
+  group: d2g-009
+  gold_sql: |
+    SELECT COUNT(*) AS heat_complaints_below_freezing
+    FROM gold.fct_service_request r
+    JOIN gold.fct_weather_hourly w
+      ON w.boro_code = r.boro_code
+     AND w.hour_at_local = date_trunc('hour', r.created_at_local)
+    WHERE r.created_at >= timezone('America/New_York', TIMESTAMP '2025-01-01')
+      AND r.created_at <  timezone('America/New_York', TIMESTAMP '2025-02-01')
+      AND r.complaint_type = 'HEAT/HOT WATER'
+      AND w.temperature_f < 32
+  notes: Correlates 311 heat complaints with freezing hourly temperatures.
+- id: d2-041
+  question: How many 311 calls about lack of heat came in when it was colder than 32 degrees in Jan 2025?
+  category: cross_domain
+  difficulty: medium
+  split: dev
+  source: question by Gemini 3.1 Pro, reference by Claude Opus 5.5
+  group: d2g-009
+  gold_sql: |
+    SELECT COUNT(*) AS heat_complaints_below_freezing
+    FROM gold.fct_service_request r
+    JOIN gold.fct_weather_hourly w
+      ON w.boro_code = r.boro_code
+     AND w.hour_at_local = date_trunc('hour', r.created_at_local)
+    WHERE r.created_at >= timezone('America/New_York', TIMESTAMP '2025-01-01')
+      AND r.created_at <  timezone('America/New_York', TIMESTAMP '2025-02-01')
+      AND r.complaint_type = 'HEAT/HOT WATER'
+      AND w.temperature_f < 32
+  notes: Correlates 311 heat complaints with freezing hourly temperatures.
+- id: d2-042
+  question: Which subway line had the most service alerts on days when the city received over 100 street
+    flooding complaints in 2026?
+  category: cross_domain
+  difficulty: hard
+  split: dev
+  source: question by Gemini 3.1 Pro, reference by Claude Opus 5.5
+  group: d2g-010
+  gold_sql: |
+    WITH flood_days AS (
+      SELECT created_date AS d
+      FROM gold.fct_service_request
+      WHERE created_at >= timezone('America/New_York', TIMESTAMP '2026-01-01')
+        AND created_at <  timezone('America/New_York', TIMESTAMP '2027-01-01')
+        AND (complaint_type ILIKE '%street flood%' OR descriptor ILIKE '%street flood%' OR descriptor_2 ILIKE '%street flood%')
+      GROUP BY created_date
+      HAVING count(*) > 100
+    ),
+    day_bounds AS (
+      SELECT d,
+             timezone('America/New_York', CAST(d AS TIMESTAMP)) AS day_start,
+             timezone('America/New_York', CAST(d AS TIMESTAMP) + INTERVAL 1 DAY) AS day_end
+      FROM flood_days
+    ),
+    alert_spans AS (
+      SELECT alert_id,
+             route_ids,
+             coalesce(first_active_at, created_at, first_seen_at) AS span_start,
+             coalesce(last_active_at, last_seen_at) AS span_end
+      FROM gold.fct_subway_alert
+    ),
+    alert_routes AS (
+      SELECT alert_id, span_start, span_end, unnest(route_ids) AS route_id
+      FROM alert_spans
+    )
+    SELECT ar.route_id, count(DISTINCT ar.alert_id) AS alerts
+    FROM alert_routes ar
+    JOIN day_bounds db
+      ON ar.span_start < db.day_end
+     AND ar.span_end >= db.day_start
+    GROUP BY ar.route_id
+    QUALIFY rank() OVER (ORDER BY count(DISTINCT ar.alert_id) DESC) = 1
+  notes: Joins subway alerts with daily counts of 311 street flooding complaints.
+- id: d2-043
+  question: In 2026, on days with more than 100 311 calls for street flooding, which subway route had
+    the most alerts?
+  category: cross_domain
+  difficulty: hard
+  split: dev
+  source: question by Gemini 3.1 Pro, reference by Claude Opus 5.5
+  group: d2g-010
+  gold_sql: |
+    WITH flood_days AS (
+      SELECT created_date AS d
+      FROM gold.fct_service_request
+      WHERE created_at >= timezone('America/New_York', TIMESTAMP '2026-01-01')
+        AND created_at <  timezone('America/New_York', TIMESTAMP '2027-01-01')
+        AND (complaint_type ILIKE '%street flood%' OR descriptor ILIKE '%street flood%' OR descriptor_2 ILIKE '%street flood%')
+      GROUP BY created_date
+      HAVING count(*) > 100
+    ),
+    day_bounds AS (
+      SELECT d,
+             timezone('America/New_York', CAST(d AS TIMESTAMP)) AS day_start,
+             timezone('America/New_York', CAST(d AS TIMESTAMP) + INTERVAL 1 DAY) AS day_end
+      FROM flood_days
+    ),
+    alert_spans AS (
+      SELECT alert_id,
+             route_ids,
+             coalesce(first_active_at, created_at, first_seen_at) AS span_start,
+             coalesce(last_active_at, last_seen_at) AS span_end
+      FROM gold.fct_subway_alert
+    ),
+    alert_routes AS (
+      SELECT alert_id, span_start, span_end, unnest(route_ids) AS route_id
+      FROM alert_spans
+    )
+    SELECT ar.route_id, count(DISTINCT ar.alert_id) AS alerts
+    FROM alert_routes ar
+    JOIN day_bounds db
+      ON ar.span_start < db.day_end
+     AND ar.span_end >= db.day_start
+    GROUP BY ar.route_id
+    QUALIFY rank() OVER (ORDER BY count(DISTINCT ar.alert_id) DESC) = 1
+  notes: Joins subway alerts with daily counts of 311 street flooding complaints.
+- id: d2-044
+  question: In 2025, which borough saw the most trips on classic bikes that finished at a charging station?
+  category: multi_join
+  difficulty: hard
+  split: dev
+  source: question by Gemini 3.1 Pro, reference by Claude Opus 5.5
+  group: d2g-011
+  gold_sql: |
+    SELECT b.borough, COUNT(*) AS rides
+    FROM gold.fct_bike_trip t
+    JOIN gold.dim_bike_station s ON t.end_station_number = s.station_number
+    JOIN gold.dim_borough b ON t.end_boro_code = b.boro_code
+    WHERE t.started_at >= timezone('America/New_York', TIMESTAMP '2025-01-01')
+      AND t.started_at < timezone('America/New_York', TIMESTAMP '2026-01-01')
+      AND t.file_month >= DATE '2025-01-01' AND t.file_month <= DATE '2025-12-01'
+      AND t.bike_type = 'classic_bike'
+      AND s.has_charging
+      AND t.duration_minutes >= 1 AND t.duration_minutes <= 240
+    GROUP BY b.borough
+    ORDER BY rides DESC
+    LIMIT 1
+  notes: Requires joining bike trips with bike stations to check dock capabilities.
+- id: d2-045
+  question: Which borough had the highest number of classic Citi Bike rides ending at stations with e-bike
+    charging docks in 2025?
+  category: multi_join
+  difficulty: hard
+  split: dev
+  source: question by Gemini 3.1 Pro, reference by Claude Opus 5.5
+  group: d2g-011
+  gold_sql: |
+    SELECT b.borough, COUNT(*) AS rides
+    FROM gold.fct_bike_trip t
+    JOIN gold.dim_bike_station s ON t.end_station_number = s.station_number
+    JOIN gold.dim_borough b ON t.end_boro_code = b.boro_code
+    WHERE t.started_at >= timezone('America/New_York', TIMESTAMP '2025-01-01')
+      AND t.started_at < timezone('America/New_York', TIMESTAMP '2026-01-01')
+      AND t.file_month >= DATE '2025-01-01' AND t.file_month <= DATE '2025-12-01'
+      AND t.bike_type = 'classic_bike'
+      AND s.has_charging
+      AND t.duration_minutes >= 1 AND t.duration_minutes <= 240
+    GROUP BY b.borough
+    ORDER BY rides DESC
+    LIMIT 1
+  notes: Requires joining bike trips with bike stations to check dock capabilities.
+- id: d2-046
+  question: What was the average age of pedestrians killed in crashes that happened overnight in 2025?
+  category: multi_join
+  difficulty: medium
+  split: dev
+  source: question by Gemini 3.1 Pro, reference by Claude Opus 5.5
+  group: d2g-012
+  gold_sql: |
+    SELECT AVG(p.age) AS avg_age
+    FROM gold.fct_collision_person p
+    WHERE p.person_type = 'pedestrian'
+      AND p.was_killed
+      AND p.crash_date >= DATE '2025-01-01'
+      AND p.crash_date < DATE '2026-01-01'
+      AND p.crash_hour BETWEEN 0 AND 5
+      AND p.age IS NOT NULL
+  notes: Requires joining crash records to person records to extract demographics of victims.
+- id: d2-047
+  question: How old on average were the pedestrians who died in overnight traffic crashes in 2025?
+  category: multi_join
+  difficulty: medium
+  split: dev
+  source: question by Gemini 3.1 Pro, reference by Claude Opus 5.5
+  group: d2g-012
+  gold_sql: |
+    SELECT AVG(p.age) AS avg_age
+    FROM gold.fct_collision_person p
+    WHERE p.person_type = 'pedestrian'
+      AND p.was_killed
+      AND p.crash_date >= DATE '2025-01-01'
+      AND p.crash_date < DATE '2026-01-01'
+      AND p.crash_hour BETWEEN 0 AND 5
+      AND p.age IS NOT NULL
+  notes: Requires joining crash records to person records to extract demographics of victims.
+- id: d2-048
+  question: How much in tips did yellow cab drivers make on trips starting at JFK and ending in Williamsburg
+    in 2025?
+  category: multi_join
+  difficulty: medium
+  split: dev
+  source: question by Gemini 3.1 Pro, reference by Claude Opus 5.5
+  gold_sql: |
+    SELECT SUM(t.tip_usd) AS total_tips_usd
+    FROM gold.fct_taxi_trip t
+    JOIN gold.dim_taxi_zone pz ON t.pickup_zone_id = pz.zone_id
+    JOIN gold.dim_taxi_zone dz ON t.dropoff_zone_id = dz.zone_id
+    WHERE t.taxi_type = 'yellow'
+      AND t.is_plausible
+      AND t.payment_type = 'credit card'
+      AND pz.zone_name = 'JFK Airport'
+      AND dz.zone_name LIKE 'Williamsburg%'
+      AND t.pickup_at >= timezone('America/New_York', TIMESTAMP '2025-01-01')
+      AND t.pickup_at < timezone('America/New_York', TIMESTAMP '2026-01-01')
+      AND t.file_month >= DATE '2025-01-01'
+      AND t.file_month < DATE '2026-01-01'
+  notes: Requires joining trip data to taxi zones for both pickup and dropoff names.
+- id: d2-049
+  question: Right now, how many electric Citi Bikes are available to rent in Jersey City?
+  category: live
+  difficulty: easy
+  split: dev
+  source: question by Gemini 3.1 Pro, reference by Claude Opus 5.5
+  group: d2g-013
+  gold_sql: |
+    WITH latest AS (
+      SELECT s.station_id, s.ebikes_available,
+             ROW_NUMBER() OVER (PARTITION BY s.station_id ORDER BY s.reported_at DESC) AS rn
+      FROM gold.fct_bike_station_status s
+      JOIN gold.dim_bike_station d ON d.station_id = s.station_id
+      WHERE d.region = 'JC District'
+        AND s.reported_at <= timezone('America/New_York', TIMESTAMP '2026-10-03 06:00:00')
+    )
+    SELECT SUM(ebikes_available) AS ebikes_available
+    FROM latest
+    WHERE rn = 1
+  notes: Queries the live status of bike stations filtered for New Jersey.
+- id: d2-050
+  question: How many e-bikes can I rent at Jersey City stations right now?
+  category: live
+  difficulty: easy
+  split: dev
+  source: question by Gemini 3.1 Pro, reference by Claude Opus 5.5
+  group: d2g-013
+  gold_sql: |
+    WITH latest AS (
+      SELECT s.station_id, s.ebikes_available,
+             ROW_NUMBER() OVER (PARTITION BY s.station_id ORDER BY s.reported_at DESC) AS rn
+      FROM gold.fct_bike_station_status s
+      JOIN gold.dim_bike_station d ON d.station_id = s.station_id
+      WHERE d.region = 'JC District'
+        AND s.reported_at <= timezone('America/New_York', TIMESTAMP '2026-10-03 06:00:00')
+    )
+    SELECT SUM(ebikes_available) AS ebikes_available
+    FROM latest
+    WHERE rn = 1
+  notes: Queries the live status of bike stations filtered for New Jersey.
+- id: d2-051
+  question: How many train arrivals have been recorded at Times Square so far today?
+  category: live
+  difficulty: medium
+  split: dev
+  source: question by Gemini 3.1 Pro, reference by Claude Opus 5.5
+  group: d2g-014
+  gold_sql: |
+    SELECT COUNT(*) AS train_arrivals
+    FROM gold.fct_subway_arrival
+    WHERE station_name = 'Times Sq-42 St'
+      AND arrived_at >= timezone('America/New_York', TIMESTAMP '2026-10-03 00:00:00')
+      AND arrived_at <= timezone('America/New_York', TIMESTAMP '2026-10-03 06:00:00')
+  notes: Uses the live subway arrivals feed for the current day.
+- id: d2-052
+  question: What's the subway arrival count at Times Square today?
+  category: live
+  difficulty: medium
+  split: dev
+  source: question by Gemini 3.1 Pro, reference by Claude Opus 5.5
+  group: d2g-014
+  gold_sql: |
+    SELECT COUNT(*) AS train_arrivals
+    FROM gold.fct_subway_arrival
+    WHERE station_name = 'Times Sq-42 St'
+      AND arrived_at >= timezone('America/New_York', TIMESTAMP '2026-10-03 00:00:00')
+      AND arrived_at <= timezone('America/New_York', TIMESTAMP '2026-10-03 06:00:00')
+  notes: Uses the live subway arrivals feed for the current day.
+- id: d2-053
+  question: Which dataset has the oldest last successful load time right now?
+  category: live
+  difficulty: easy
+  split: dev
+  source: question by Gemini 3.1 Pro, reference by Claude Opus 5.5
+  group: d2g-015
+  gold_sql: |
+    WITH latest AS (
+      SELECT table_name, last_success_at
+      FROM gold.ops_source_freshness
+      QUALIFY row_number() OVER (PARTITION BY table_name ORDER BY checked_at DESC) = 1
+    )
+    SELECT table_name, last_success_at
+    FROM latest
+    WHERE last_success_at IS NOT NULL
+    ORDER BY last_success_at ASC
+    LIMIT 1
+  notes: Queries the pipeline operations table for the latest freshness status.
+- id: d2-054
+  question: Which table is the most stale in the data lake at the moment?
+  category: live
+  difficulty: easy
+  split: dev
+  source: question by Gemini 3.1 Pro, reference by Claude Opus 5.5
+  group: d2g-015
+  gold_sql: |
+    WITH latest AS (
+      SELECT table_name, last_success_at
+      FROM gold.ops_source_freshness
+      QUALIFY row_number() OVER (PARTITION BY table_name ORDER BY checked_at DESC) = 1
+    )
+    SELECT table_name, last_success_at
+    FROM latest
+    WHERE last_success_at IS NOT NULL
+    ORDER BY last_success_at ASC
+    LIMIT 1
+  notes: Queries the pipeline operations table for the latest freshness status.
+- id: d2-055
+  question: How many people rode to the airport last week?
+  category: ambiguous
+  difficulty: medium
+  split: dev
+  source: question by Gemini 3.1 Pro, reference by Claude Opus 5.5
+  group: d2g-016
+  expect:
+    classification: unsupported
+  notes: Ambiguous because 'rode' could mean taxi, app, or subway, and 'airport' could mean JFK, LGA,
+    or EWR.
+- id: d2-056
+  question: How many rides went to the airport in the past week?
+  category: ambiguous
+  difficulty: medium
+  split: dev
+  source: question by Gemini 3.1 Pro, reference by Claude Opus 5.5
+  group: d2g-016
+  expect:
+    classification: unsupported
+  notes: Ambiguous because 'rode' could mean taxi, app, or subway, and 'airport' could mean JFK, LGA,
+    or EWR.
+- id: d2-057
+  question: What is the projected ridership for the Staten Island Ferry next week?
+  category: unsupported
+  difficulty: easy
+  split: dev
+  source: question by Gemini 3.1 Pro, reference by Claude Opus 5.5
+  expect:
+    classification: unsupported
+  notes: The dataset does not contain ferry data or future ridership forecasts.
+- id: d2-058
+  question: What was the average subway delay time in January 2024?
+  category: unsupported
+  difficulty: easy
+  split: dev
+  source: question by Gemini 3.1 Pro, reference by Claude Opus 5.5
+  group: d2g-017
+  expect:
+    classification: unsupported
+  notes: Subway arrival and delay data only goes back to October 2026.
+- id: d2-059
+  question: How late were trains running on average during Jan 2024?
+  category: unsupported
+  difficulty: easy
+  split: dev
+  source: question by Gemini 3.1 Pro, reference by Claude Opus 5.5
+  group: d2g-017
+  expect:
+    classification: unsupported
+  notes: Subway arrival and delay data only goes back to October 2026.
+- id: d2-060
+  question: How many 311 noise complaints came from ZIP code 10001 during overnight hours in 2025?
+  category: geographic
+  difficulty: medium
+  split: dev
+  source: question by Gemini 3.1 Pro, reference by Claude Opus 5.5
+  group: d2g-018
+  gold_sql: |
+    SELECT COUNT(*) AS noise_requests
+    FROM gold.fct_service_request
+    WHERE created_at >= timezone('America/New_York', TIMESTAMP '2025-01-01')
+      AND created_at <  timezone('America/New_York', TIMESTAMP '2026-01-01')
+      AND complaint_type ILIKE 'Noise%'
+      AND incident_zip = '10001'
+      AND created_hour BETWEEN 0 AND 5
+  notes: Filters by a specific ZIP code and a defined period.
+- id: d2-061
+  question: How many noise complaints were filed between midnight and 6 AM in the 10001 ZIP code throughout
+    2025?
+  category: geographic
+  difficulty: medium
+  split: dev
+  source: question by Gemini 3.1 Pro, reference by Claude Opus 5.5
+  group: d2g-018
+  gold_sql: |
+    SELECT COUNT(*) AS noise_requests
+    FROM gold.fct_service_request
+    WHERE created_at >= timezone('America/New_York', TIMESTAMP '2025-01-01')
+      AND created_at <  timezone('America/New_York', TIMESTAMP '2026-01-01')
+      AND complaint_type ILIKE 'Noise%'
+      AND incident_zip = '10001'
+      AND created_hour BETWEEN 0 AND 5
+  notes: Filters by a specific ZIP code and a defined period.
+- id: d2-062
+  question: Did more Uber and Lyft trips drop off in Central Park or Prospect Park in summer 2025?
+  category: geographic
+  difficulty: hard
+  split: dev
+  source: question by Gemini 3.1 Pro, reference by Claude Opus 5.5
+  gold_sql: |
+    SELECT z.zone_name, COUNT(*) AS trips
+    FROM gold.fct_rideshare_trip t
+    JOIN gold.dim_taxi_zone z ON z.zone_id = t.dropoff_zone_id
+    WHERE z.zone_name IN ('Central Park', 'Prospect Park')
+      AND t.company IN ('Uber', 'Lyft')
+      AND t.is_plausible
+      AND t.pickup_at >= timezone('America/New_York', TIMESTAMP '2025-06-01')
+      AND t.pickup_at < timezone('America/New_York', TIMESTAMP '2025-09-01')
+      AND t.file_month BETWEEN DATE '2025-06-01' AND DATE '2025-08-01'
+    GROUP BY z.zone_name
+  notes: Compares trip counts for two specific named geographic zones.
+- id: d2-063
+  question: What was the busiest subway station complex in the Bronx for weekend ridership in 2025?
+  category: geographic
+  difficulty: medium
+  split: dev
+  source: question by Gemini 3.1 Pro, reference by Claude Opus 5.5
+  gold_sql: |
+    SELECT any_value(complex_name) AS complex_name, SUM(riders) AS weekend_riders
+    FROM gold.fct_subway_ridership_hourly
+    WHERE hour_start >= timezone('America/New_York', TIMESTAMP '2025-01-01')
+      AND hour_start < timezone('America/New_York', TIMESTAMP '2026-01-01')
+      AND transit_mode = 'subway'
+      AND borough = 'Bronx'
+      AND isodow(hour_date) IN (6, 7)
+    GROUP BY complex_id
+    ORDER BY weekend_riders DESC
+    LIMIT 1
+  notes: Ranks subway stations within a specific borough based on weekend usage.
+- id: d2-064
+  question: Which 2025 date had the worst rush hour speeds on the Brooklyn-Queens Expressway?
+  category: grounding
+  difficulty: medium
+  split: dev
+  source: question by Gemini 3.1 Pro, reference by Claude Opus 5.5
+  group: d2g-019
+  gold_sql: |
+    SELECT s.observed_date AS worst_date,
+           AVG(s.speed_mph) AS avg_speed_mph
+    FROM gold.fct_traffic_speed s
+    JOIN gold.dim_traffic_link l ON l.link_id = s.link_id
+    WHERE (l.link_name ILIKE 'BQE%' OR l.link_name ILIKE 'BROOKLYN QUEENS EXP%' OR l.link_name ILIKE 'BROOKLYN-QUEENS EXP%')
+      AND s.is_valid
+      AND s.observed_at >= timezone('America/New_York', TIMESTAMP '2025-01-01')
+      AND s.observed_at <  timezone('America/New_York', TIMESTAMP '2026-01-01')
+      AND isodow(s.observed_date) BETWEEN 1 AND 5
+      AND (s.observed_hour BETWEEN 7 AND 9 OR s.observed_hour BETWEEN 16 AND 18)
+    GROUP BY s.observed_date
+    ORDER BY avg_speed_mph ASC
+    LIMIT 1
+  notes: Requires mapping 'Brooklyn-Queens Expressway' or 'BQE' to road links and 'worst' to minimum speed.
+- id: d2-065
+  question: On which day in 2025 did the BQE have the slowest rush hour traffic?
+  category: grounding
+  difficulty: medium
+  split: dev
+  source: question by Gemini 3.1 Pro, reference by Claude Opus 5.5
+  group: d2g-019
+  gold_sql: |
+    SELECT s.observed_date AS worst_date,
+           AVG(s.speed_mph) AS avg_speed_mph
+    FROM gold.fct_traffic_speed s
+    JOIN gold.dim_traffic_link l ON l.link_id = s.link_id
+    WHERE (l.link_name ILIKE 'BQE%' OR l.link_name ILIKE 'BROOKLYN QUEENS EXP%' OR l.link_name ILIKE 'BROOKLYN-QUEENS EXP%')
+      AND s.is_valid
+      AND s.observed_at >= timezone('America/New_York', TIMESTAMP '2025-01-01')
+      AND s.observed_at <  timezone('America/New_York', TIMESTAMP '2026-01-01')
+      AND isodow(s.observed_date) BETWEEN 1 AND 5
+      AND (s.observed_hour BETWEEN 7 AND 9 OR s.observed_hour BETWEEN 16 AND 18)
+    GROUP BY s.observed_date
+    ORDER BY avg_speed_mph ASC
+    LIMIT 1
+  notes: Requires mapping 'Brooklyn-Queens Expressway' or 'BQE' to road links and 'worst' to minimum speed.
+- id: d2-066
+  question: How many fender benders without any injuries happened in Manhattan last year?
+  category: grounding
+  difficulty: medium
+  split: dev
+  source: question by Gemini 3.1 Pro, reference by Claude Opus 5.5
+  gold_sql: |
+    SELECT COUNT(*) AS crashes_without_injuries
+    FROM gold.fct_collision
+    WHERE crashed_at >= timezone('America/New_York', TIMESTAMP '2025-01-01')
+      AND crashed_at < timezone('America/New_York', TIMESTAMP '2026-01-01')
+      AND upper(borough) = 'MANHATTAN'
+      AND NOT has_injury
+      AND NOT has_fatality
+  notes: Requires interpreting 'fender benders without any injuries' as crashes with no injuries and no
+    fatalities.
+- id: d2-067
+  question: Which month in 2025 had the biggest difference between weekday and weekend average daily Citi
+    Bike rides?
+  category: temporal
+  difficulty: hard
+  split: dev
+  source: question by Gemini 3.1 Pro, reference by Claude Opus 5.5
+  group: d2g-020
+  gold_sql: |
+    WITH rides AS (
+      SELECT start_date, count(*) AS n
+      FROM gold.fct_bike_trip
+      WHERE started_at >= timezone('America/New_York', TIMESTAMP '2025-01-01')
+        AND started_at < timezone('America/New_York', TIMESTAMP '2026-01-01')
+        AND file_month BETWEEN DATE '2025-01-01' AND DATE '2025-12-01'
+        AND duration_minutes >= 1 AND duration_minutes <= 240
+      GROUP BY start_date
+    ), days AS (
+      SELECT d.month_start, d.is_weekend, coalesce(r.n, 0) AS n
+      FROM gold.dim_date d
+      LEFT JOIN rides r ON r.start_date = d.date
+      WHERE d.year = 2025
+    ), m AS (
+      SELECT month_start,
+             avg(n) FILTER (WHERE NOT is_weekend) AS weekday_avg,
+             avg(n) FILTER (WHERE is_weekend) AS weekend_avg
+      FROM days
+      GROUP BY month_start
+    )
+    SELECT month_start AS month,
+           weekday_avg - weekend_avg AS weekday_minus_weekend_avg_daily_rides
+    FROM m
+    ORDER BY abs(weekday_avg - weekend_avg) DESC
+    LIMIT 1
+  notes: Requires calculating and comparing metrics split by weekday/weekend for every month.
+- id: d2-068
+  question: In 2025, what month saw the largest gap between average weekday and weekend Citi Bike ridership?
+  category: temporal
+  difficulty: hard
+  split: dev
+  source: question by Gemini 3.1 Pro, reference by Claude Opus 5.5
+  group: d2g-020
+  gold_sql: |
+    WITH rides AS (
+      SELECT start_date, count(*) AS n
+      FROM gold.fct_bike_trip
+      WHERE started_at >= timezone('America/New_York', TIMESTAMP '2025-01-01')
+        AND started_at < timezone('America/New_York', TIMESTAMP '2026-01-01')
+        AND file_month BETWEEN DATE '2025-01-01' AND DATE '2025-12-01'
+        AND duration_minutes >= 1 AND duration_minutes <= 240
+      GROUP BY start_date
+    ), days AS (
+      SELECT d.month_start, d.is_weekend, coalesce(r.n, 0) AS n
+      FROM gold.dim_date d
+      LEFT JOIN rides r ON r.start_date = d.date
+      WHERE d.year = 2025
+    ), m AS (
+      SELECT month_start,
+             avg(n) FILTER (WHERE NOT is_weekend) AS weekday_avg,
+             avg(n) FILTER (WHERE is_weekend) AS weekend_avg
+      FROM days
+      GROUP BY month_start
+    )
+    SELECT month_start AS month,
+           weekday_avg - weekend_avg AS weekday_minus_weekend_avg_daily_rides
+    FROM m
+    ORDER BY abs(weekday_avg - weekend_avg) DESC
+    LIMIT 1
+  notes: Requires calculating and comparing metrics split by weekday/weekend for every month.
+- id: d2-069
+  question: What share of yellow cab pickups in 2024 happened during the evening rush hour?
+  category: temporal
+  difficulty: medium
+  split: dev
+  source: question by Gemini 3.1 Pro, reference by Claude Opus 5.5
+  gold_sql: |
+    SELECT SUM(trips) FILTER (WHERE isodow(pickup_date) BETWEEN 1 AND 5 AND pickup_hour BETWEEN 16 AND 18)::DOUBLE / SUM(trips) AS evening_rush_share
+    FROM gold.agg_trips_zone_hourly
+    WHERE service = 'yellow'
+      AND pickup_date >= DATE '2024-01-01' AND pickup_date < DATE '2025-01-01'
+      AND file_month >= DATE '2024-01-01' AND file_month < DATE '2025-01-01'
+  notes: Computes a percentage based on the named time period 'evening rush hour'.
+- id: d2-070
+  question: What was the total state congestion surcharge collected from green cabs during 2025?
+  category: single_table
+  difficulty: easy
+  split: dev
+  source: question by Gemini 3.1 Pro, reference by Claude Opus 5.5
+  group: d2g-021
+  gold_sql: |
+    SELECT SUM(congestion_surcharge_usd) AS total_congestion_surcharge_usd
+    FROM gold.fct_taxi_trip
+    WHERE taxi_type = 'green'
+      AND pickup_at >= timezone('America/New_York', TIMESTAMP '2025-01-01')
+      AND pickup_at < timezone('America/New_York', TIMESTAMP '2026-01-01')
+      AND file_month >= DATE '2025-01-01'
+      AND file_month <= DATE '2025-12-01'
+  notes: Simple sum of a column in the taxi trips table.
+- id: d2-071
+  question: How much was paid in state congestion surcharges by green taxi riders in 2025?
+  category: single_table
+  difficulty: easy
+  split: dev
+  source: question by Gemini 3.1 Pro, reference by Claude Opus 5.5
+  group: d2g-021
+  gold_sql: |
+    SELECT SUM(congestion_surcharge_usd) AS total_congestion_surcharge_usd
+    FROM gold.fct_taxi_trip
+    WHERE taxi_type = 'green'
+      AND pickup_at >= timezone('America/New_York', TIMESTAMP '2025-01-01')
+      AND pickup_at < timezone('America/New_York', TIMESTAMP '2026-01-01')
+      AND file_month >= DATE '2025-01-01'
+      AND file_month <= DATE '2025-12-01'
+  notes: Simple sum of a column in the taxi trips table.
+- id: d2-072
+  question: Which agency closed the most 311 service requests in 2025?
+  category: single_table
+  difficulty: easy
+  split: dev
+  source: question by Gemini 3.1 Pro, reference by Claude Opus 5.5
+  gold_sql: |
+    SELECT agency, COUNT(*) AS requests_closed
+    FROM gold.fct_service_request
+    WHERE closed_at >= timezone('America/New_York', TIMESTAMP '2025-01-01')
+      AND closed_at < timezone('America/New_York', TIMESTAMP '2026-01-01')
+    GROUP BY agency
+    ORDER BY requests_closed DESC
+    LIMIT 1
+  notes: Aggregates and ranks counts from the service requests table by agency.
