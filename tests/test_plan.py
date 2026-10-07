@@ -47,3 +47,35 @@ def test_aggregates_are_part_of_a_plan(monkeypatch):
     )
     p = plan_mod.make_plan("q", "2026-10-03T06:00:00-04:00", "ctx")
     assert p.plan.aggregates[0].name == "avg_age"
+
+
+def test_nulls_from_strict_output_fall_back_to_defaults(monkeypatch):
+    monkeypatch.setattr(
+        plan_mod,
+        "complete",
+        fake(
+            {
+                "model": "service_requests",
+                "metrics": ["request_count"],
+                "filters": None,
+                "group_by": None,
+                "limit": None,
+                "reason": None,
+                "decline_kind": None,
+            }
+        ),
+    )
+    p = plan_mod.make_plan("q", "2026-10-03T06:00:00-04:00", "ctx")
+    assert p.plan.filters == [] and p.plan.limit is None
+
+
+def test_strict_schema_for_openai():
+    from nycynapse.llm.client import strict_schema
+
+    s = strict_schema(plan_mod.plan_schema())
+    assert s["additionalProperties"] is False
+    assert set(s["required"]) == set(s["properties"])
+    assert "having_min" not in s["properties"]  # free-form map
+    assert "null" in s["properties"]["limit"]["anyOf"][-1]["type"] or "null" in str(
+        s["properties"]["limit"]
+    )

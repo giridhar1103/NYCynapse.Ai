@@ -171,7 +171,59 @@ def _openai(pid: str, p: dict, system: str, prompt: str, schema: dict | None) ->
     )
 
 
+def strict_schema(schema: dict) -> dict:
+    """Rewrite a JSON schema into the strict form OpenAI's structured output requires.
+
+    Every object lists all its properties as required and allows nothing else; a property that
+    was optional becomes nullable instead. Free-form maps cannot be expressed and are dropped
+    (they are optional where they appear), as are keywords strict mode rejects.
+    """
+    import copy
+
+    def walk(node):
+        if isinstance(node, list):
+            return [walk(n) for n in node]
+        if not isinstance(node, dict):
+            return node
+        node = {k: walk(v) for k, v in node.items() if k not in ("default", "title")}
+        if node.get("type") == "object" or "properties" in node:
+            props = node.get("properties", {})
+            for name in list(props):
+                sub = props[name]
+                if (
+                    isinstance(sub, dict)
+                    and sub.get("type") == "object"
+                    and not sub.get("properties")
+                ):
+                    del props[name]  # a free-form map
+            required = set(node.get("required", []))
+            for name, sub in props.items():
+                if name not in required:
+                    props[name] = _nullable(sub)
+            node["properties"] = props
+            node["required"] = list(props)
+            node["additionalProperties"] = False
+        return node
+
+    return walk(copy.deepcopy(schema))
+
+
+def _nullable(sub: dict) -> dict:
+    t = sub.get("type")
+    if isinstance(t, str) and t != "null":
+        return {**sub, "type": [t, "null"]}
+    if isinstance(t, list) and "null" not in t:
+        return {**sub, "type": [*t, "null"]}
+    if "anyOf" in sub and not any(x.get("type") == "null" for x in sub["anyOf"]):
+        return {**sub, "anyOf": [*sub["anyOf"], {"type": "null"}]}
+    if "$ref" in sub:
+        return {"anyOf": [sub, {"type": "null"}]}
+    return sub
+
+
 def _command(pid: str, p: dict, system: str, prompt: str, schema: dict | None) -> LLMResult:
+    if schema is not None and p.get("strict_schema"):
+        schema = strict_schema(schema)
     if p.get("system_in_prompt"):
         # For tools with no system prompt option: mark the instructions off clearly so they
         # read as the rules for the task, not as part of the question. These tools are coding

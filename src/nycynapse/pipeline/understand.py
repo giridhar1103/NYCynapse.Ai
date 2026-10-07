@@ -114,12 +114,12 @@ def understand(question: str, as_of: str, brief: str, role: str = "router") -> U
             time = None
     return Understanding(
         classification=d.get("classification", "answerable"),
-        reason=d.get("reason", ""),
+        reason=d.get("reason") or "",
         clarification=d.get("clarification"),
-        workspaces=[w for w in d.get("workspaces", [])],
+        workspaces=[w for w in d.get("workspaces") or []],
         time=time,
         day_part=d.get("day_part"),
-        mentions=d.get("mentions", []),
+        mentions=d.get("mentions") or [],
         tokens_in=r.tokens_in or 0,
         tokens_out=r.tokens_out or 0,
         cost_usd=r.cost_usd or 0.0,

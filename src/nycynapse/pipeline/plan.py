@@ -60,6 +60,8 @@ def make_plan(
         "tokens_out": r.tokens_out or 0,
         "cost_usd": r.cost_usd or 0.0,
     }
+    # Strict structured output fills unused optional fields with null; leave them to defaults.
+    raw = _without_nulls(raw)
     reason = raw.pop("reason", None)
     kind = raw.pop("decline_kind", None)
     if raw.get("model") in (None, "none") and kind == "plan_cannot_express":
@@ -73,3 +75,11 @@ def make_plan(
         return Planned(Plan(**raw), raw, **spent)
     except ValidationError as e:
         return Planned(None, raw, error=f"invalid plan: {str(e)[:300]}", **spent)
+
+
+def _without_nulls(value):
+    if isinstance(value, dict):
+        return {k: _without_nulls(v) for k, v in value.items() if v is not None}
+    if isinstance(value, list):
+        return [_without_nulls(v) for v in value if v is not None]
+    return value
