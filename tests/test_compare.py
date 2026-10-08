@@ -92,4 +92,6 @@ def test_only_the_required_columns_must_match():
     spec = Compare(columns=[0])
     gold = [("Station A", 5), ("Station B", 3)]
     assert compare(["station", "ebikes"], gold, ["s"], [("Station B",), ("Station A",)], spec).match
-    assert not compare(["station", "ebikes"], gold, ["s"], [("Station C",), ("Station A",)], spec).match
+    assert not compare(
+        ["station", "ebikes"], gold, ["s"], [("Station C",), ("Station A",)], spec
+    ).match
