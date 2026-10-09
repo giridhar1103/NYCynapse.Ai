@@ -12,6 +12,7 @@ import os
 import threading
 from pathlib import Path
 
+import psycopg
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -42,7 +43,14 @@ def answerer() -> Answerer:
             con = lake.connect(settings)
             ctx = Context(settings, con, store.connect(settings.app_pg_dsn))
             _state["answerer"] = Answerer(ctx)
-    return _state["answerer"]
+        a = _state["answerer"]
+        # A Postgres restart (an unattended upgrade did this once) closes the connection;
+        # reconnect on the next request instead of failing until the service restarts.
+        try:
+            a.ctx.conn.execute("SELECT 1")
+        except psycopg.Error:
+            a.ctx.conn = store.connect(settings.app_pg_dsn)
+    return a
 
 
 @app.on_event("startup")

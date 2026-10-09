@@ -6,6 +6,7 @@ Every tool is read-only. `ask` runs the full pipeline and keeps a trace like the
 
 import threading
 
+import psycopg
 from mcp.server.mcpserver import MCPServer
 from mcp_types import ToolAnnotations
 
@@ -46,7 +47,12 @@ def _answerer():
             settings = Settings.from_env()
             ctx = Context(settings, lake.connect(settings), store.connect(settings.app_pg_dsn))
             _state["answerer"] = Answerer(ctx)
-    return _state["answerer"]
+        a = _state["answerer"]
+        try:
+            a.ctx.conn.execute("SELECT 1")
+        except psycopg.Error:  # reconnect after a Postgres restart
+            a.ctx.conn = store.connect(Settings.from_env().app_pg_dsn)
+    return a
 
 
 @server.tool(annotations=READ_ONLY)
