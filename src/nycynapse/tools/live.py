@@ -10,11 +10,13 @@ published them, with their update time and attribution.
 from __future__ import annotations
 
 import html
+import json
 import re
 import time
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
+from ..config import REPO
 from . import Tool, ToolResult, failed
 from .http import env, get_json
 
@@ -84,30 +86,55 @@ def _fmt(ts: datetime) -> str:
 # Weather ---------------------------------------------------------------------------------------
 
 
-def weather(hours: int = 6) -> ToolResult:
-    """Current weather and the next hours by borough, plus active weather alerts."""
-    hours = max(1, min(int(hours), 48))
+def _icon(code: int | None) -> str:
+    """A small set of weather pictures the page knows how to draw."""
+    code = code or 0
+    if code >= 95:
+        return "storm"
+    if code in (71, 73, 75, 77, 85, 86):
+        return "snow"
+    if code >= 61 or code in (80, 81, 82):
+        return "rain"
+    if code >= 51:
+        return "drizzle"
+    if code in (45, 48):
+        return "fog"
+    if code == 3:
+        return "cloudy"
+    if code in (1, 2):
+        return "partly"
+    return "clear"
+
+
+def weather(hours: int = 6, days: int = 0) -> ToolResult:
+    """Weather now, the next hours by borough, and (with `days`) a daily forecast up to a week
+    ahead, plus active weather alerts."""
+    hours = max(1, min(int(hours or 6), 48))
+    days = max(0, min(int(days or 0), 7))
     lats = ",".join(str(v[0]) for v in BOROUGHS.values())
     lons = ",".join(str(v[1]) for v in BOROUGHS.values())
-    data = get_json(
-        "https://api.open-meteo.com/v1/forecast",
-        {
-            "latitude": lats,
-            "longitude": lons,
-            "current": "temperature_2m,precipitation,weather_code,wind_speed_10m",
-            "hourly": "precipitation_probability,precipitation,weather_code",
-            "forecast_hours": hours,
-            "timezone": "America/New_York",
-            "temperature_unit": "fahrenheit",
-            "precipitation_unit": "inch",
-            "wind_speed_unit": "mph",
-        },
-        ttl_s=600,
-    )
-    rows, chance, lines = [], {}, []
+    params = {
+        "latitude": lats,
+        "longitude": lons,
+        "current": "temperature_2m,precipitation,weather_code,wind_speed_10m,is_day",
+        "hourly": "precipitation_probability,precipitation,weather_code",
+        "forecast_hours": hours,
+        "timezone": "America/New_York",
+        "temperature_unit": "fahrenheit",
+        "precipitation_unit": "inch",
+        "wind_speed_unit": "mph",
+    }
+    if days:
+        params["daily"] = (
+            "weather_code,temperature_2m_max,temperature_2m_min,"
+            "precipitation_probability_max,precipitation_sum,wind_speed_10m_max"
+        )
+        params["forecast_days"] = days
+    data = get_json("https://api.open-meteo.com/v1/forecast", params, ttl_s=600)
+    rows, lines = [], []
     for name, d in zip(BOROUGHS, data, strict=True):
         cur, hr = d["current"], d["hourly"]
-        p_max = max(hr["precipitation_probability"] or [0])
+        p_max = max(x or 0 for x in hr["precipitation_probability"] or [0])
         total = round(sum(x or 0 for x in hr["precipitation"]), 2)
         wet_hours = [
             t[11:16]
@@ -116,22 +143,54 @@ def weather(hours: int = 6) -> ToolResult:
         ]
         row = {
             "borough": name,
-            "temp_f": cur["temperature_2m"],
+            "temp_f": round(cur["temperature_2m"]),
             "now": WMO.get(cur["weather_code"], "unknown"),
+            "icon": _icon(cur["weather_code"]),
+            "day": bool(cur.get("is_day", 1)),
             "rain_now_in": cur["precipitation"],
-            "wind_mph": cur["wind_speed_10m"],
+            "wind_mph": round(cur["wind_speed_10m"]),
             "rain_chance_max_pct": p_max,
             "rain_next_in": total,
             "wet_hours": wet_hours,
         }
         rows.append(row)
-        chance[name] = p_max
         lines.append(
-            f"{name}: {row['temp_f']:.0f}F, {row['now']}, {row['rain_now_in']} in falling now; "
-            f"next {hours} h: up to {p_max}% chance of rain, {total} in expected"
+            f"{name}: {row['temp_f']}F, {row['now']}, wind {row['wind_mph']} mph, "
+            f"{row['rain_now_in']} in falling now; next {hours} h: up to {p_max}% chance of "
+            f"rain, {total} in expected"
             + (f" (wet at {', '.join(wet_hours[:6])})" if wet_hours else "")
         )
     as_of = data[0]["current"]["time"]
+    daily = []
+    if days:
+        per_boro = [d["daily"] for d in data]
+        city = per_boro[0]  # Manhattan, near Central Park
+        for i, day in enumerate(city["time"]):
+            chances = [b["precipitation_probability_max"][i] or 0 for b in per_boro]
+            daily.append(
+                {
+                    "date": day,
+                    "label": datetime.fromisoformat(day).strftime("%a %b %-d"),
+                    "short": datetime.fromisoformat(day).strftime("%a"),
+                    "icon": _icon(city["weather_code"][i]),
+                    "sky": WMO.get(city["weather_code"][i], "unknown"),
+                    "high_f": round(city["temperature_2m_max"][i]),
+                    "low_f": round(city["temperature_2m_min"][i]),
+                    "rain_chance_pct": max(chances),
+                    "rain_chance_low_pct": min(chances),
+                    "rain_in": round(city["precipitation_sum"][i] or 0, 2),
+                    "wind_max_mph": round(city["wind_speed_10m_max"][i] or 0),
+                }
+            )
+        lines.append(
+            "Daily forecast (Manhattan; rain chance is the range across the five boroughs):\n"
+            + "\n".join(
+                f"{x['label']}: {x['sky']}, high {x['high_f']}F, low {x['low_f']}F, rain chance "
+                f"{x['rain_chance_low_pct']}-{x['rain_chance_pct']}%, {x['rain_in']} in, "
+                f"wind up to {x['wind_max_mph']} mph"
+                for x in daily
+            )
+        )
     alerts = weather_alerts()
     summary = (
         f"Weather in New York City at {as_of} local time (Open-Meteo model data):\n"
@@ -139,9 +198,16 @@ def weather(hours: int = 6) -> ToolResult:
         + "\n"
         + alerts.summary
     )
+    raining = any(r["rain_now_in"] > 0 or r["icon"] in ("rain", "drizzle", "storm") for r in rows)
     return ToolResult(
         summary=summary,
-        data={"boroughs": rows, "alerts": alerts.data, "as_of": as_of, "hours": hours},
+        data={
+            "boroughs": rows,
+            "daily": daily,
+            "alerts": alerts.data,
+            "as_of": as_of,
+            "hours": hours,
+        },
         sources=[
             {
                 "kind": "live",
@@ -153,12 +219,25 @@ def weather(hours: int = 6) -> ToolResult:
         ],
         map=[
             {
-                "type": "areas",
-                "level": "borough",
-                "values": chance,
-                "unit": "%",
-                "label": f"Chance of rain, next {hours} h",
-                "scale": "rain",
+                "type": "weather",
+                "label": "Weather now" + (f" and the next {days} days" if days else ""),
+                "as_of": as_of,
+                "hours": hours,
+                "boroughs": [
+                    {
+                        "name": r["borough"],
+                        "temp_f": r["temp_f"],
+                        "icon": r["icon"],
+                        "day": r["day"],
+                        "sky": r["now"],
+                        "rain_chance_pct": r["rain_chance_max_pct"],
+                    }
+                    for r in rows
+                ],
+                "daily": daily,
+                "radar": True,
+                "raining": raining,
+                "alerts": [a["event"] for a in alerts.data][:3],
             }
         ],
     )
@@ -540,6 +619,158 @@ def find_place(text: str) -> ToolResult:
     )
 
 
+# Neighborhood statistics ---------------------------------------------------------------------
+
+# American Community Survey 5-year estimates by ZIP code area, from the Census Bureau through
+# Census Reporter's public API (no key). Five-year figures are averages over the period, so they
+# describe a neighborhood, not this month's market.
+CENSUS = "https://api.censusreporter.org/1.0/data/show/latest"
+NYC_PLACE = "16000US3651000"
+MEASURES = {
+    "median_rent": (
+        "median gross rent",
+        "$ a month",
+        "Median gross rent paid by renter households (rent plus utilities), including "
+        "rent-stabilized and public housing; asking rents for new leases run higher. Values "
+        "of 3,501 mean $3,500 or more.",
+    ),
+    "median_income": ("median household income", "$ a year", "Median household income."),
+    "population": ("population", "people", "Total population."),
+    "renter_share": ("share of homes rented", "%", "Share of occupied homes that are rented."),
+}
+_ZIP_AREAS: dict[str, dict] | None = None
+
+
+def _zip_areas() -> dict[str, dict]:
+    global _ZIP_AREAS
+    if _ZIP_AREAS is None:
+        geo = json.loads((REPO / "web" / "static" / "geo" / "zips.json").read_text())
+        _ZIP_AREAS = {f["properties"]["name"]: f["properties"] for f in geo["features"]}
+    return _ZIP_AREAS
+
+
+def _acs(geo_ids: str) -> dict:
+    return get_json(
+        CENSUS, {"table_ids": "B25064,B19013,B01003,B25003", "geo_ids": geo_ids}, ttl_s=7 * 86400
+    )
+
+
+def _acs_values(d: dict) -> dict:
+    def est(table: str, col: str):
+        return ((d.get(table) or {}).get("estimate") or {}).get(col)
+
+    occupied, rented = est("B25003", "B25003001"), est("B25003", "B25003003")
+    return {
+        "median_rent": est("B25064", "B25064001"),
+        "median_income": est("B19013", "B19013001"),
+        "population": est("B01003", "B01003001"),
+        "renter_share": round(100 * rented / occupied, 1) if occupied and rented else None,
+    }
+
+
+def area_stats(
+    measure: str = "median_rent", borough: str | None = None, order: str = "low", n: int = 5
+) -> ToolResult:
+    """Rank NYC ZIP code areas by rent, income, population or share of renters (Census ACS)."""
+    if measure not in MEASURES:
+        return failed(f"measure must be one of {', '.join(MEASURES)}")
+    what, unit, note = MEASURES[measure]
+    n = max(1, min(int(n or 5), 10))
+    boro = _borough(borough)
+    zips = _zip_areas()
+    d = _acs(f"860|{NYC_PLACE}")
+    city = _acs_values(_acs(NYC_PLACE)["data"][NYC_PLACE])
+    release = d["release"]["name"]
+    rows = []
+    for geoid, tables in d["data"].items():
+        z = geoid[-5:]
+        meta = zips.get(z)
+        if not meta or (boro and meta.get("borough") != boro):
+            continue
+        v = _acs_values(tables)
+        if not v[measure] or (v["population"] or 0) < 1000:
+            continue
+        rows.append(
+            {
+                "zip": z,
+                "area": meta.get("area") or z,
+                "borough": meta.get("borough"),
+                "value": v[measure],
+                **{k: v[k] for k in MEASURES},
+            }
+        )
+    if not rows:
+        return failed("no ZIP code areas matched")
+    rows.sort(key=lambda r: r["value"], reverse=order == "high")
+    top = rows[:n]
+
+    def show(x) -> str:
+        if x is None:
+            return "n/a"
+        if measure in ("median_rent", "median_income"):
+            return f"${x:,.0f}" + ("+" if measure == "median_rent" and x >= 3501 else "")
+        return f"{x:,.1f}%" if measure == "renter_share" else f"{x:,.0f}"
+
+    where = boro or "New York City"
+    lines = [
+        f"{i + 1}. {r['area']} (ZIP {r['zip']}, {r['borough']}): {what} {show(r['value'])}"
+        + (
+            f"; median rent ${r['median_rent']:,.0f}"
+            if measure != "median_rent" and r["median_rent"]
+            else ""
+        )
+        for i, r in enumerate(top)
+    ]
+    summary = (
+        f"{'Lowest' if order != 'high' else 'Highest'} {what} by ZIP code area in {where} "
+        f"({release}, {d['release']['years']}; US Census Bureau American Community Survey). "
+        f"{note}\nCitywide: {what} {show(city[measure])}.\n"
+        + "\n".join(lines)
+        + f"\n{len(rows)} ZIP code areas compared."
+    )
+    return ToolResult(
+        summary=summary,
+        data={"measure": measure, "release": release, "city": city, "rows": rows},
+        sources=[
+            {
+                "kind": "data",
+                "title": f"US Census Bureau, {release}",
+                "url": "https://censusreporter.org/tables/"
+                + {
+                    "median_rent": "B25064",
+                    "median_income": "B19013",
+                    "population": "B01003",
+                    "renter_share": "B25003",
+                }[measure],
+                "updated_at": d["release"]["years"],
+            }
+        ],
+        map=[
+            {
+                "type": "areas",
+                "level": "zip",
+                "values": {r["zip"]: r["value"] for r in rows},
+                "unit": unit,
+                "label": f"{what.capitalize()}, {d['release']['years']}",
+                "scale": "value",
+            },
+            {
+                "type": "highlight",
+                "label": f"{'Lowest' if order != 'high' else 'Highest'} {what}",
+                "items": [
+                    {
+                        "name": r["area"].split(" / ")[0],
+                        "level": "zip",
+                        "key": r["zip"],
+                        "note": f"{show(r['value'])} {unit.replace('$ ', '')}".strip(),
+                    }
+                    for r in top
+                ],
+            },
+        ],
+    )
+
+
 # NYC Open Data ---------------------------------------------------------------------------------
 
 DATASETS = {
@@ -639,11 +870,15 @@ TOOLS = [
         "weather",
         "live",
         "Weather now and for the next hours in each borough (temperature, conditions, rain "
-        "chance and amount) plus active National Weather Service alerts. Use for current or "
-        "upcoming weather; the lake only has past weather.",
+        "chance and amount), a daily forecast up to 7 days ahead when `days` is set, and "
+        "active National Weather Service alerts. Use for current or upcoming weather; the lake "
+        "only has past weather. For 'this week', 'Friday' or 'the next 5 days' set days.",
         {
             "type": "object",
-            "properties": {"hours": {"type": "integer", "minimum": 1, "maximum": 48}},
+            "properties": {
+                "hours": {"type": "integer", "minimum": 1, "maximum": 48},
+                "days": {"type": "integer", "minimum": 0, "maximum": 7},
+            },
         },
         weather,
     ),
@@ -678,6 +913,25 @@ TOOLS = [
         "borough. Use before asking about a specific place.",
         {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]},
         find_place,
+    ),
+    Tool(
+        "area_stats",
+        "live",
+        "Rank New York City ZIP code areas (named by neighborhood) by Census figures: "
+        "median_rent, median_income, population or renter_share, lowest or highest first, "
+        "optionally within one borough. American Community Survey 5-year estimates. Use for "
+        "cheapest or priciest areas to rent, richest or poorest areas, most populated.",
+        {
+            "type": "object",
+            "properties": {
+                "measure": {"type": "string", "enum": list(MEASURES)},
+                "borough": {"type": "string"},
+                "order": {"type": "string", "enum": ["low", "high"]},
+                "n": {"type": "integer", "minimum": 1, "maximum": 10},
+            },
+            "required": ["measure"],
+        },
+        area_stats,
     ),
     Tool(
         "open_data",

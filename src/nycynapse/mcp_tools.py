@@ -28,10 +28,10 @@ server = MCPServer(
 
 
 @server.tool(annotations=LIVE)
-def weather(hours: int = 6) -> dict:
-    """Weather now and for the next hours in each borough, plus National Weather Service
-    alerts."""
-    return live.weather(hours).as_dict()
+def weather(hours: int = 6, days: int = 0) -> dict:
+    """Weather now and for the next hours in each borough, a daily forecast up to 7 days ahead
+    when `days` is set, plus National Weather Service alerts."""
+    return live.weather(hours, days).as_dict()
 
 
 @server.tool(annotations=LIVE)
@@ -56,6 +56,15 @@ def subway_alerts(line: str | None = None) -> dict:
 def find_place(text: str) -> dict:
     """Find an address, landmark or venue in New York City."""
     return live.find_place(text).as_dict()
+
+
+@server.tool(annotations=LIVE)
+def area_stats(
+    measure: str = "median_rent", borough: str | None = None, order: str = "low", n: int = 5
+) -> dict:
+    """Rank NYC ZIP code areas by Census median_rent, median_income, population or
+    renter_share."""
+    return live.area_stats(measure, borough, order, n).as_dict()
 
 
 @server.tool(annotations=LIVE)
