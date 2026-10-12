@@ -53,7 +53,7 @@ const NY = (() => {
   try { const t = localStorage.getItem("nyc-theme"); if (t) document.documentElement.dataset.theme = t; } catch (_) { /* ignore */ }
 
   function header(active) {
-    const pages = [["", "Ask"], ["evals", "Evals"], ["data", "Data"], ["catalog", "Catalog"]];
+    const pages = [["", "Guide"], ["evals", "Evals"], ["data", "Data"], ["catalog", "Catalog"]];
     const toggle = el("button", { class: "theme-toggle", "aria-label": "Switch light or dark",
       onclick: () => { setTheme(currentTheme() === "dark" ? "light" : "dark"); toggle.textContent = icon(); } });
     const icon = () => (currentTheme() === "dark" ? "☀" : "☾");
@@ -67,7 +67,7 @@ const NY = (() => {
     document.body.prepend(el("div", {}, band, el("div", { class: "band-rule" })));
     document.body.append(el("footer", {},
       el("div", { class: "wrap" },
-        "Questions about New York City, answered from open data with SQL you can read. ",
+        "A guide to New York City built on public city data. ",
         el("a", { href: "https://github.com/giridhar1103/NYCynapse.Ai" }, "Agent"), " · ",
         el("a", { href: "https://github.com/giridhar1103/NYCynapse_Lake" }, "Lake"), " · ",
         el("a", { href: "https://giriworks.com" }, "giriworks.com"))));

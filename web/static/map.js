@@ -63,12 +63,12 @@ export class GuideMap {
       let t = 0;
       this._pulse = setInterval(() => {
         t += 1;
-        if (this.map.getLayer("subway")) this.map.setPaintProperty("subway", "line-opacity", 0.35 + 0.3 * Math.abs(Math.sin(t / 3)));
+        if (this.map.getLayer("subway") && !this._routesLit) this.map.setPaintProperty("subway", "line-opacity", 0.35 + 0.3 * Math.abs(Math.sin(t / 3)));
       }, 120);
     } else if (!on && this._pulse) {
       clearInterval(this._pulse);
       this._pulse = null;
-      if (this.map.getLayer("subway")) this.map.setPaintProperty("subway", "line-opacity", 0.45);
+      if (this.map.getLayer("subway") && !this._routesLit) this.map.setPaintProperty("subway", "line-opacity", 0.45);
     }
   }
 
@@ -80,6 +80,11 @@ export class GuideMap {
     this.layers = [];
     this.legendEl.replaceChildren();
     this.chipbar.replaceChildren();
+    if (this._routesLit) {
+      this.map.setPaintProperty("subway", "line-opacity", 0.45);
+      this.map.setPaintProperty("subway", "line-width", 2);
+      this._routesLit = false;
+    }
   }
 
   chip(text) {
@@ -101,7 +106,8 @@ export class GuideMap {
           ...f, properties: { ...f.properties, value: Number(vals[f.properties.name.toLowerCase()]) || 0 } }));
         if (!feats.length) continue;
         const nums = feats.map((f) => f.properties.value);
-        const lo = Math.min(...nums), hi = Math.max(...nums);
+        let lo = Math.min(...nums), hi = Math.max(...nums);
+        if (L.scale === "rain") { lo = 0; hi = 100; }
         const ramp = SCALES[L.scale === "rain" ? "rain" : "value"];
         const stops = hi > lo ? ramp.flatMap((c, i) => [lo + ((hi - lo) * i) / (ramp.length - 1), c]) : [lo, ramp[2], lo + 1, ramp[2]];
         this.map.addSource(id, { type: "geojson", data: { type: "FeatureCollection", features: feats } });
@@ -146,6 +152,16 @@ export class GuideMap {
         any = true;
         this.hover(id, (p) => `<b>${esc(p.label)}</b><br>${fmt(p.value)} ${esc(L.unit || "")}`);
         if (L.scale === "speed") this.legend(L.label || "Road speed", "mph", 5, 40, ["#d62d20", "#f08a24", "#f2c12e", "#2fae2f"]);
+      } else if (L.type === "routes" && (L.routes || []).length) {
+        const routes = L.routes.map(String);
+        const hit = ["in", ["get", "route"], ["literal", routes]];
+        this.map.setPaintProperty("subway", "line-opacity", ["case", hit, 1, 0.12]);
+        this.map.setPaintProperty("subway", "line-width", ["case", hit, 5, 1.5]);
+        this._routesLit = true;
+        g.subway.features.filter((f) => routes.includes(String(f.properties.route)))
+          .forEach((f) => extend(bounds, f.geometry));
+        any = true;
+        this.chip(`${L.label}: ${routes.join(", ")}`);
       } else if (L.type === "focus" && Number.isFinite(+L.lat)) {
         this.map.flyTo({ center: [+L.lon, +L.lat], zoom: L.zoom || 13, speed: 0.9, curve: 1.4 });
         return;
@@ -157,10 +173,12 @@ export class GuideMap {
   }
 
   legend(title, unit, lo, hi, ramp) {
-    this.legendEl.replaceChildren(
+    const block = NY.el("div", { class: "lg" },
       NY.el("b", {}, title || "Value"),
       NY.el("div", { class: "bar", style: `background:linear-gradient(90deg,${ramp.join(",")})` }),
       NY.el("div", { class: "ends" }, NY.el("span", {}, `${fmt(lo)} ${unit || ""}`), NY.el("span", {}, `${fmt(hi)} ${unit || ""}`)));
+    this.legendEl.append(block);
+    while (this.legendEl.children.length > 2) this.legendEl.firstChild.remove();
   }
 
   hover(id, html) {

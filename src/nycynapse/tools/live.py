@@ -440,9 +440,19 @@ def subway_alerts(line: str | None = None) -> ToolResult:
             for i in (delays + [i for i in items if i not in delays])[:15]
         )
     )
+    touched = sorted({r for i in (delays if not line else items) for r in i["routes"]})
     return ToolResult(
         summary=summary,
         data=items[:60],
+        map=[
+            {
+                "type": "routes",
+                "routes": touched,
+                "label": "Lines with delays now" if not line else f"{line.upper()} line alerts",
+            }
+        ]
+        if touched
+        else [],
         sources=[
             {
                 "kind": "live",
