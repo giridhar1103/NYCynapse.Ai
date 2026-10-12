@@ -93,19 +93,29 @@ class Guide {
     this.input.placeholder = done ? "Start a new chat to ask more" : this.turn ? "Ask a follow-up…" : "Ask about New York…";
   }
 
-  async token() {
+  async token(view) {
     const cfg = await this.config;
     if (!cfg.turnstile_site_key) return "";
-    await loadTurnstile();
+    try { await loadTurnstile(); } catch (_) { return ""; }
     const box = $("ts-box");
     return new Promise((resolve) => {
+      let done = false, id = null;
+      const finish = (t) => {
+        if (done) return;
+        done = true;
+        resolve(t || "");
+        setTimeout(() => { try { if (id != null) window.turnstile.remove(id); } catch (_) { /* gone */ } box.replaceChildren(); }, 50);
+      };
       box.replaceChildren();
-      const id = window.turnstile.render(box, {
+      id = window.turnstile.render(box, {
         sitekey: cfg.turnstile_site_key, appearance: "interaction-only", size: "flexible",
-        callback: (t) => { resolve(t); setTimeout(() => { window.turnstile.remove(id); box.replaceChildren(); }, 50); },
-        "error-callback": () => resolve(""),
-        "timeout-callback": () => resolve(""),
+        retry: "auto", "refresh-expired": "auto",
+        callback: finish,
+        "before-interactive-callback": () => view.status("Please tick the box below so we know you're human."),
+        "error-callback": () => { view.status("Checking you're human…"); return true; },
+        "timeout-callback": () => finish(""),
       });
+      setTimeout(() => finish(""), 90000);
     });
   }
 
@@ -127,7 +137,7 @@ class Guide {
     let token = "";
     if (!this.chat) {
       view.status("Checking you're not a bot");
-      token = await this.token();
+      token = await this.token(view);
     }
     const qs = new URLSearchParams({ q, chat: this.chat || "", token });
     try {

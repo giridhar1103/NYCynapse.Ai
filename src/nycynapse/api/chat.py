@@ -189,6 +189,7 @@ async def _turn(question: str, chat_id: str | None, token: str, client: str, ip:
                 yield chunk
                 await asyncio.sleep(0.12)
             out = {
+                "follow_ups": (cached.get("memory") or {}).get("follow_ups") or [],
                 "answer": cached["answer"],
                 "sources": cached["sources"],
                 "map": cached["map"],

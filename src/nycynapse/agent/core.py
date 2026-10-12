@@ -429,7 +429,12 @@ class Agent:
             "cost_usd": round(t.cost_usd, 4),
             "model_calls": t.model_calls,
             "latency_ms": int((time.monotonic() - t.started) * 1000),
-            "memory": {"q": t.question, "answer": (answer or "")[:900], "facts": facts},
+            "memory": {
+                "q": t.question,
+                "answer": (answer or "")[:900],
+                "facts": facts,
+                "follow_ups": [f.strip() for f in follow_ups if f.strip()][:3],
+            },
             "untraced": untraced,
         }
 

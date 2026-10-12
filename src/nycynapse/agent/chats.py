@@ -144,7 +144,7 @@ class Chats:
         row = (
             self._conn()
             .execute(
-                "SELECT t.answer, t.sources, t.map, t.steps, t.model, t.latency_ms FROM "
+                "SELECT t.answer, t.sources, t.map, t.steps, t.model, t.latency_ms, t.memory FROM "
                 "app.chat_turns t JOIN app.chats c ON c.id = t.chat_id WHERE c.client_hash = "
                 "'examples' AND t.turn = 1 AND t.outcome = 'answered' AND lower(t.question) = "
                 "lower(%s) AND t.asked_at > now() - make_interval(hours => %s) "

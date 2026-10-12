@@ -283,10 +283,12 @@ app.include_router(pulse.router)
 
 # Only this site's own scripts, styles and data, plus the bot check and the map tiles.
 CSP = (
-    "default-src 'self'; script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com; "
+    "default-src 'self'; script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com "
+    "https://static.cloudflareinsights.com; "
     "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://tiles.openfreemap.org; "
     "font-src 'self' data: https://tiles.openfreemap.org; "
-    "connect-src 'self' https://tiles.openfreemap.org; worker-src 'self' blob:; "
+    "connect-src 'self' https://tiles.openfreemap.org https://cloudflareinsights.com; "
+    "worker-src 'self' blob:; "
     "frame-src https://challenges.cloudflare.com; frame-ancestors 'none'; base-uri 'self'; "
     "form-action 'self'; object-src 'none'"
 )

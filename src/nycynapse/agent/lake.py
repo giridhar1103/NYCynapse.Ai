@@ -39,6 +39,24 @@ STAGES = {
 BOROUGHS = {"manhattan", "brooklyn", "queens", "bronx", "staten island"}
 
 
+def _key(name: str) -> str:
+    """Names as people and tables write them differ in spaces and punctuation."""
+    return re.sub(r"[^a-z0-9]", "", name.lower())
+
+
+def find_place(places: dict[str, dict], name: str) -> dict | None:
+    k = _key(name)
+    if not k:
+        return None
+    if k in places:
+        return places[k]
+    if len(k) >= 6:
+        for key, p in places.items():
+            if key.startswith(k) or k.startswith(key) and len(key) >= 6:
+                return p
+    return None
+
+
 class Lake:
     """Shared lake state for many concurrent questions. Each question gets its own DuckDB
     cursor; the catalog, embeddings and reference data are shared."""
@@ -107,7 +125,7 @@ class Lake:
                 for name, lat, lon, boro in cur.execute(sql).fetchall():
                     if name and lat and lon:
                         out.setdefault(
-                            str(name).lower(),
+                            _key(str(name)),
                             {
                                 "kind": kind,
                                 "name": name,
@@ -202,7 +220,7 @@ def map_from_rows(lake: Lake, columns: list[str], rows: list[list], label: str) 
                     }
                 )
             continue  # a borough column next to finer places: keep looking
-        hits = [(places.get(v.lower()), r) for v, r in zip(vals, rows, strict=False)]
+        hits = [(find_place(places, v), r) for v, r in zip(vals, rows, strict=False)]
         found = [(p, r) for p, r in hits if p]
         if found and len(found) >= max(1, len(vals[:30]) // 2):
             pts = [

@@ -115,7 +115,7 @@ def test_leaving_the_line_frees_a_place():
 class _Places:
     def places(self):
         return {
-            "williamsburg (north side)": {
+            "williamsburgnorthside": {
                 "kind": "zone",
                 "name": "Williamsburg (North Side)",
                 "lat": 40.72,
@@ -147,6 +147,14 @@ def test_codes_are_never_used_as_values():
     )
     assert layers[0]["level"] == "zip"
     assert layers[0]["values"] == {"10453": 1874.0, "10456": 1653.0}
+
+
+def test_place_names_match_loosely():
+    from nycynapse.agent.lake import _key, find_place
+
+    places = {_key("Times Sq-42 St/Port Authority Bus Terminal"): {"name": "Times Sq"}}
+    assert find_place(places, "Times Sq-42 St/Port Authority") == {"name": "Times Sq"}
+    assert find_place(places, "Times") is None
 
 
 def test_known_places_become_points():
