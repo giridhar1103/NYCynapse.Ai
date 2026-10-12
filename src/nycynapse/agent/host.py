@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import shutil
+import os
 import sys
 import threading
 from pathlib import Path
@@ -24,9 +24,16 @@ log = logging.getLogger(__name__)
 CALL_TIMEOUT_S = 40
 
 
-def _server_command() -> str:
-    exe = Path(sys.executable).with_name("nycynapse-tools")
-    return str(exe) if exe.exists() else (shutil.which("nycynapse-tools") or "nycynapse-tools")
+def _server_params():
+    """Start the tools server with this interpreter and this copy of the code."""
+    from mcp import StdioServerParameters
+
+    src = str(Path(__file__).resolve().parents[2])
+    env = {k: v for k, v in os.environ.items() if k in ("HOME", "PATH", "LANG", "TZ")}
+    env["PYTHONPATH"] = src
+    return StdioServerParameters(
+        command=sys.executable, args=["-m", "nycynapse.mcp_tools"], env=env
+    )
 
 
 class MCPHost:
@@ -44,12 +51,12 @@ class MCPHost:
     async def _keep_connected(self):
         """One task owns the client session for its whole life, and opens a new one when the
         server process goes away."""
-        from mcp import Client, StdioServerParameters
+        from mcp import Client
 
         self._broken = asyncio.Event()
         while True:
             try:
-                params = StdioServerParameters(command=_server_command())
+                params = _server_params()
                 async with Client(params, read_timeout_seconds=CALL_TIMEOUT_S) as client:
                     listed = await client.list_tools()
                     self.remote_names = {t.name for t in listed.tools}

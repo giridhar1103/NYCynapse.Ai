@@ -86,7 +86,7 @@ class Agent:
         self.lake = lake
         self.host = host
         self._rest_until: dict[str, float] = {}
-        self._rest_lock = threading.Lock()
+        self._rest_lock = threading.RLock()
         self._emit_local = threading.local()
         self.lake_tools = {
             t.name: t
@@ -111,9 +111,11 @@ class Agent:
             self._rest_until[pid] = time.time() + REST_S
 
     def available(self) -> bool:
+        """At least one of the two models is not resting after hitting its limit."""
         now = time.time()
+        order = self.models()
         with self._rest_lock:
-            return any(self._rest_until.get(m, 0) <= now for m in self.models())
+            return any(self._rest_until.get(m, 0) <= now for m in order)
 
     # tools
 

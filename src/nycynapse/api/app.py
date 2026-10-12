@@ -308,6 +308,8 @@ if WEB.exists():
 
     @app.get("/{page:path}")
     def page(page: str):
+        if page.startswith("api/"):
+            raise HTTPException(404, "Not found")
         name = page.strip("/").split("/")[0] or "index"
         target = WEB / f"{name}.html"
         if not target.exists() or not Path(target).resolve().is_relative_to(WEB.resolve()):

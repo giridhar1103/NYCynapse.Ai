@@ -71,6 +71,9 @@ def chats() -> Chats:
 
 
 def setup(settings, base_ctx_fn) -> None:
+    from ..tools.http import load_keys
+
+    load_keys()
     _state["dsn"] = settings.app_pg_dsn
     _state["ctx_fn"] = base_ctx_fn
 
