@@ -3,240 +3,178 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>NYCynapse</title>
-<meta name="description" content="Ask questions about New York City in plain English. Answers come from open city data, with the SQL and every step shown.">
+<title>NYCynapse · Ask New York</title>
+<meta name="description" content="A guide to New York City that answers from the city's own data: live subway alerts, road sensors, weather, Citi Bike, 311 and a billion rows of history, with every source shown.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%232a78d6'/%3E%3Ctext x='16' y='22' font-family='Helvetica,Arial' font-weight='700' font-size='17' fill='white' text-anchor='middle'%3EN%3C/text%3E%3C/svg%3E">
-<link rel="stylesheet" href="static/style.css?v=5">
+<link rel="stylesheet" href="static/style.css?v=6">
+<link rel="stylesheet" href="static/guide.css?v=1">
 </head>
 <body>
-<main class="wrap">
-  <section class="hero">
-    <h1>Ask New York.</h1>
-    <p>Taxi and app rides, the subway, Citi Bike, 311, crashes, road speeds and weather, from January 2024 to a few minutes ago. Every answer shows the SQL that produced it and how it got there.</p>
-    <form class="ask" id="ask">
-      <input id="q" name="q" autocomplete="off" maxlength="400" placeholder="Which subway lines had the worst average delay yesterday?" aria-label="Your question">
-      <button id="go" type="submit">Ask</button>
-    </form>
-    <div class="hint" id="hint">Times are New York time. Try one of the examples below.</div>
-  </section>
-
-  <div class="strip" id="strip" hidden>
-    <ol id="stations"><div class="fill" id="fill"></div></ol>
+<header class="band on-night">
+  <div class="wrap">
+    <a class="brand" href="./"><span class="bullet b1">N</span><span class="word">NYCynapse</span></a>
+    <nav class="nav">
+      <a href="#how">How it works</a>
+      <a href="#lake">The data</a>
+      <a href="#mcp">MCP</a>
+      <a href="evals">Evals</a>
+      <a class="cta" href="#ask" data-open>Ask</a>
+    </nav>
   </div>
+</header>
 
-  <article class="card answer" id="answer" hidden></article>
-
-  <section class="block">
-    <h2 class="rule">Examples by line</h2>
-    <div class="boards" id="boards"></div>
+<main>
+  <section class="hero-night" id="ask">
+    <div class="wrap hero-grid">
+      <div>
+        <div class="eyebrow"><span class="live-dot"></span><span id="eyebrow">Live from the city's own data</span></div>
+        <h1>Ask New York<br><span class="soft">anything.</span></h1>
+        <p class="lede">A guide to the city that answers from New York's own data: the subway, the streets, the weather, Citi Bike, 311 and a billion rows of history. It checks the cheapest trustworthy source first, reaches for live feeds and the web only when it needs to, and shows you where every fact came from.</p>
+        <form class="askbox" id="hero-form" autocomplete="off">
+          <input id="hero-q" name="q" maxlength="400" aria-label="Your question about New York City" placeholder="Is the 7 train running normally right now?">
+          <button type="submit">Ask</button>
+        </form>
+        <div class="chips" id="chips"></div>
+      </div>
+      <div class="hero-map" id="hero-map" aria-hidden="true">
+        <div class="map-caption"><span><i style="background:#3987e5"></i>Citi Bike docks reporting now</span><span><i style="background:#ee352e"></i>Trains arriving now</span></div>
+      </div>
+    </div>
+    <div class="ticker"><div class="wrap" id="ticker"></div></div>
   </section>
 
-  <section class="block">
-    <h2 class="rule">Recently asked</h2>
-    <div class="recent" id="recent"><span class="hint">Loading…</span></div>
+  <section class="section" id="how">
+    <div class="wrap">
+      <p class="kicker">How it answers</p>
+      <h2 class="big reveal">One question. The right source, cheapest first.</h2>
+      <p class="intro reveal">Most questions about the city are already sitting in the city's own records. The guide asks those first, through governed metrics that always add up the same way. When you ask about right now, it reads live city feeds. Only when neither has it does it search the web, and it says so.</p>
+      <div class="route reveal">
+        <span class="train-dot"></span>
+        <div class="stop lake"><span class="dot"></span><h3>The city's data lake</h3><div class="cost">Cheapest · governed</div><p>Subway ridership and delays, taxi and app rides, Citi Bike, 311, crashes, road speeds and weather since 2024, as SQL you can read.</p><p class="ex">"Busiest stations in August?"</p></div>
+        <div class="stop live"><span class="dot"></span><h3>Live city feeds</h3><div class="cost">Free · right now</div><p>MTA service alerts, DOT road sensors, National Weather Service, NYC Open Data and the city's address search.</p><p class="ex">"Is the 7 running normally?"</p></div>
+        <div class="stop web"><span class="dot"></span><h3>The web</h3><div class="cost">Last resort · cited</div><p>Google results and the pages behind them, read as information only and always named in the answer.</p><p class="ex">"New restaurants in Astoria?"</p></div>
+        <div class="stop"><span class="dot"></span><h3>One answer</h3><div class="cost">With sources</div><p>Short and direct, with the time of every reading, a map of the places involved, and up to three follow-ups.</p><p class="ex">"And how about traffic there?"</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section sunk">
+    <div class="wrap">
+      <p class="kicker">What you can ask</p>
+      <h2 class="big reveal">Built for the questions New Yorkers actually have.</h2>
+      <div class="cards">
+        <div class="cap reveal"><span class="bullet b1">S</span><h3>Getting around</h3><p>Delays and planned work by line, the busiest stations, how late trains ran, rides by neighborhood.</p><div class="q" data-q="Which subway lines have delays right now?">Which subway lines have delays right now? →</div></div>
+        <div class="cap reveal"><span class="bullet b5">W</span><h3>Weather and streets</h3><p>Rain chances by borough, weather alerts, road speeds from city sensors, closures and events.</p><div class="q" data-q="How is the rain and road situation in New York right now?">Rain and roads right now? →</div></div>
+        <div class="cap reveal"><span class="bullet b3">B</span><h3>Bikes and rides</h3><p>Where Citi Bike riders start, e-bike share, app and taxi trips by zone, airport waits.</p><div class="q" data-q="How many Citi Bike rides started in Williamsburg in August 2026?">Citi Bike in Williamsburg →</div></div>
+        <div class="cap reveal"><span class="bullet b2">3</span><h3>Your block</h3><p>311 complaints by neighborhood, how fast agencies close them, restaurant grades, farmers markets.</p><div class="q" data-q="Which neighborhoods had the most noise complaints in August 2026?">Noise complaints by neighborhood →</div></div>
+        <div class="cap reveal"><span class="bullet b8">X</span><h3>Safety</h3><p>Crashes, injuries and contributing factors by borough and month, from NYPD reports.</p><div class="q" data-q="How many cyclists were injured in Brooklyn from January to May 2026?">Cyclists injured in Brooklyn →</div></div>
+        <div class="cap reveal"><span class="bullet b4">E</span><h3>What's on</h3><p>Permitted street events, parades and film shoots, plus the web for openings and news.</p><div class="q" data-q="What street events are happening in Manhattan this weekend?">Street events this weekend →</div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="lake">
+    <div class="wrap">
+      <p class="kicker">Underneath</p>
+      <h2 class="big reveal">A lakehouse of New York, refreshed around the clock.</h2>
+      <p class="intro reveal">City sources land in a DuckLake lakehouse: Parquet files with a Postgres catalog, no raw copies kept. dbt builds clean gold tables, a semantic layer defines every metric and join once, and the guide reads only through that layer.</p>
+      <div class="stat-row reveal" id="lake-stats"></div>
+      <svg class="flow reveal" id="flow" viewBox="0 0 1080 430" role="img" aria-label="Data flow from city sources through the lakehouse to the guide"></svg>
+      <div class="flow-legend reveal">
+        <div><b>Ingest</b><span>Batch loaders on schedules, live pollers every minute for subway and Citi Bike. Failed batches are kept and replayed.</span></div>
+        <div><b>Store</b><span>DuckLake: Parquet plus a Postgres catalog with snapshots, so any answer can be rerun against the data it saw.</span></div>
+        <div><b>Model</b><span>dbt gold facts and dimensions, tested daily, with a freshness table the guide checks before it answers.</span></div>
+        <div><b>Govern</b><span>39 metrics, 46 declared joins, place names and domain rules. The model fills in a plan; code writes the SQL.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section sunk" id="mcp">
+    <div class="wrap">
+      <p class="kicker">Open by design</p>
+      <h2 class="big reveal">Every tool is an MCP server.</h2>
+      <p class="intro reveal">The guide is an MCP host: it reaches the lake, the live city feeds and the web through Model Context Protocol servers. The same servers work in Claude Desktop or any MCP client, so you can bring New York into your own assistant.</p>
+      <div class="mcp-grid">
+        <pre class="code reveal">{
+  "mcpServers": {
+    "nycynapse": {
+      "command": "nycynapse-mcp"
+    },
+    "nyc-live": {
+      "command": "nycynapse-tools"
+    }
+  }
+}</pre>
+        <div class="toolset reveal">
+          <div class="set"><b>nycynapse: the lake</b><br><code>ask</code><code>domains</code><code>metric</code><code>run_sql</code></div>
+          <div class="set"><b>nyc-live: the city right now</b><br><code>weather</code><code>road_speeds</code><code>road_events</code><code>subway_alerts</code><code>find_place</code><code>open_data</code></div>
+          <div class="set"><b>nyc-live: the web</b><br><code>web_search</code><code>read_page</code></div>
+          <p class="privacy">All tools are read-only. Generated SQL passes a guard and runs on a read-only connection; page reads cannot reach private networks.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap">
+      <p class="kicker">Guardrails</p>
+      <h2 class="big reveal">Safe to open to everyone.</h2>
+      <div class="guards">
+        <div class="guard reveal"><b>New York only</b><span>Off-topic requests, lookups of private people and harmful asks are declined politely.</span></div>
+        <div class="guard reveal"><b>Web text is data</b><span>Pages and search results are quoted to the model as untrusted material; instructions inside them are ignored.</span></div>
+        <div class="guard reveal"><b>Read-only everything</b><span>No tool can write. SQL is parsed and limited to one SELECT on gold tables.</span></div>
+        <div class="guard reveal"><b>No private network</b><span>Page reads resolve and check every address and redirect; local and cloud metadata addresses are refused.</span></div>
+        <div class="guard reveal"><b>Bounded by design</b><span>Bot check, hourly limits, a few steps and a time limit per answer, and a daily budget for the whole site.</span></div>
+        <div class="guard reveal"><b>Private by default</b><span>Nothing anyone asks is shown to others. Conversations are kept 30 days for quality review, then deleted.</span></div>
+      </div>
+      <p class="privacy" style="margin-top:28px">Measured, too: on 167 test questions with known answers, the full pipeline answers 74 to 76% exactly right with the best models, against 59 to 67% for the same models given the raw schema. <a href="evals">See the evals</a>.</p>
+    </div>
+  </section>
+
+  <section class="cta-band">
+    <div class="wrap">
+      <h2>What do you want to know about New York?</h2>
+      <form class="askbox" id="cta-form" autocomplete="off">
+        <input id="cta-q" maxlength="400" aria-label="Your question about New York City" placeholder="Which subway stations were busiest in August?">
+        <button type="submit">Ask</button>
+      </form>
+      <p class="privacy">Conversations are stored privately for 30 days to improve answers, then deleted. Nothing you ask is shown to anyone else. Please do not include personal information.</p>
+    </div>
   </section>
 </main>
-<script src="static/app.js?v=4"></script>
-<script>
-const { el, get, url, bullet, table, chart, tabs, fmt, ago } = NY;
-NY.header("");
 
-const STATIONS = [
-  ["understand", "Understand"], ["retrieve", "Find tables"], ["ground", "Match names"],
-  ["context", "Gather context"], ["plan", "Plan"], ["compile", "Compile SQL"], ["run", "Check and run"],
-];
-const $ = (id) => document.getElementById(id);
-let busy = false;
+<footer><div class="wrap">NYCynapse: a guide to New York City built on public city data. <a href="https://github.com/giridhar1103/NYCynapse.Ai">Agent</a> · <a href="https://github.com/giridhar1103/NYCynapse_Lake">Lake</a> · <a href="data">Data freshness</a> · <a href="catalog">Catalog</a> · <a href="https://giriworks.com">giriworks.com</a></div></footer>
 
-function resetStrip() {
-  const ol = $("stations");
-  ol.querySelectorAll(".station").forEach((n) => n.remove());
-  for (const [id, name] of STATIONS) {
-    ol.append(el("li", { class: "station", "data-id": id },
-      el("div", { class: "dot" }), el("div", { class: "name" }, name), el("div", { class: "note" }, "")));
-  }
-  $("fill").style.width = "0";
-  $("strip").hidden = false;
-  mark(0, "active");
-}
+<div class="guide" id="guide" hidden>
+  <div class="scrim" data-close></div>
+  <div class="panel" role="dialog" aria-modal="true" aria-label="NYC guide chat">
+    <div class="g-head">
+      <span class="bullet b1">N</span><span class="title">NYC Guide</span><span class="model" id="g-model">Claude Sonnet 5.5</span>
+      <span class="turns" id="g-turns" title="A question and up to three follow-ups"></span>
+      <button class="newchat" id="g-new" type="button">＋ <span>New chat</span></button>
+      <button class="close" type="button" data-close aria-label="Close">✕</button>
+    </div>
+    <div class="g-chat">
+      <div class="g-log" id="g-log" aria-live="polite"></div>
+      <div class="g-input">
+        <form id="g-form" autocomplete="off">
+          <textarea id="g-q" rows="1" maxlength="400" placeholder="Ask about New York…" aria-label="Your question"></textarea>
+          <button id="g-send" type="submit">Send</button>
+        </form>
+        <div class="ts-box" id="ts-box"></div>
+        <div class="hint"><span id="g-left">A question and up to 3 follow-ups</span><span>Kept private, deleted after 30 days</span></div>
+      </div>
+    </div>
+    <div class="g-map" id="g-mapwrap">
+      <div class="map" id="g-map"></div>
+      <div class="scan"></div>
+      <div class="chipbar" id="g-chipbar"></div>
+      <div class="legend" id="g-legend"></div>
+    </div>
+  </div>
+</div>
 
-function station(id) { return $("stations").querySelector(`[data-id="${id}"]`); }
-
-function mark(index, cls) {
-  const all = [...$("stations").querySelectorAll(".station")];
-  const n = all[index];
-  if (!n) return;
-  if (cls === "active") all.forEach((s) => s.classList.remove("active"));
-  n.classList.add(cls);
-  if (cls === "done") {
-    n.classList.remove("active");
-    $("fill").style.width = Math.max(0, n.offsetLeft - all[0].offsetLeft) + "px";
-    if (all[index + 1]) mark(index + 1, "active");
-  }
-}
-
-function noteFor(s) {
-  switch (s.stage) {
-    case "understand":
-      if (s.classification && s.classification !== "answerable") return s.classification;
-      return s.window || (s.workspaces || []).join(", ");
-    case "retrieve": return (s.models || []).slice(0, 3).join(", ");
-    case "ground":
-      if (s.matches && s.matches.length) return s.matches.slice(0, 2).map((m) => `${m.mention} → ${m.value}`).join("; ");
-      if (s.places && s.places.length) return s.places.join(", ");
-      return "nothing to match";
-    case "plan": return s.problem ? "plan rejected, retrying" : "typed plan ready";
-    case "compile": return s.problem ? "could not compile" : "from governed metrics";
-    case "generate": return s.problem ? "problem found" : "SQL written";
-    case "run":
-      if (s.abstain) return "data does not cover this";
-      if (s.problem) return "problem: retrying";
-      return s.query_ms != null ? `${NY.plural(s.rows, "row")} · ${fmt(s.query_ms)} ms` : NY.plural(s.rows, "row");
-    case "repair": return "fixing the query";
-  }
-  return "";
-}
-
-function onStage(s) {
-  if (s.stage === "start") return;
-  const idx = STATIONS.findIndex(([id]) => id === s.stage);
-  if (s.stage === "generate") {
-    // Free-form path: no plan, the model writes SQL directly.
-    const p = station("plan"), c = station("compile");
-    p.querySelector(".name").textContent = "Write SQL";
-    p.querySelector(".note").textContent = noteFor(s);
-    c.classList.add("skipped"); c.querySelector(".note").textContent = "not needed";
-    mark(4, "done"); mark(5, "done");
-    return;
-  }
-  if (s.stage === "repair") {
-    const r = station("run");
-    r.classList.add("repair"); r.querySelector(".note").textContent = "repairing";
-    return;
-  }
-  if (idx < 0) return;
-  station(s.stage).querySelector(".note").textContent = noteFor(s);
-  if (s.stage === "understand" && s.classification && s.classification !== "answerable") {
-    // Nothing else will run; mark the rest as skipped.
-    mark(0, "done");
-    [...$("stations").querySelectorAll(".station")].slice(1).forEach((n) => { n.classList.remove("active"); n.classList.add("skipped"); });
-    return;
-  }
-  mark(idx, "done");
-}
-
-let result = null;
-
-function renderAnswer(a) {
-  const card = $("answer");
-  card.replaceChildren();
-  card.hidden = false;
-  card.classList.toggle("abstain", a.classification !== "answerable");
-  card.append(el("p", { class: "text" }, a.answer || "No answer."));
-  const pills = el("div", { class: "pills" });
-  if (a.window) pills.append(el("span", { class: "pill" }, el("span", { class: "bullet b0" }, "◷"), a.window));
-  pills.append(...NY.evidence(a.evidence || []).childNodes);
-  if (pills.childNodes.length) card.append(pills);
-  if (a.caveats && a.caveats.length) card.append(el("ul", { class: "caveats" }, a.caveats.map((c) => el("li", {}, c))));
-  if (result && result.columns && result.columns.length) {
-    const defs = [];
-    const c = chart(a.chart, result.columns, result.rows);
-    if (c) defs.push(["Chart", c]);
-    defs.push([`Table (${NY.plural(result.rows.length, "row")})`, table(result.columns, result.rows)]);
-    if (result.sql) defs.push(["SQL", el("pre", { class: "code" }, result.sql)]);
-    card.append(tabs(defs));
-  }
-  const meta = el("div", { class: "meta-row" },
-    el("span", {}, `${(a.latency_ms / 1000).toFixed(1)} s`),
-    a.cached ? el("span", {}, "replayed from an earlier answer to the same question") : el("span", {}, `$${(a.cost_usd || 0).toFixed(3)} in model calls`),
-    a.trace_id ? el("a", { href: url(`trace?id=${a.trace_id}`) }, "Full trace") : null);
-  card.append(meta);
-}
-
-function showError(msg) {
-  const card = $("answer");
-  card.hidden = false;
-  card.replaceChildren(el("div", { class: "error-box" }, msg));
-  document.querySelectorAll(".station.active").forEach((n) => n.classList.remove("active"));
-}
-
-async function ask(q) {
-  if (busy || !q || q.trim().length < 3) return;
-  busy = true; $("go").disabled = true; result = null;
-  $("q").value = q;
-  history.replaceState(null, "", "?q=" + encodeURIComponent(q));
-  $("answer").hidden = true;
-  resetStrip();
-  try {
-    const r = await fetch(url("api/ask?q=" + encodeURIComponent(q)), { headers: { Accept: "text/event-stream" } });
-    if (!r.ok) {
-      let msg = "Something went wrong.";
-      try { msg = (await r.json()).detail || msg; } catch (_) { /* not json */ }
-      if (Array.isArray(msg)) msg = "Questions need between 3 and 400 characters.";
-      return showError(msg);
-    }
-    const reader = r.body.getReader(), dec = new TextDecoder();
-    let buf = "";
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buf += dec.decode(value, { stream: true });
-      let cut;
-      while ((cut = buf.indexOf("\n\n")) >= 0) {
-        const chunk = buf.slice(0, cut); buf = buf.slice(cut + 2);
-        const ev = (chunk.match(/^event: (.*)$/m) || [])[1];
-        const data = (chunk.match(/^data: (.*)$/m) || [])[1];
-        if (!ev || !data) continue;
-        const d = JSON.parse(data);
-        if (ev === "stage") onStage(d);
-        else if (ev === "result") result = d;
-        else if (ev === "answer") renderAnswer(d);
-        else if (ev === "error") showError(d.message);
-      }
-    }
-  } catch (e) {
-    showError("Lost the connection while answering. Try again.");
-  } finally {
-    busy = false; $("go").disabled = false;
-    document.querySelectorAll(".station.active").forEach((n) => n.classList.remove("active"));
-    loadRecent();
-  }
-}
-
-$("ask").addEventListener("submit", (e) => { e.preventDefault(); ask($("q").value); });
-
-async function loadBoards() {
-  try {
-    const c = await get("api/catalog");
-    const box = $("boards");
-    for (const w of c.workspaces) {
-      if (!w.questions || !w.questions.length) continue;
-      box.append(el("div", { class: "card board" },
-        el("h3", {}, bullet(w.id, true), w.label),
-        w.questions.map((q) => el("button", { type: "button", onclick: () => { scrollTo({ top: 0, behavior: "smooth" }); ask(q); } }, q))));
-    }
-  } catch (e) {
-    $("boards").append(el("div", { class: "error-box" }, "Could not load examples: " + e.message));
-  }
-}
-
-async function loadRecent() {
-  try {
-    const rows = await get("api/recent?limit=10");
-    const box = $("recent");
-    box.replaceChildren();
-    if (!rows.length) return box.append(el("span", { class: "hint" }, "Nothing yet."));
-    for (const r of rows) box.append(el("a", { href: url(`trace?id=${r.id}`) },
-      el("span", { class: "q" }, r.question), el("span", { class: "t" }, ago(r.asked_at))));
-  } catch (_) {
-    $("recent").replaceChildren(el("span", { class: "hint" }, "Unavailable right now."));
-  }
-}
-
-loadBoards();
-loadRecent();
-const first = new URLSearchParams(location.search).get("q");
-if (first) ask(first);
-</script>
+<script src="static/app.js?v=6"></script>
+<script type="module" src="static/landing.js?v=1"></script>
 </body>
 </html>

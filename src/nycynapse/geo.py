@@ -53,6 +53,12 @@ def export(con: duckdb.DuckDBPyConnection, out: Path) -> dict:
             "ORDER BY nta_code",
             ["name", "code", "borough", "kind"],
         ),
+        "zips.json": _features(
+            con,
+            "SELECT modzcta, label, ST_AsGeoJSON(ST_SimplifyPreserveTopology(geom, 0.0004)) "
+            "FROM silver.geo_modzcta WHERE modzcta <> '99999' ORDER BY 1",
+            ["name", "zips"],
+        ),
         "subway.json": _features(
             con,
             """

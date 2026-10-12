@@ -10,6 +10,7 @@ using the lake's own reference tables.
 from __future__ import annotations
 
 import copy
+import re
 import threading
 import time
 from collections.abc import Callable
@@ -131,68 +132,97 @@ def _number(v) -> float | None:
         return None
 
 
+_NOT_VALUES = re.compile(
+    r"(zip|_id$|^id$|code|year|month|^lat|^lon|latitude|longitude|hour|date|"
+    r"rank|number$)"
+)
+_GOOD_VALUES = re.compile(
+    r"(count|total|trips|rides|complaints|requests|crashes|injur|^n$|value|"
+    r"avg|average|share|rate|minutes|speed|riders|ridership|delay|wait|pct|"
+    r"percent|hours|sum)"
+)
+
+
+def _value_column(columns: list[str], rows: list[list]) -> int | None:
+    numeric = [
+        i
+        for i, c in enumerate(columns)
+        if not _NOT_VALUES.search(c.lower())
+        and all(_number(r[i]) is not None for r in rows[:20] if r[i] is not None)
+        and any(r[i] is not None for r in rows[:20])
+    ]
+    good = [i for i in numeric if _GOOD_VALUES.search(columns[i].lower())]
+    return (good or numeric or [None])[-1] if (good or numeric) else None
+
+
+def _title(column: str) -> str:
+    return column.replace("_", " ").strip().capitalize()
+
+
 def map_from_rows(lake: Lake, columns: list[str], rows: list[list], label: str) -> list[dict]:
     """Guess how a result can be drawn: shade boroughs or neighborhoods, or place points."""
     if not columns or not rows:
         return []
-    value_col = next(
-        (i for i, c in enumerate(columns) if all(_number(r[i]) is not None for r in rows[:20])),
-        None,
-    )
+    vi = _value_column(columns, rows)
+    title = _title(columns[vi]) if vi is not None else "Result"
     out: list[dict] = []
+    places = lake.places()
     for i in range(len(columns)):
-        if i == value_col:
+        if i == vi or _number(rows[0][i]) is not None:
             continue
         vals = [str(r[i]) for r in rows if r[i] is not None]
         if not vals:
             continue
-        if all(v.lower() in BOROUGHS for v in vals[:20]):
-            values = {
-                v.title(): (_number(r[value_col]) if value_col is not None else 1)
-                for v, r in zip(vals, rows, strict=False)
-            }
-            out.append(
-                {
-                    "type": "areas",
-                    "level": "borough",
-                    "values": values,
-                    "label": label,
-                    "unit": columns[value_col] if value_col is not None else "",
-                }
-            )
+        if "zip" in columns[i].lower() and all(re.fullmatch(r"\d{5}", v) for v in vals[:20]):
+            if vi is not None:
+                out.append(
+                    {
+                        "type": "areas",
+                        "level": "zip",
+                        "label": title,
+                        "unit": "",
+                        "values": {v: _number(r[vi]) for v, r in zip(vals, rows, strict=False)},
+                    }
+                )
             break
-        places = lake.places()
+        if all(v.lower() in BOROUGHS for v in vals[:20]):
+            if len(set(v.lower() for v in vals)) == len(vals) and vi is not None:
+                out.append(
+                    {
+                        "type": "areas",
+                        "level": "borough",
+                        "label": title,
+                        "unit": "",
+                        "values": {
+                            v.title(): _number(r[vi]) for v, r in zip(vals, rows, strict=False)
+                        },
+                    }
+                )
+            continue  # a borough column next to finer places: keep looking
         hits = [(places.get(v.lower()), r) for v, r in zip(vals, rows, strict=False)]
         found = [(p, r) for p, r in hits if p]
-        if len(found) >= max(1, len(vals[:30]) // 2):
-            kind = found[0][0]["kind"]
+        if found and len(found) >= max(1, len(vals[:30]) // 2):
             pts = [
                 {
                     "lat": p["lat"],
                     "lon": p["lon"],
                     "label": p["name"],
-                    "value": _number(r[value_col]) if value_col is not None else None,
+                    "value": _number(r[vi]) if vi is not None else None,
                 }
                 for p, r in found[:60]
             ]
-            if kind == "nta":
+            if found[0][0]["kind"] == "nta":
                 out.append(
                     {
                         "type": "areas",
                         "level": "nta",
+                        "label": title,
+                        "unit": "",
                         "values": {p["label"]: p["value"] for p in pts},
-                        "label": label,
-                        "unit": columns[value_col] if value_col is not None else "",
                     }
                 )
-            out.append(
-                {
-                    "type": "points",
-                    "points": pts,
-                    "label": label,
-                    "unit": columns[value_col] if value_col is not None else "",
-                }
-            )
+            else:
+                out.append({"type": "points", "points": pts, "label": title, "unit": ""})
             break
     lat = next((i for i, c in enumerate(columns) if c.lower() in ("latitude", "lat")), None)
     lon = next((i for i, c in enumerate(columns) if c.lower() in ("longitude", "lon", "lng")), None)
@@ -203,7 +233,7 @@ def map_from_rows(lake: Lake, columns: list[str], rows: list[list], label: str) 
             if _number(r[lat]) and _number(r[lon])
         ]
         if pts:
-            out.append({"type": "points", "points": pts, "label": label})
+            out.append({"type": "points", "points": pts, "label": title})
     return out
 
 
