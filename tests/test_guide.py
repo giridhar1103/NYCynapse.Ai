@@ -400,3 +400,13 @@ def test_totals_of_returned_rows_count_as_traced():
         data={"columns": ["borough", "n"], "rows": [["Bronx", 21455], ["Queens", 47975]]},
     )
     assert core._untraced_numbers("about 69,400 in all", [r]) == []
+
+
+def test_millions_differences_and_earlier_turns_count_as_traced():
+    r = ToolResult(summary="July riders 4,260,412")
+    text = (
+        "July had about 4.26 million riders and August about 4.12 million, a drop of about "
+        "143,000 riders or roughly 3.4%."
+    )
+    assert core._untraced_numbers(text, [r], memory="August riders 4,117,412") == []
+    assert core._untraced_numbers("about 9.9 million", [r]) == ["9.9"]

@@ -404,7 +404,11 @@ class Agent:
             for r in t.results
             if r["result"].ok
         )[:1800]
-        untraced = _untraced_numbers(answer or "", [r["result"] for r in t.results])
+        untraced = _untraced_numbers(
+            answer or "",
+            [r["result"] for r in t.results],
+            " ".join(f"{h.get('answer', '')} {h.get('facts', '')}" for h in t.history),
+        )
         return {
             "answer": answer,
             "follow_ups": [f.strip() for f in follow_ups if f.strip()][:3],
@@ -439,36 +443,37 @@ class Agent:
         }
 
 
-_NUM = re.compile(r"(?<![\w.])(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?")
+_NUM = re.compile(
+    r"(?<![\w.])(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?(\s*(?:million|billion|thousand)\b)?", re.I
+)
+_SCALE = {"thousand": 1e3, "million": 1e6, "billion": 1e9}
 _SMALL = {str(i) for i in range(0, 13)}
-
-
 _CLOCK = re.compile(r"\d{1,2}:\d{2}|\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?)?")
 
 
-def _numbers(text: str) -> set[str]:
-    out = set()
+def _numbers(text: str) -> list[tuple[str, float, float]]:
+    """(as written, value, how far a rounded figure may be off) for each number in a text."""
+    out = []
     for m in _NUM.finditer(_CLOCK.sub(" ", text or "")):
         whole = m.group(1).replace(",", "")
-        out.add(whole + (f".{m.group(2)}" if m.group(2) else ""))
+        written = whole + (f".{m.group(2)}" if m.group(2) else "")
+        scale = _SCALE.get((m.group(3) or "").strip().lower(), 1.0)
+        value = float(written) * scale
+        step = (10 ** -len(m.group(2)) if m.group(2) else 1.0) * scale
+        out.append((written, value, step))
     return out
 
 
-def _untraced_numbers(answer: str, results: list[ToolResult]) -> list[str]:
-    """Numbers in the answer that no tool result contains, rounding allowed. Small counts,
-    years and times are skipped: they are usually words, dates or clock times."""
-    seen = set()
+def _untraced_numbers(answer: str, results: list[ToolResult], memory: str = "") -> list[str]:
+    """Numbers in the answer that cannot be traced to what the tools returned (or to earlier
+    turns), allowing rounding, "4.1 million" style figures, totals, averages, differences and
+    percent changes. Small counts, years and clock times are skipped."""
     values: list[float] = []
+    texts = [memory]
     for r in results:
         if not r.ok:
             continue
-        text = r.summary + " " + json.dumps(r.data, default=str)[:20000]
-        for n in _numbers(text):
-            seen.add(n)
-            try:
-                values.append(float(n))
-            except ValueError:
-                pass
+        texts.append(r.summary + " " + json.dumps(r.data, default=str)[:20000])
         data = r.data if isinstance(r.data, dict) else {}
         rows = data.get("rows") or []
         for i in range(len(data.get("columns") or [])):
@@ -479,18 +484,22 @@ def _untraced_numbers(answer: str, results: list[ToolResult]) -> list[str]:
             ]
             if len(col) > 1:
                 values += [float(sum(col)), float(sum(col)) / len(col)]  # totals and averages
+    for t in texts:
+        values += [v for _, v, _ in _numbers(t)]
+    base = [v for v in values if v][:80]
+    for x in base:
+        for y in base:
+            if x != y:
+                values.append(abs(x - y))
+                values.append(abs(x - y) / abs(y) * 100)
     out = []
-    for n in _numbers(answer):
-        if n in _SMALL or n in seen or (len(n) == 4 and n.startswith("20")):
+    for written, x, step in _numbers(answer):
+        if written in _SMALL or (len(written) == 4 and written.startswith("20")):
             continue
-        try:
-            x = float(n)
-        except ValueError:
-            continue
-        slack = 0.5 if "." not in n else 0.051
+        slack = step / 2 + 0.051
         if any(abs(x - v) <= slack + abs(v) * 0.01 for v in values):
-            continue  # a rounded form of a number the tools returned
-        out.append(n)
+            continue
+        out.append(written)
     return out[:8]
 
 
