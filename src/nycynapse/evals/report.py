@@ -27,6 +27,8 @@ def load_runs(runs: Path) -> list[dict]:
         meta = run["meta"]
         if not meta.get("model") or meta.get("split") not in SPLITS:
             continue
+        if "archive" in path.parts and not meta.get("series"):
+            continue  # superseded runs count only when labelled as an earlier series
         out.append(
             {
                 "series": meta.get("series", CURRENT),
@@ -189,8 +191,13 @@ def readme_table(summary: dict, series: str = CURRENT) -> str:
         if not rows:
             continue
         systems = sorted({g["system"] for g in rows}, key=SYSTEMS.index)
-        models = sorted({(g["model_label"], g["model"]) for g in rows})
         cell = {(g["model"], g["system"]): g for g in rows}
+
+        def best(m, cell=cell, systems=systems):  # by the most complete build
+            g = next((cell[(m[1], s)] for s in reversed(systems) if (m[1], s) in cell), None)
+            return -(g["accuracy"]["value"] or 0) if g else 0
+
+        models = sorted({(g["model_label"], g["model"]) for g in rows}, key=lambda m: (best(m), m))
         lines = [
             f"**{split.capitalize()}**, {rows[0]['cases']} questions. "
             "Right answers, with 95% intervals.",
