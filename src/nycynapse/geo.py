@@ -55,9 +55,32 @@ def export(con: duckdb.DuckDBPyConnection, out: Path) -> dict:
         ),
         "zips.json": _features(
             con,
-            "SELECT modzcta, label, ST_AsGeoJSON(ST_SimplifyPreserveTopology(geom, 0.0004)) "
-            "FROM silver.geo_modzcta WHERE modzcta <> '99999' ORDER BY 1",
-            ["name", "zips"],
+            # Each ZIP is labelled with the residential neighborhoods covering most of it, so
+            # a reader sees "Coney Island" rather than "11224".
+            """
+            WITH z AS (
+                SELECT modzcta, label, geom FROM silver.geo_modzcta WHERE modzcta <> '99999'
+            ),
+            overlap AS (
+                SELECT z.modzcta, n.nta_name, n.boro_name,
+                       ST_Area(ST_Intersection(z.geom, n.geom)) / ST_Area(z.geom) AS share
+                FROM z JOIN silver.geo_nta n ON ST_Intersects(z.geom, n.geom)
+                WHERE n.nta_kind = 'residential'
+            ),
+            ranked AS (
+                SELECT *, row_number() OVER (PARTITION BY modzcta ORDER BY share DESC) AS k
+                FROM overlap WHERE share > 0.2
+            ),
+            names AS (
+                SELECT modzcta, string_agg(nta_name, ' / ' ORDER BY k) AS area,
+                       arg_max(boro_name, share) AS borough
+                FROM ranked WHERE k <= 2 GROUP BY 1
+            )
+            SELECT z.modzcta, z.label, coalesce(names.area, ''), coalesce(names.borough, ''),
+                   ST_AsGeoJSON(ST_SimplifyPreserveTopology(z.geom, 0.0004))
+            FROM z LEFT JOIN names USING (modzcta) ORDER BY 1
+            """,
+            ["name", "zips", "area", "borough"],
         ),
         "subway.json": _features(
             con,
