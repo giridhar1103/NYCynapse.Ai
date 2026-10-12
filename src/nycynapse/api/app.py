@@ -116,6 +116,10 @@ async def _relay(a: Answerer, question: str, client: str):
 
 @app.get("/api/ask")
 def ask(request: Request, q: str = Query(min_length=3, max_length=400)):
+    # The one-shot pipeline endpoint from before the guide. The site no longer uses it and it
+    # has no bot check, so it is off unless switched on.
+    if os.environ.get("NYCYNAPSE_LEGACY_ASK", "") != "1":
+        raise HTTPException(410, "This endpoint has moved: ask the guide at /api/chat.")
     a = answerer()
     question = " ".join(q.split())
     cached = a.recent(question)
