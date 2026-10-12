@@ -104,7 +104,7 @@ def _clean(q: str) -> str:
 
 def verify_turnstile(token: str, ip: str | None) -> bool:
     secret = os.environ.get("TURNSTILE_SECRET_KEY", "").strip()
-    if not secret:
+    if not secret or os.environ.get("NYCYNAPSE_TURNSTILE", "") == "off":
         return True
     if not token or len(token) > 2048:
         return False
@@ -114,7 +114,10 @@ def verify_turnstile(token: str, ip: str | None) -> bool:
             data={"secret": secret, "response": token, **({"remoteip": ip} if ip else {})},
             timeout=8,
         )
-        return bool(r.json().get("success"))
+        result = r.json()
+        if not result.get("success"):
+            log.warning("bot check refused: %s", result.get("error-codes"))
+        return bool(result.get("success"))
     except (httpx.HTTPError, ValueError):
         log.warning("turnstile check failed to run; letting the question through")
         return True
@@ -123,7 +126,9 @@ def verify_turnstile(token: str, ip: str | None) -> bool:
 @router.get("/api/config")
 def config():
     return {
-        "turnstile_site_key": os.environ.get("TURNSTILE_SITE_KEY", "").strip() or None,
+        "turnstile_site_key": (os.environ.get("TURNSTILE_SITE_KEY", "").strip() or None)
+        if os.environ.get("NYCYNAPSE_TURNSTILE", "") != "off"
+        else None,
         "max_turns": MAX_TURNS,
         "examples": [{"q": e["q"], "tag": e["tag"]} for e in EXAMPLES],
         "idle_minutes": IDLE_MINUTES,

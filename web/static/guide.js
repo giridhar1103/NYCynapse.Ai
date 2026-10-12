@@ -113,9 +113,9 @@ class Guide {
         callback: finish,
         "before-interactive-callback": () => view.status("Please tick the box below so we know you're human."),
         "error-callback": () => { view.status("Checking you're human…"); return true; },
-        "timeout-callback": () => finish(""),
+        "timeout-callback": () => { view.status("The check timed out; please tick the box below."); try { window.turnstile.reset(id); } catch (_) { /* gone */ } },
       });
-      setTimeout(() => finish(""), 90000);
+      setTimeout(() => finish(""), 180000);
     });
   }
 
@@ -135,9 +135,16 @@ class Guide {
     if (this.turn === 0) this.map?.clear();
     this.map?.busy(true);
     let token = "";
-    if (!this.chat) {
+    if (!this.chat && (await this.config).turnstile_site_key) {
       view.status("Checking you're not a bot");
       token = await this.token(view);
+      if (!token) {
+        view.error("We couldn't confirm you're human. Please reload the page and try again; if a box appears, tick it.");
+        this.busy = false;
+        this.map?.busy(false);
+        this.renderTurns();
+        return;
+      }
     }
     const qs = new URLSearchParams({ q, chat: this.chat || "", token });
     try {

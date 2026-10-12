@@ -11,7 +11,7 @@ Environment=PYTHONUNBUFFERED=1
 # Model calls in flight per provider; three conversations can be answered at once.
 Environment=NYCYNAPSE_LLM_CONCURRENCY=3
 Environment=PATH=/root/.local/bin:/usr/local/bin:/usr/bin:/bin
-ExecStart=/root/NYCynapse/.venv/bin/uvicorn nycynapse.api.app:app --host 127.0.0.1 --port 8031 --workers 1 --proxy-headers --forwarded-allow-ips 127.0.0.1
+ExecStart=/root/NYCynapse/.venv/bin/uvicorn nycynapse.api.app:app --host 127.0.0.1 --port 8031 --workers 1 --proxy-headers --forwarded-allow-ips 127.0.0.1 --no-access-log
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=15
