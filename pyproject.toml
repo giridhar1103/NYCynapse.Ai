@@ -19,6 +19,7 @@ dependencies = [
     "httpx>=0.27",
     "fastapi>=0.115",
     "uvicorn>=0.30",
+    "trafilatura>=2",
 ]
 
 [project.optional-dependencies]
@@ -28,6 +29,7 @@ mcp = ["mcp>=2.3"]
 [project.scripts]
 nycynapse = "nycynapse.cli:main"
 nycynapse-mcp = "nycynapse.mcp_server:main"
+nycynapse-tools = "nycynapse.mcp_tools:main"
 
 [tool.setuptools.package-data]
 nycynapse = ["prompts/*.md", "catalog/migrations/*.sql"]
