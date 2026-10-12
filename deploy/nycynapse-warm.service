@@ -1,0 +1,17 @@
+[Unit]
+Description=NYCynapse: answer the example questions again
+After=network.target postgresql.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/NYCynapse
+EnvironmentFile=/root/.secrets/nycynapse-web.env
+Environment=HOME=/root
+Environment=PYTHONUNBUFFERED=1
+Environment=PATH=/root/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/root/NYCynapse/.venv/bin/nycynapse warm-examples
+MemoryMax=1500M
+CPUQuota=100%
+NoNewPrivileges=true
+PrivateTmp=true
+ReadOnlyPaths=/srv/nycynapse/lake

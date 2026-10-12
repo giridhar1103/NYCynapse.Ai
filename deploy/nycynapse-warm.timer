@@ -1,0 +1,9 @@
+[Unit]
+Description=Answer the example questions after the daily gold build
+
+[Timer]
+OnCalendar=*-*-* 10:50:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -23,7 +23,7 @@ workspaces:
              subway_stations, subway_complexes]
     shared: [boroughs, neighborhoods, calendar]
     sample_questions:
-      - Which subway lines had the worst delays yesterday?
+      - Which subway lines had the worst average delay yesterday?
       - What were the busiest stations by ridership in August 2026?
       - How many alerts did the A train have this week?
 
@@ -36,7 +36,7 @@ workspaces:
     shared: [boroughs, neighborhoods, taxi_zones, calendar]
     sample_questions:
       - How many Citi Bike rides started in Williamsburg in August 2026?
-      - What share of rides used e-bikes each month?
+      - What share of Citi Bike rides used e-bikes in August 2026?
 
   - id: city_services
     label: 311 requests
@@ -46,7 +46,7 @@ workspaces:
     models: [service_requests]
     shared: [boroughs, neighborhoods, community_districts, calendar]
     sample_questions:
-      - How have noise complaints changed by neighborhood since 2024?
+      - Which neighborhoods had the most noise complaints in August 2026?
       - Which agency takes longest to close requests?
 
   - id: safety
@@ -80,7 +80,7 @@ workspaces:
     description: How current each dataset in the lake is, and gaps in the live feeds.
     models: [source_freshness, feed_gaps]
     sample_questions:
-      - Which datasets are stale right now?
+      - How fresh is each dataset right now?
       - When were the subway feeds last down?
 
   - id: geography

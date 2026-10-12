@@ -20,6 +20,8 @@ NY = ZoneInfo("America/New_York")
 MAX_ROWS = 200
 
 PAUSE_S = 1800
+EXAMPLE_HOURS = 30
+WARM_CLIENT = "examples"  # the morning job that answers the example questions again
 PAUSED = (
     "New questions are paused for a while: the model's usage allowance has run out. "
     "Example answers and recent questions still work."
@@ -57,7 +59,16 @@ class Answerer:
         self.ctx = ctx
         self.graph = build(ctx, grounding=True, planning=True, examples=True)
 
-    def recent(self, question: str, hours: int = 6) -> dict | None:
+    def examples(self) -> set[str]:
+        return {q.lower() for w in self.ctx.catalog.workspaces for q in w.sample_questions}
+
+    def recent(self, question: str, hours: int | None = None) -> dict | None:
+        """A stored answer to the same question, if one is fresh enough to show again.
+
+        Example questions are answered again every morning, so their answers last a day.
+        """
+        if hours is None:
+            hours = EXAMPLE_HOURS if question.strip().lower() in self.examples() else 6
         row = self.ctx.conn.execute(
             "SELECT id FROM app.traces WHERE lower(question) = lower(%s) AND error IS NULL "
             "AND answer IS NOT NULL AND asked_at > now() - make_interval(hours => %s) "
@@ -81,7 +92,8 @@ class Answerer:
     def spent_today(self) -> float:
         row = self.ctx.conn.execute(
             "SELECT coalesce(sum(cost_usd), 0) AS c FROM app.traces "
-            "WHERE asked_at > date_trunc('day', now())"
+            "WHERE asked_at > date_trunc('day', now()) AND client_hash <> %s",
+            (WARM_CLIENT,),
         ).fetchone()
         return float(row["c"])
 

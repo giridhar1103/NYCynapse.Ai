@@ -47,6 +47,7 @@ def main(argv: list[str] | None = None) -> int:
     au.add_argument("--split", default="dev,regression", help="comma separated splits")
     au.add_argument("--only", help="comma separated case ids")
     au.add_argument("--auditors", help="comma separated provider ids (default: all auditors)")
+    sub.add_parser("warm-examples", help="answer the site's example questions again")
     pub = sub.add_parser("publish", help="validate, then publish the catalog to Postgres")
     pub.add_argument("--no-lake", action="store_true", help="skip the value index and places")
     args = parser.parse_args(argv)
@@ -379,6 +380,24 @@ def main(argv: list[str] | None = None) -> int:
             readme.write_text(f"{head}{start}\n{readme_table(summary)}{end}{tail}")
         print(f"{len(summary['groups'])} result groups, {len(summary['paired'])} paired tests")
         return 0
+
+    if args.cmd == "warm-examples":
+        from . import lake
+        from .api.service import WARM_CLIENT, Answerer
+        from .catalog import store
+        from .pipeline.context import Context
+
+        ctx = Context(settings, lake.connect(settings), store.connect(settings.app_pg_dsn))
+        a = Answerer(ctx)
+        failed = 0
+        for w in ctx.catalog.workspaces:
+            for q in w.sample_questions:
+                t0 = time.time()
+                events = dict(a.stream(q, WARM_CLIENT))
+                ok = "answer" in events and "error" not in events
+                failed += not ok
+                print(f"{'ok ' if ok else 'ERR'} {time.time() - t0:5.0f}s  {q}", flush=True)
+        return 1 if failed else 0
 
     if args.cmd == "publish":
         import logging
