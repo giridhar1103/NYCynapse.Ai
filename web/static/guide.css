@@ -242,7 +242,7 @@ pre.code { background: #0f0f0e; color: #e8e7df; border-radius: 14px; padding: 18
 /* ---------- small screens ---------- */
 @media (max-width: 900px) {
   .hero-grid { grid-template-columns: 1fr; min-height: auto; padding: 28px 0 40px; }
-  .hero-map { order: -1; max-width: 420px; justify-self: center; margin-bottom: -10px; }
+  .hero-map { max-width: 460px; justify-self: center; margin-top: 8px; }
   .route { grid-template-columns: 1fr 1fr; row-gap: 28px; }
   .route::before, .route .train-dot { display: none; }
   .cards, .guards { grid-template-columns: 1fr 1fr; }
@@ -252,6 +252,10 @@ pre.code { background: #0f0f0e; color: #e8e7df; border-radius: 14px; padding: 18
   .g-map { grid-row: 2; }
   .g-chat { grid-row: 3; border-right: 0; border-top: 1px solid var(--rule); }
   .g-head .model { display: none; }
+}
+@media (max-width: 640px) {
+  .band.on-night .nav a:not(.cta):not([href="evals"]) { display: none; }
+  .hero-night h1 { font-size: 44px; }
 }
 @media (max-width: 560px) {
   .cards, .guards, .route, .flow-legend { grid-template-columns: 1fr; }
@@ -263,3 +267,9 @@ pre.code { background: #0f0f0e; color: #e8e7df; border-radius: 14px; padding: 18
   *, *::before, *::after { animation-duration: .001s !important; animation-iteration-count: 1 !important; transition-duration: .001s !important; }
   .reveal { opacity: 1; transform: none; }
 }
+
+.sqlbox { grid-column: 2 / -1; }
+.sqlbox summary { font-size: 12px; color: var(--muted); cursor: pointer; list-style: none; }
+.sqlbox summary::before { content: "▸ "; }
+.sqlbox[open] summary::before { content: "▾ "; }
+.sqlbox pre { margin: 6px 0 0; font: 11.5px/1.5 var(--mono); background: var(--sunk); border-radius: 8px; padding: 8px 10px; overflow-x: auto; max-height: 220px; white-space: pre; }

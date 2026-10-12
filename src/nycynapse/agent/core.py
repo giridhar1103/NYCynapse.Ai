@@ -469,6 +469,16 @@ def _untraced_numbers(answer: str, results: list[ToolResult]) -> list[str]:
                 values.append(float(n))
             except ValueError:
                 pass
+        data = r.data if isinstance(r.data, dict) else {}
+        rows = data.get("rows") or []
+        for i in range(len(data.get("columns") or [])):
+            col = [
+                v
+                for v in (row[i] for row in rows if i < len(row))
+                if isinstance(v, int | float) and not isinstance(v, bool)
+            ]
+            if len(col) > 1:
+                values += [float(sum(col)), float(sum(col)) / len(col)]  # totals and averages
     out = []
     for n in _numbers(answer):
         if n in _SMALL or n in seen or (len(n) == 4 and n.startswith("20")):
@@ -478,7 +488,7 @@ def _untraced_numbers(answer: str, results: list[ToolResult]) -> list[str]:
         except ValueError:
             continue
         slack = 0.5 if "." not in n else 0.051
-        if any(abs(x - v) <= slack + abs(v) * 0.006 for v in values):
+        if any(abs(x - v) <= slack + abs(v) * 0.01 for v in values):
             continue  # a rounded form of a number the tools returned
         out.append(n)
     return out[:8]

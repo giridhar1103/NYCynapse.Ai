@@ -232,6 +232,8 @@ class TurnView {
         s.row.append(el("span", { class: "err" }, `${msg[0].toUpperCase()}${msg.slice(1)} The guide will try another way.`));
       }
       if (s.stages) s.stages.querySelectorAll("span").forEach((x) => x.classList.add("on"));
+      const sql = (d.sources || []).map((x) => x.sql).find(Boolean);
+      if (sql) s.row.append(el("details", { class: "sqlbox" }, el("summary", {}, "SQL"), el("pre", {}, sql)));
     }
   }
 

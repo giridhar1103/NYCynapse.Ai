@@ -1,7 +1,7 @@
 // Landing page: the live map drawing, the ticker, examples, the lakehouse diagram, and the
 // hand-off to the guide overlay.
 
-import { guide } from "./guide.js?v=4";
+import { guide } from "./guide.js?v=5";
 import { drawHero } from "./hero.js?v=3";
 
 const { el, get } = NY;
@@ -15,7 +15,7 @@ pulse.then((p) => {
   if (!p) return;
   const items = [];
   if (p.bikes?.stations) items.push([p.bikes.bikes, `Citi Bikes docked at ${p.bikes.stations.toLocaleString("en-US")} stations now`]);
-  if (p.subway?.arrivals) items.push([p.subway.arrivals, "train arrivals in the last 20 minutes"]);
+  if (p.subway?.arrivals) items.push([p.subway.arrivals, "train arrivals in the latest 20 minutes of feed data"]);
   if (p.alerts != null) items.push([p.alerts, "subway alerts in effect"]);
   if (p.weather) items.push([`${Math.round(p.weather.temp_f)}°F`, `${p.weather.now} in Manhattan`]);
   if (p.lake?.rows) items.push([`${(p.lake.rows / 1e9).toFixed(2)}B`, "rows of city history in the lake"]);

@@ -392,3 +392,11 @@ def test_a_claimed_tool_failure_before_any_tool_ran_is_retried(monkeypatch):
     out = agent.run("rain?", [], lambda e, d: None)
     assert out["answer"] == "Dry today."
     assert "cannot call tools natively" in seen[1][1]
+
+
+def test_totals_of_returned_rows_count_as_traced():
+    r = ToolResult(
+        summary="by borough",
+        data={"columns": ["borough", "n"], "rows": [["Bronx", 21455], ["Queens", 47975]]},
+    )
+    assert core._untraced_numbers("about 69,400 in all", [r]) == []
