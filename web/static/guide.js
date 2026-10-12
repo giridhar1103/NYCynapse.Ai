@@ -2,7 +2,7 @@
 // draws each tool call as it runs (with errors and recoveries), renders the answer and its
 // sources as plain text, and keeps the conversation to a question and three follow-ups.
 
-import { GuideMap } from "./map.js?v=3";
+import { GuideMap, wxIcon } from "./map.js?v=4";
 
 const { el, url } = NY;
 const TOOL = {
@@ -10,6 +10,7 @@ const TOOL = {
   weather: ["W", "live", "Live weather"], road_speeds: ["R", "live", "Road sensors"],
   road_events: ["R", "live", "511NY road events"], subway_alerts: ["S", "live", "Subway alerts"],
   find_place: ["P", "live", "Place search"], open_data: ["O", "live", "NYC Open Data"],
+  area_stats: ["C", "live", "Census by neighborhood"],
   web_search: ["G", "web", "Web search"], read_page: ["R", "web", "Reading a page"],
 };
 const MODEL_NAMES = { "claude-sonnet-5.5": "Claude Sonnet 5.5", "gemini-3.7-flash": "Gemini 3.7 Flash" };
@@ -132,7 +133,7 @@ class Guide {
     const view = new TurnView(this.log);
     this.scroll();
     await this.map?.ready;
-    if (this.turn === 0) this.map?.clear();
+    this.map?.clear();
     this.map?.busy(true);
     let token = "";
     if (!this.chat && (await this.config).turnstile_site_key) {
@@ -168,11 +169,11 @@ class Guide {
           else if (ev === "status") view.status(d.text);
           else if (ev === "tool") view.tool(d);
           else if (ev === "lake") view.lake(d);
-          else if (ev === "map") { this.map?.show(d.layers); }
+          else if (ev === "map") { view.layers.push(...(d.layers || [])); this.map?.show(d.layers); }
           else if (ev === "answer") {
             ended = true;
             this.turn = d.turn;
-            view.answer(d, (f) => this.ask(f));
+            view.answer(d, (f) => this.ask(f), (i) => this.map?.focus(i));
             const name = MODEL_NAMES[d.model] || d.model;
             if (name) $("g-model").textContent = name + (d.fell_back ? " (backup)" : "");
           } else if (ev === "error") {
@@ -198,14 +199,18 @@ class Guide {
   scroll() { this.log.scrollTop = this.log.scrollHeight; }
 }
 
+let uid = 0;
+
 class TurnView {
   constructor(log) {
+    this.uid = ++uid;
     this.box = el("div", { class: "msg-a" });
     this.rail = el("div", { class: "rail" });
     this.now = el("div", { class: "now" }, "Reading your question…");
     this.rail.append(this.now);
     this.box.append(this.rail);
     this.steps = {};
+    this.layers = [];
     this.started = performance.now();
     log.append(this.box);
   }
@@ -253,37 +258,59 @@ class TurnView {
     if (d.problem) s.stages.append(el("span", {}, "repairing"));
   }
 
-  answer(d, onFollow) {
-    this.now.textContent = d.cached ? "Answered this morning from the same sources" : "Done";
+  answer(d, onFollow, onPlace) {
+    const srcs = (d.sources || []).filter((x) => x.title);
+    const numbered = Object.fromEntries(srcs.filter((x) => x.n).map((x) => [x.n, x]));
+    this.fold(d, srcs.length);
     const card = el("div", { class: "answer-card" + (d.declined ? " declined" : "") });
-    card.append(...renderText(d.text || ""));
-    const srcs = (d.sources || []).filter((s) => s.title);
-    if (srcs.length) {
-      card.append(el("div", { class: "srcs" }, srcs.map((s) => {
-        const kind = s.kind || "live";
-        const label = (kind === "lake" ? "Lake · " : kind === "web" ? "Web · " : "Live · ") + s.title;
-        const attrs = { class: `src ${kind}`, title: s.note || s.title };
-        const kids = [el("i"), el("span", {}, label)];
-        if (s.stale) kids.push(el("span", { class: "stale" }, " · old reading"));
-        if (s.attribution) kids.push(el("span", {}, " · " + s.attribution));
-        const safe = safeUrl(s.url);
-        return safe ? el("a", { ...attrs, href: safe, target: "_blank", rel: "noopener noreferrer nofollow" }, kids)
-          : el("span", attrs, kids);
-      })));
-      const notes = srcs.filter((s) => s.note).map((s) => s.note);
-      if (notes.length) card.append(el("div", { class: "meta" }, [...new Set(notes)].join(" ")));
+    card.append(...renderText(d.text || "", { sources: numbered, places: d.places || [], onPlace }));
+    const wx = this.layers.find((L) => L.type === "weather" && (L.daily || []).length);
+    if (wx && !d.declined) card.append(forecast(wx.daily));
+    if (srcs.length && !d.declined) {
+      const list = el("ol", { class: "srclist" }, srcs.map((x, i) => {
+        const safe = safeUrl(x.url);
+        const host = safe ? new URL(safe).hostname.replace(/^www\./, "") : kindName(x.kind);
+        const when = x.updated_at ? stamp(x.updated_at) : "";
+        const row = [el("span", { class: "n" }, String(x.n || i + 1)),
+          el("span", { class: "t" }, x.title),
+          el("span", { class: "h" }, [host, when].filter(Boolean).join(" · ")),
+          x.stale ? el("span", { class: "stale" }, "old reading") : ""];
+        const attrs = { class: `src ${x.kind || "live"}`, title: x.note || x.title, id: x.n ? `s${this.uid}-${x.n}` : null };
+        return el("li", {}, safe ? el("a", { ...attrs, href: safe, target: "_blank", rel: "noopener noreferrer nofollow" }, row) : el("span", attrs, row));
+      }));
+      card.append(el("details", { class: "sources", open: srcs.length <= 3 ? true : null },
+        el("summary", {}, `Sources · ${srcs.length}`), list));
+      const notes = [...new Set(srcs.filter((x) => x.note || x.attribution).map((x) => x.attribution ? `${x.title}: ${x.attribution}` : x.note))];
+      if (notes.length) card.append(el("div", { class: "meta" }, notes.join(" ")));
     }
     if ((d.untraced || []).length) {
-      card.append(el("div", { class: "meta warnline" }, `Check: ${d.untraced.join(", ")} could not be matched to the data the guide found.`));
+      card.append(el("div", { class: "meta warnline" }, `Not matched to the data found: ${d.untraced.join(", ")}`));
     }
-    const secs = ((d.latency_ms || performance.now() - this.started) / 1000).toFixed(1);
-    card.append(el("div", { class: "meta" }, d.cached ? "Stored answer from this morning"
-      : `${secs} s${d.cost_usd ? ` · about $${Number(d.cost_usd).toFixed(3)} in model calls` : ""}${d.fell_back ? " · answered by the backup model" : ""}`));
     this.box.append(card);
     if (d.follow_ups_left > 0 && (d.follow_ups || []).length) {
       this.box.append(el("div", { class: "follow" }, d.follow_ups.map((f) =>
         el("button", { type: "button", onclick: () => onFollow(f) }, f))));
     }
+  }
+
+  // Once the answer is in, the work log folds into one line that opens again on click.
+  fold(d, nSources) {
+    const steps = Object.keys(this.steps).length;
+    const secs = ((d.latency_ms || performance.now() - this.started) / 1000).toFixed(1);
+    const bits = d.cached ? ["Stored answer from this morning"]
+      : [`Worked for ${secs} s`, steps ? `${steps} ${steps === 1 ? "check" : "checks"}` : "",
+        d.cost_usd ? `$${Number(d.cost_usd).toFixed(3)}` : "", d.fell_back ? "backup model" : ""];
+    this.now.textContent = "";
+    this.now.hidden = true;
+    if (!steps) { this.rail.hidden = true; return; }
+    const toggle = el("button", { type: "button", class: "worked", "aria-expanded": "false" },
+      bits.filter(Boolean).join(" · "));
+    toggle.addEventListener("click", () => {
+      const open = this.rail.classList.toggle("folded") === false;
+      toggle.setAttribute("aria-expanded", String(open));
+    });
+    this.rail.classList.add("folded");
+    this.box.insertBefore(toggle, this.rail);
   }
 
   error(message, code) {
@@ -292,23 +319,117 @@ class TurnView {
   }
 }
 
-function renderText(text) {
-  // Plain text only: lines that start with "- " become a list, the rest paragraphs.
+// Plain text with three small extras: "- " lines become a list, **bold**, citation numbers
+// like [2] become source pills, and the places the answer names become buttons that move the map.
+function renderText(text, ctx = {}) {
   const out = [];
   let list = null;
+  ctx.seen = new Set();
   for (const line of text.split(/\n+/)) {
     const t = line.trim();
     if (!t) continue;
-    if (/^[-•]\s+/.test(t)) {
+    if (/^[-•*]\s+/.test(t)) {
       if (!list) { list = el("ul"); out.push(list); }
-      list.append(el("li", {}, t.replace(/^[-•]\s+/, "")));
+      list.append(el("li", {}, inline(t.replace(/^[-•*]\s+/, ""), ctx)));
     } else {
       list = null;
-      out.push(el("p", {}, t));
+      out.push(el("p", {}, inline(t, ctx)));
     }
   }
   return out;
 }
+
+function inline(text, ctx, bold = false) {
+  const names = (ctx.places || []).map((p, i) => ({ name: p.name, i }))
+    .filter((p) => p.name && p.name.length > 2 && !ctx.seen.has(p.i))
+    .sort((a, b) => b.name.length - a.name.length);
+  const alts = [String.raw`\*\*(.+?)\*\*`, String.raw`((?:\[\d{1,2}\])+)`];
+  if (names.length) alts.push(`(${names.map((p) => escRe(p.name)).join("|")})`);
+  const re = new RegExp(alts.join("|"), "gi");
+  const kids = [];
+  let at = 0, m;
+  while ((m = re.exec(text))) {
+    if (m.index > at) kids.push(text.slice(at, m.index));
+    if (m[1] != null && !bold) kids.push(el("strong", {}, inline(m[1], ctx, true)));
+    else if (m[1] != null) kids.push(m[1]);
+    else if (m[2] != null) kids.push(cite(m[2], ctx.sources || {}));
+    else if (m[3] != null) {
+      const p = names.find((x) => x.name.toLowerCase() === m[3].toLowerCase());
+      if (p && !ctx.seen.has(p.i) && ctx.onPlace) {
+        ctx.seen.add(p.i);
+        // Take in the rest of a hyphenated name: "Spring Creek-Starrett City", "Mott Haven-Port Morris".
+        const before = text.slice(at, m.index).match(/(?:[A-Z0-9][\w'’]*(?: [A-Z0-9][\w'’]*)*-)+$/);
+        const after = text.slice(re.lastIndex).match(/^(?:-[A-Z0-9][\w'’]*(?: [A-Z0-9][\w'’]*)*)+/);
+        const start = before ? m.index - before[0].length : m.index;
+        if (before) kids[kids.length - 1] = text.slice(at, start);
+        const end = re.lastIndex + (after ? after[0].length : 0);
+        kids.push(el("button", { type: "button", class: "place", title: "Show on the map", onclick: () => ctx.onPlace(p.i) },
+          el("i", {}, String(p.i + 1)), text.slice(start, end)));
+        re.lastIndex = end;
+      } else kids.push(m[3]);
+    }
+    at = re.lastIndex;
+  }
+  if (at < text.length) kids.push(text.slice(at));
+  return kids;
+}
+
+// "[1][3]" -> one pill naming the first source, "+1" for the rest, linking to the source list.
+function cite(raw, sources) {
+  const ns = [...raw.matchAll(/\d+/g)].map((x) => +x[0]).filter((n) => sources[n]);
+  if (!ns.length) return "";
+  const first = sources[ns[0]];
+  const safe = safeUrl(first.url);
+  const label = shortName(first);
+  const tip = ns.map((n) => `${n}. ${sources[n].title}${sources[n].updated_at ? " (" + stamp(sources[n].updated_at) + ")" : ""}`).join("\n");
+  const kids = [label, ns.length > 1 ? el("small", {}, ` +${ns.length - 1}`) : ""];
+  const attrs = { class: `cite ${first.kind || "live"}`, title: tip };
+  return safe ? el("a", { ...attrs, href: safe, target: "_blank", rel: "noopener noreferrer nofollow" }, kids)
+    : el("span", attrs, kids);
+}
+
+const HOSTS = {
+  "open-meteo.com": "Open-Meteo", "weather.gov": "NWS", "mta.info": "MTA", "new.mta.info": "MTA",
+  "censusreporter.org": "Census", "data.cityofnewyork.us": "NYC Open Data", "geosearch.planninglabs.nyc": "NYC Planning",
+  "511ny.org": "511NY", "nyc.gov": "NYC.gov", "forecast.weather.gov": "NWS",
+};
+function shortName(src) {
+  if (src.kind === "lake") return "City data";
+  const safe = safeUrl(src.url);
+  if (!safe) return kindName(src.kind);
+  const host = new URL(safe).hostname.replace(/^www\./, "");
+  if (HOSTS[host]) return HOSTS[host];
+  const parts = host.split(".");
+  return parts.length > 1 ? parts[parts.length - 2] : host;
+}
+const kindName = (k) => (k === "lake" ? "City data lake" : k === "web" ? "Web" : k === "data" ? "Official data" : "Live feed");
+
+function stamp(v) {
+  const s = String(v);
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(s)) return s;
+  if (!/[zZ]$|[+-]\d{2}:\d{2}$/.test(s)) {
+    // Already New York time: show it as written.
+    const [, hh, mm] = s.match(/T(\d{2}):(\d{2})/);
+    return `${(+hh % 12) || 12}:${mm} ${+hh < 12 ? "AM" : "PM"}`;
+  }
+  const d = new Date(s);
+  if (Number.isNaN(+d)) return s;
+  return d.toLocaleString("en-US", { timeZone: "America/New_York", weekday: "short", hour: "numeric", minute: "2-digit" });
+}
+
+function forecast(days) {
+  return el("div", { class: "fc" }, days.map((d) => {
+    const cell = el("div", { class: "fd" + (d.rain_chance_pct >= 50 ? " wet" : ""), title: `${d.label}: ${d.sky}` });
+    const ico = el("span", { class: "ico" });
+    ico.innerHTML = wxIcon(d.icon, true);
+    cell.append(el("b", {}, d.short), ico,
+      el("span", { class: "hi" }, `${d.high_f}°`), el("span", { class: "lo" }, `${d.low_f}°`),
+      el("span", { class: "rn" }, `${d.rain_chance_pct}%`));
+    return cell;
+  }));
+}
+
+const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 function safeUrl(u) {
   try {
@@ -320,7 +441,8 @@ function safeUrl(u) {
 function describe(name, args) {
   if (!args) return "";
   if (name === "ask_lake") return args.question ? `“${String(args.question).slice(0, 70)}”` : "";
-  if (name === "weather") return args.hours ? `next ${args.hours} h` : "";
+  if (name === "weather") return args.days ? `next ${args.days} days` : args.hours ? `next ${args.hours} h` : "";
+  if (name === "area_stats") return [String(args.measure || "").replace("_", " "), args.borough].filter(Boolean).join(", ");
   if (name === "subway_alerts") return args.line ? `${args.line} line` : "all lines";
   if (name === "road_speeds" || name === "road_events") return args.borough || "all boroughs";
   if (name === "open_data") return args.dataset || "";
