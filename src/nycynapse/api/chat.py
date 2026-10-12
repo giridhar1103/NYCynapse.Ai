@@ -298,6 +298,8 @@ def _answer_payload(slot: Slot, out: dict, cached: bool = False) -> dict:
         "latency_ms": out.get("latency_ms"),
         "cached": cached,
         "untraced": out.get("untraced") or [],
+        "places": out.get("places")
+        or next((x.get("items") for x in out.get("map") or [] if x.get("type") == "highlight"), []),
     }
 
 

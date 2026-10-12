@@ -218,12 +218,13 @@ def _agent(monkeypatch, replies, tools):
     return agent, seen
 
 
-def _step(status="", calls=(), answer=None, follow_ups=(), declined=False):
+def _step(status="", calls=(), answer=None, follow_ups=(), declined=False, places=()):
     return {
         "status": status,
         "calls": [{"tool": t, "args": json.dumps(a)} for t, a in calls],
         "answer": answer,
         "follow_ups": list(follow_ups),
+        "places": list(places),
         "declined": declined,
     }
 
@@ -410,3 +411,163 @@ def test_millions_differences_and_earlier_turns_count_as_traced():
     )
     assert core._untraced_numbers(text, [r], memory="August riders 4,117,412") == []
     assert core._untraced_numbers("about 9.9 million", [r]) == ["9.9"]
+
+
+def _sourced(name, sources, text="ok"):
+    def fn(**kwargs):
+        return ToolResult(summary=text, sources=sources)
+
+    return Tool(name, "live", name, {"type": "object", "properties": {}}, fn)
+
+
+def test_citations_are_renumbered_in_reading_order_and_uncited_sources_dropped(monkeypatch):
+    srcs = [{"kind": "live", "title": t, "url": f"https://{t}.example"} for t in "abc"]
+    agent, seen = _agent(
+        monkeypatch,
+        [
+            _step("Checking", calls=[("feed", {})]),
+            _step("Done", answer="C is 4 [3]. A is 5 [1][9]. C again [3]."),
+        ],
+        [_sourced("feed", srcs, "a 5, b 6, c 4")],
+    )
+    out = agent.run("Q?", [], lambda e, d: None)
+    assert "[1] a" in seen[1][1] and "[3] c" in seen[1][1]
+    assert out["answer"] == "C is 4[1]. A is 5[2]. C again[1]."
+    assert [(s["n"], s["title"]) for s in out["sources"]] == [(1, "c"), (2, "a")]
+    assert "[" not in out["memory"]["answer"]
+
+
+def test_web_results_are_numbered_one_by_one(monkeypatch):
+    results = [
+        {"title": f"Page {i}", "url": f"https://p{i}.example", "snippet": "s"} for i in (1, 2)
+    ]
+
+    def search(**kwargs):
+        return ToolResult(
+            summary="ignored",
+            data={"results": results},
+            sources=[{"kind": "web", "title": r["title"], "url": r["url"]} for r in results],
+        )
+
+    agent, seen = _agent(
+        monkeypatch,
+        [
+            _step("Searching", calls=[("web_search", {"query": "x"})]),
+            _step("Done", answer="B [2]."),
+        ],
+        [Tool("web_search", "web", "s", {"type": "object", "properties": {}}, search)],
+    )
+    out = agent.run("Q?", [], lambda e, d: None)
+    assert "[1] Page 1 (https://p1.example)" in seen[1][1]
+    assert "[2] Page 2" in seen[1][1]
+    assert [s["title"] for s in out["sources"]] == ["Page 2"]
+
+
+def test_an_answer_without_citations_keeps_city_sources_but_not_search_results(monkeypatch):
+    def search(**kwargs):
+        return ToolResult(
+            summary="r", sources=[{"kind": "web", "title": "Hit", "url": "https://h.example"}]
+        )
+
+    agent, _ = _agent(
+        monkeypatch,
+        [
+            _step("Checking", calls=[("weather", {}), ("web_search", {"query": "x"})]),
+            _step("Done", answer="Dry."),
+        ],
+        [
+            _tool("weather"),
+            Tool("web_search", "web", "s", {"type": "object", "properties": {}}, search),
+        ],
+    )
+    out = agent.run("Q?", [], lambda e, d: None)
+    assert [s["title"] for s in out["sources"]] == ["weather"]
+
+
+def test_repeated_citations_are_cited_once_at_the_end():
+    text = (
+        "Low at $1,010[1]. Median $1,821[1].\n- A: 1[1]\n- B: 2[1]\n- C: 3[1]\nMixed[1]. Other[2]."
+    )
+    assert core._tidy_citations(text) == (
+        "Low at $1,010. Median $1,821[1].\n- A: 1\n- B: 2\n- C: 3[1]\nMixed[1]. Other[2]."
+    )
+
+
+def test_answer_places_become_a_map_highlight(monkeypatch):
+    from nycynapse.agent import places
+
+    monkeypatch.setattr(places, "_lookup", lambda name: None)
+    agent, _ = _agent(
+        monkeypatch,
+        [
+            _step("Checking", calls=[("weather", {})]),
+            _step(
+                "Done",
+                answer="Mott Haven and Astoria.",
+                places=[{"name": "Mott Haven", "note": "$1,028"}, {"name": "Atlantis", "note": ""}],
+            ),
+        ],
+        [_tool("weather")],
+    )
+    events = []
+    out = agent.run("Q?", [], lambda e, d: events.append((e, d)))
+    assert [p["name"] for p in out["places"]] == ["Mott Haven"]
+    assert out["places"][0]["key"] == ["Mott Haven-Port Morris"]
+    assert any(e == "map" and d["layers"][0]["type"] == "highlight" for e, d in events)
+
+
+def test_place_names_resolve_to_outlines():
+    from nycynapse.agent.places import _match_area
+
+    assert _match_area("the Bronx") == {"level": "borough", "key": "Bronx"}
+    assert _match_area("ZIP 11224") == {"level": "zip", "key": "11224"}
+    assert _match_area("JFK")["key"] == ["John F. Kennedy International Airport"]
+    harlem = _match_area("Harlem")["key"]
+    assert "Harlem (North)" in harlem and "Harlem (South)" in harlem
+    assert _match_area("Atlantis") is None
+
+
+def test_point_lookups_must_match_the_name_both_ways(monkeypatch):
+    from nycynapse.agent import places
+    from nycynapse.tools import live
+
+    found = {"label": "WEEHAWKEN STREET, New York, NY, USA", "lat": 40.73, "lon": -74.0}
+    monkeypatch.setattr(live, "find_place", lambda text: ToolResult(summary="", data=[found]))
+    assert places._lookup("Weehawken") is None
+    found["label"] = "BARCLAY'S CENTER, Brooklyn, NY, USA"
+    assert places._lookup("Barclays Center")["level"] == "point"
+
+
+def test_area_stats_ranks_zip_areas(monkeypatch):
+    from nycynapse.tools import live
+
+    def acs(rent, income, pop):
+        return {
+            "B25064": {"estimate": {"B25064001": rent}},
+            "B19013": {"estimate": {"B19013001": income}},
+            "B01003": {"estimate": {"B01003001": pop}},
+            "B25003": {"estimate": {"B25003001": 100, "B25003003": 60}},
+        }
+
+    def fake(url, params=None, **kw):
+        if params["geo_ids"].startswith("860|"):
+            data = {
+                "86000US11224": acs(1010, 40000, 50000),
+                "86000US10001": acs(3361, 129852, 30000),
+                "86000US10454": acs(1028, 30000, 40000),
+                "86000US10069": acs(3501, 200000, 500),  # too few people to rank
+            }
+        else:
+            data = {live.NYC_PLACE: acs(1821, 80483, 8000000)}
+        return {"data": data, "release": {"name": "ACS 2024 5-year", "years": "2020-2024"}}
+
+    monkeypatch.setattr(live, "get_json", fake)
+    r = live.area_stats("median_rent", n=2)
+    assert r.ok
+    assert [x["zip"] for x in r.data["rows"][:2]] == ["11224", "10454"]
+    assert "10069" not in [x["zip"] for x in r.data["rows"]]
+    assert "Citywide: median gross rent $1,821" in r.summary
+    hl = next(m for m in r.map if m["type"] == "highlight")
+    assert [i["key"] for i in hl["items"]] == ["11224", "10454"]
+    assert live.area_stats("median_rent", borough="Manhattan").data["rows"][0]["zip"] == "10001"
+    assert not live.area_stats("crime").ok
