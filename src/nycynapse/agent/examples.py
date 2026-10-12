@@ -4,6 +4,7 @@ replayed; ones about right now are always answered live, since a stored answer w
 EXAMPLES = [
     {"q": "How is the rain and road situation in New York right now?", "live": True, "tag": "Live"},
     {"q": "Is the 7 train running normally right now?", "live": True, "tag": "Subway"},
+    {"q": "Which parts of the city have the cheapest rent?", "live": False, "tag": "Rent"},
     {
         "q": "What street events are happening in Manhattan this weekend?",
         "live": True,

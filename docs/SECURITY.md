@@ -14,7 +14,7 @@ Every tool is read-only. There is nothing to send, buy, post, delete or write.
 | Tool | Reach |
 |---|---|
 | `ask_lake`, `lake_freshness` | Gold tables of the lake, through the semantic layer and a SQL guard |
-| `weather`, `road_speeds`, `road_events`, `subway_alerts`, `find_place` | Fixed public APIs (Open-Meteo, NWS, NYC DOT, 511NY, MTA, NYC GeoSearch) |
+| `weather`, `road_speeds`, `road_events`, `subway_alerts`, `find_place`, `area_stats` | Fixed public APIs (Open-Meteo, NWS, NYC DOT, 511NY, MTA, NYC GeoSearch, Census Reporter) |
 | `open_data` | Six named NYC Open Data datasets, at most 50 rows |
 | `web_search` | Serper, then Tavily, then a self-hosted SearXNG |
 | `read_page` | One public web page, through the guarded fetch below |
@@ -78,8 +78,9 @@ Tests in `tests/test_guide.py` cover these cases.
 * The guide answers questions about New York City and declines anything else in one sentence.
 * It does not find, track or profile private individuals, and declines help with crime, evading
   police, weapons or harm.
-* Answers say where every fact came from, give the time of each reading, and say so when a feed is
-  old. Numbers in an answer are checked against what the tools returned; numbers that cannot be
+* Answers cite every fact with a numbered source and give the time of each reading, and say so
+  when a feed is old. Citations that point at no source are dropped, and only cited sources are
+  listed. Numbers in an answer are checked against what the tools returned; numbers that cannot be
   matched are flagged under the answer.
 
 ## System prompt and secrets [LLM02, LLM07]
@@ -94,7 +95,7 @@ Tests in `tests/test_guide.py` cover these cases.
 * Source links are shown only for `http` and `https` URLs and open with
   `rel="noopener noreferrer nofollow"`.
 * Responses carry a Content Security Policy (scripts from this site and the Turnstile widget only,
-  map tiles from OpenFreeMap), `X-Frame-Options: DENY`, `nosniff`, a strict referrer policy and a
+  map tiles from OpenFreeMap, radar tiles from the Iowa Environmental Mesonet), `X-Frame-Options: DENY`, `nosniff`, a strict referrer policy and a
   restrictive permissions policy.
 
 ## Privacy

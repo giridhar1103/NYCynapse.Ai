@@ -1,6 +1,6 @@
 # NYCynapse.Ai
 
-A guide to New York City you can ask anything. It answers from the city's own data first: the subway, the streets, the weather, Citi Bike, 311, crashes and a billion rows of history in [NYCynapse Lake](https://github.com/giridhar1103/NYCynapse_Lake). When a question is about right now, it reads live city feeds; only when neither has the answer does it search the web. Every answer says where each fact came from, how old it is, and shows the places on a map.
+A guide to New York City you can ask anything. It answers from the city's own data first: the subway, the streets, the weather, Citi Bike, 311, crashes and a billion rows of history in [NYCynapse Lake](https://github.com/giridhar1103/NYCynapse_Lake). When a question is about right now, it reads live city feeds; only when neither has the answer does it search the web. Every fact in an answer carries a citation to its source with the time of the reading, and the places the answer talks about are numbered and highlighted on a map.
 
 **Live:** [giriworks.com/nycynapse](https://giriworks.com/nycynapse/)
 
@@ -16,11 +16,11 @@ Under the guide is a QueryGPT-style text-to-SQL pipeline, following the path Ube
 The guide is a small, budgeted agent that works with any model provider. Each step, the model replies with JSON: a status line for the reader and either up to three tool calls, run in parallel, or the answer. Tool results, failures included, go back to it on the next step.
 
 1. **The lake first.** `ask_lake` sends one precise question through the governed pipeline below and gets rows back. It knows what the lake covers, table by table, so it does not ask the lake about tonight.
-2. **Live city feeds next.** Weather and alerts by borough (Open-Meteo, National Weather Service), NYC DOT road speeds, 511NY road events, MTA subway alerts, NYC Open Data and the city's address search.
+2. **Live city feeds next.** Weather by borough with a week's forecast and alerts (Open-Meteo, National Weather Service), NYC DOT road speeds, 511NY road events, MTA subway alerts, Census rent, income and population by ZIP code area, NYC Open Data and the city's address search.
 3. **The web last.** Google results through Serper (Tavily and a self-hosted SearXNG behind it), and the text of the best pages, treated as untrusted material.
-4. **One answer.** Short, with the time of every reading and where it came from. A mixed question ("rain and roads right now") is split and sent to the right tools in one step; a failed tool is reported and the agent tries another way.
+4. **One answer.** Short and direct. Every source the tools return gets a number, the model cites facts with those numbers, and the page shows them as source pills; sources the answer did not use are left out. A mixed question ("rain and roads right now") is split and sent to the right tools in one step; a failed tool is reported and the agent tries another way.
 
-Each tool result can carry map layers: boroughs, neighborhoods or ZIP codes shaded by value, points for stations and places, road segments colored by speed, subway lines with alerts lit up. Lake results are turned into layers using the lake's own reference tables.
+Each tool result can carry map layers: boroughs, neighborhoods or ZIP codes shaded by value, points for stations and places, road segments colored by speed, subway lines with alerts lit up and moving, weather by borough over the rain radar. The answer also names the places it is about; they are matched to the city's neighborhood, ZIP code and borough outlines (or looked up as addresses and landmarks), numbered on the map, and the names in the text move the map to them.
 
 | Limit | Value |
 |---|---|
@@ -173,11 +173,12 @@ Two stdio servers, both read-only, usable from Claude Desktop or any MCP client.
 
 | Tool | Does |
 |---|---|
-| `weather` | Weather now and for the next hours by borough, plus National Weather Service alerts |
+| `weather` | Weather now and for the next hours by borough, a daily forecast up to a week ahead, and National Weather Service alerts |
 | `road_speeds` | NYC DOT sensor speeds, by borough and the slowest segments, with how fresh the feed is |
 | `road_events` | 511NY incidents, construction and closures, as published (needs a 511NY key) |
 | `subway_alerts` | MTA alerts in effect now, optionally for one line |
 | `find_place` | An address, landmark or venue: coordinates, neighborhood, borough |
+| `area_stats` | ZIP code areas ranked by Census median rent, household income, population or share of renters, named by neighborhood |
 | `open_data` | SoQL on six NYC Open Data datasets (311, crashes, permitted events, film permits, restaurant inspections, farmers markets) |
 | `web_search` | Web search, Google results first |
 | `read_page` | The main text of one public page; private network addresses are refused |
