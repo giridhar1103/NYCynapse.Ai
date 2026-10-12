@@ -11,6 +11,7 @@ outside the repository, named by NYCYNAPSE_PROVIDERS. Three provider types are s
 
 from __future__ import annotations
 
+import contextvars
 import json
 import os
 import subprocess
@@ -25,6 +26,9 @@ import httpx
 # Calls in flight per provider. Each vendor has its own limits, so different vendors can run
 # side by side.
 _CONCURRENCY = int(os.environ.get("NYCYNAPSE_LLM_CONCURRENCY", "2"))
+# Calls waiting longer than this for a free slot give up, so a busy site says so instead of
+# hanging.
+_WAIT_S = float(os.environ.get("NYCYNAPSE_LLM_WAIT_S", "90"))
 _locks: dict[str, threading.BoundedSemaphore] = {}
 _locks_guard = threading.Lock()
 
@@ -46,6 +50,10 @@ class LLMError(Exception):
 class ProviderLimit(Exception):  # noqa: N818
     """The provider refused for quota reasons. Not an answer failure: callers should stop and
     resume later rather than record it against the question."""
+
+
+class ProviderBusy(ProviderLimit):
+    """Every slot for this provider stayed taken while we waited."""
 
 
 LIMIT_MARKERS = ("session limit", "usage limit", "rate limit", "quota", "too many requests")
@@ -90,9 +98,22 @@ def use_model(pid: str) -> None:
     cfg["roles"] = {"default": pid, **fixed}
 
 
+# One request can run on a different model than the configured roles (the guide agent falls
+# back to a second vendor when the first is out of allowance). Set per thread of work, so
+# concurrent requests do not affect each other.
+_override: contextvars.ContextVar[str | None] = contextvars.ContextVar("model", default=None)
+
+
+def override(pid: str | None) -> contextvars.Token:
+    if pid is not None and pid not in config()["providers"]:
+        raise LLMError(f"unknown provider {pid}")
+    return _override.set(pid)
+
+
 def provider_for(role: str) -> tuple[str, dict]:
     cfg = config()
-    pid = cfg["roles"].get(role, cfg["roles"]["default"])
+    pid = _override.get() if role not in FIXED_ROLES else None
+    pid = pid or cfg["roles"].get(role, cfg["roles"]["default"])
     return pid, cfg["providers"][pid]
 
 
@@ -372,8 +393,13 @@ def complete_with(
     last: Exception | None = None
     for attempt in range(retries + 1):
         try:
-            with _lock_for(pid):
+            lock = _lock_for(pid)
+            if not lock.acquire(timeout=_WAIT_S):
+                raise ProviderBusy(f"{pid} is busy with other questions")
+            try:
                 return _IMPL[p["type"]](pid, p, system, prompt, schema)
+            finally:
+                lock.release()
         except LLMError as e:
             if any(m in str(e).lower() for m in LIMIT_MARKERS):
                 raise ProviderLimit(str(e)[:300]) from e

@@ -48,6 +48,8 @@ def main(argv: list[str] | None = None) -> int:
     au.add_argument("--only", help="comma separated case ids")
     au.add_argument("--auditors", help="comma separated provider ids (default: all auditors)")
     sub.add_parser("warm-examples", help="answer the site's example questions again")
+    ch = sub.add_parser("chat", help="ask the guide agent a question in the terminal")
+    ch.add_argument("question", nargs="+")
     pub = sub.add_parser("publish", help="validate, then publish the catalog to Postgres")
     pub.add_argument("--no-lake", action="store_true", help="skip the value index and places")
     args = parser.parse_args(argv)
@@ -379,6 +381,30 @@ def main(argv: list[str] | None = None) -> int:
             tail = rest.split(end, 1)[1]
             readme.write_text(f"{head}{start}\n{readme_table(summary)}{end}{tail}")
         print(f"{len(summary['groups'])} result groups, {len(summary['paired'])} paired tests")
+        return 0
+
+    if args.cmd == "chat":
+        from .agent import build
+
+        agent = build(settings)
+
+        def show(event: str, data: dict) -> None:
+            if event == "lake":
+                print(f"    lake {data['label']} {data['ms']} ms", flush=True)
+            elif event == "map":
+                print(f"  map: {[x['type'] for x in data['layers']]}", flush=True)
+            else:
+                print(f"  {event}: {json.dumps(data, default=str)[:300]}", flush=True)
+
+        out = agent.run(" ".join(args.question), [], show)
+        print("\n" + (out["answer"] or out["error"] or ""))
+        print(
+            json.dumps(
+                {k: out[k] for k in ("model", "fell_back", "cost_usd", "model_calls", "latency_ms")}
+            )
+        )
+        for s in out["sources"]:
+            print(" source:", s.get("kind"), s.get("title"), s.get("url") or "")
         return 0
 
     if args.cmd == "warm-examples":
