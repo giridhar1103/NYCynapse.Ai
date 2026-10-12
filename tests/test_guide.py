@@ -369,3 +369,18 @@ def test_chat_lifecycle(app_dsn):
     assert e.value.code == "full"
     with pytest.raises(ChatError):
         chats.begin("not-a-uuid", "reader-a")
+
+
+def test_a_claimed_tool_failure_before_any_tool_ran_is_retried(monkeypatch):
+    agent, seen = _agent(
+        monkeypatch,
+        [
+            _step(answer="My request to the data lake failed with a no such tool error."),
+            _step(calls=[("weather", {})]),
+            _step(answer="Dry today."),
+        ],
+        [_tool("weather")],
+    )
+    out = agent.run("rain?", [], lambda e, d: None)
+    assert out["answer"] == "Dry today."
+    assert "cannot call tools natively" in seen[1][1]

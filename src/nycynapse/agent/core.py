@@ -62,6 +62,12 @@ STEP_SCHEMA = {
     "additionalProperties": False,
 }
 
+_CLAIMS_FAILURE = re.compile(
+    r"no such tool|tools? (?:is |are )?(?:not available|unavailable)|(?:tool|request|call) "
+    r"(?:failed|error)|could(?:n't| not) (?:run|reach|call|use)|didn't run",
+    re.I,
+)
+
 BUSY = (
     "Our models are at full capacity right now. Please wait a minute and try again; "
     "nothing you asked was lost."
@@ -80,6 +86,7 @@ class Turn:
     model_calls: int = 0
     model: str | None = None
     fell_back: bool = False
+    retried: bool = False
 
 
 class Agent:
@@ -165,6 +172,19 @@ class Agent:
                 emit("status", {"text": status})
             calls = [] if force else self._valid_calls(t, step.get("calls") or [])
             answer = (step.get("answer") or "").strip()
+            if (
+                answer
+                and not calls
+                and not t.results
+                and not step.get("declined")
+                and _CLAIMS_FAILURE.search(answer)
+                and not t.retried
+            ):
+                # The model tried a native tool call, which this setup refuses, and is
+                # reporting that as a failure. Ask again, once, with a reminder.
+                t.retried = True
+                t.steps.append({"note": "retried a step that claimed a tool failure"})
+                continue
             if answer and not calls:
                 return self._finish(
                     t, answer, step.get("follow_ups") or [], declined=bool(step.get("declined"))
@@ -315,6 +335,11 @@ class Agent:
                 )
             )
         left = MAX_CALLS - len(t.results)
+        if t.retried and not t.results:
+            parts.append(
+                "Reminder: you cannot call tools natively. Put the sources you need "
+                "in the `calls` array of your JSON reply and the system will run them."
+            )
         if force:
             parts.append("Answer now with what you have. Do not call any more tools.")
         else:

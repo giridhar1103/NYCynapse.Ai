@@ -277,7 +277,7 @@ async def _turn(question: str, chat_id: str | None, token: str, client: str, ip:
 
 def _answer_payload(slot: Slot, out: dict, cached: bool = False) -> dict:
     declined = bool(out.get("declined"))
-    turns_left = 0 if declined and slot.turn == 1 else MAX_TURNS - slot.turn
+    turns_left = MAX_TURNS - slot.turn
     return {
         "chat": slot.chat_id,
         "turn": slot.turn,
