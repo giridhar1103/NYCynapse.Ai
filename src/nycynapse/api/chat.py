@@ -26,6 +26,7 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import StreamingResponse
 
 from ..agent.chats import IDLE_MINUTES, MAX_TURNS, ChatError, Chats, Slot
+from ..agent.examples import EXAMPLES
 from ..catalog import store
 from .capacity import Full, Gate
 
@@ -123,6 +124,7 @@ def config():
     return {
         "turnstile_site_key": os.environ.get("TURNSTILE_SITE_KEY", "").strip() or None,
         "max_turns": MAX_TURNS,
+        "examples": [{"q": e["q"], "tag": e["tag"]} for e in EXAMPLES],
         "idle_minutes": IDLE_MINUTES,
         "capacity": gate.stats(),
     }

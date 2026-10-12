@@ -1,0 +1,9 @@
+[Unit]
+Description=NYCynapse: delete conversations and traces older than 30 days
+After=postgresql.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/NYCynapse
+EnvironmentFile=/root/.secrets/nycynapse-web.env
+ExecStart=/root/NYCynapse/.venv/bin/nycynapse purge --days 30

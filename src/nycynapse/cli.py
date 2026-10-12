@@ -48,6 +48,8 @@ def main(argv: list[str] | None = None) -> int:
     au.add_argument("--only", help="comma separated case ids")
     au.add_argument("--auditors", help="comma separated provider ids (default: all auditors)")
     sub.add_parser("warm-examples", help="answer the site's example questions again")
+    pg = sub.add_parser("purge", help="delete conversations and traces past the retention period")
+    pg.add_argument("--days", type=int, default=30)
     ch = sub.add_parser("chat", help="ask the guide agent a question in the terminal")
     ch.add_argument("question", nargs="+")
     pub = sub.add_parser("publish", help="validate, then publish the catalog to Postgres")
@@ -407,22 +409,37 @@ def main(argv: list[str] | None = None) -> int:
             print(" source:", s.get("kind"), s.get("title"), s.get("url") or "")
         return 0
 
-    if args.cmd == "warm-examples":
-        from . import lake
-        from .api.service import WARM_CLIENT, Answerer
+    if args.cmd == "purge":
+        from .agent.chats import Chats
         from .catalog import store
-        from .pipeline.context import Context
 
-        ctx = Context(settings, lake.connect(settings), store.connect(settings.app_pg_dsn))
-        a = Answerer(ctx)
+        conn = store.connect(settings.app_pg_dsn)
+        print(Chats(lambda: conn).purge(args.days))
+        return 0
+
+    if args.cmd == "warm-examples":
+        # The homepage examples go through the guide agent every morning; the answers are
+        # replayed to readers for the rest of the day.
+        from .agent import build
+        from .agent.chats import Chats, Slot
+        from .catalog import store
+
+        agent = build(settings)
+        conn = store.connect(settings.app_pg_dsn)
+        chats = Chats(lambda: conn)
+        from .agent.examples import EXAMPLES
+
         failed = 0
-        for w in ctx.catalog.workspaces:
-            for q in w.sample_questions:
-                t0 = time.time()
-                events = dict(a.stream(q, WARM_CLIENT))
-                ok = "answer" in events and "error" not in events
-                failed += not ok
-                print(f"{'ok ' if ok else 'ERR'} {time.time() - t0:5.0f}s  {q}", flush=True)
+        for ex in EXAMPLES:
+            if ex["live"]:
+                continue  # answers about right now are never replayed
+            q, t0 = ex["q"], time.time()
+            slot: Slot = chats.begin(None, "examples")
+            out = agent.run(q, [], lambda e, d: None)
+            ok = bool(out.get("answer")) and not out.get("error")
+            chats.record(slot, q, out, "answered" if ok else "failed")
+            failed += not ok
+            print(f"{'ok ' if ok else 'ERR'} {time.time() - t0:5.0f}s  {q}", flush=True)
         return 1 if failed else 0
 
     if args.cmd == "publish":
