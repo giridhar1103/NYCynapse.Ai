@@ -2,7 +2,7 @@
 // draws each tool call as it runs (with errors and recoveries), renders the answer and its
 // sources as plain text, and keeps the conversation to a question and three follow-ups.
 
-import { GuideMap } from "./map.js";
+import { GuideMap } from "./map.js?v=3";
 
 const { el, url } = NY;
 const TOOL = {
@@ -217,7 +217,10 @@ class TurnView {
       s.row.classList.remove("running");
       s.row.classList.add(d.state);
       s.st.append(d.ms != null ? ms(d.ms) : "", d.via === "mcp" ? " · MCP" : "");
-      if (d.state === "error" && d.error) s.row.append(el("span", { class: "err" }, d.error + " The guide will try another way."));
+      if (d.state === "error" && d.error) {
+        const msg = d.error.replace(/[.\s]*$/, ".");
+        s.row.append(el("span", { class: "err" }, `${msg[0].toUpperCase()}${msg.slice(1)} The guide will try another way.`));
+      }
       if (s.stages) s.stages.querySelectorAll("span").forEach((x) => x.classList.add("on"));
     }
   }

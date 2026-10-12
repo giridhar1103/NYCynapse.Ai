@@ -212,6 +212,21 @@ def weather_alerts() -> ToolResult:
 DOT_SPEEDS = "https://data.cityofnewyork.us/resource/i4gi-tjb9.json"
 
 
+_WHOLE_CITY = {"", "all", "any", "nyc", "new york", "new york city", "citywide", "city"}
+
+
+def _borough(name: str | None) -> str | None:
+    """A borough name, or None for the whole city; raises ValueError for anything else."""
+    b = (name or "").strip().lower()
+    if b in _WHOLE_CITY:
+        return None
+    b = {"the bronx": "bronx", "si": "staten island", "bk": "brooklyn"}.get(b, b)
+    for k in BOROUGHS:
+        if k.lower() == b:
+            return k
+    raise ValueError(f"unknown borough {name}; use one of {', '.join(BOROUGHS)} or leave it empty")
+
+
 def _socrata_headers() -> dict:
     token = env("SOCRATA_APP_TOKEN")
     return {"X-App-Token": token} if token else {}
@@ -225,10 +240,11 @@ def road_speeds(borough: str | None = None) -> ToolResult:
     latest = datetime.fromisoformat(head[0]["t"]).replace(tzinfo=NY)
     since = datetime.fromtimestamp(latest.timestamp() - 20 * 60, NY).strftime("%Y-%m-%dT%H:%M:%S")
     where = f"data_as_of >= '{since}'"  # speed is text in this dataset; filtered below
-    if borough:
-        b = borough.strip().title()
-        if b not in BOROUGHS:
-            return failed(f"unknown borough {borough}")
+    try:
+        b = _borough(borough)
+    except ValueError as e:
+        return failed(str(e))
+    if b:
         where += f" AND borough = '{b}'"
     rows = get_json(
         DOT_SPEEDS,
@@ -332,7 +348,11 @@ def road_events(borough: str | None = None) -> ToolResult:
         county = str(e.get("CountyName") or "").lower()
         if not any(c in county for c in NYC_COUNTIES):
             continue
-        if borough and borough.lower() not in (str(e.get("RegionName", "")) + county).lower():
+        try:
+            wanted = _borough(borough)
+        except ValueError as err:
+            return failed(str(err))
+        if wanted and wanted.lower() not in (str(e.get("RegionName", "")) + county).lower():
             continue
         items.append(
             {

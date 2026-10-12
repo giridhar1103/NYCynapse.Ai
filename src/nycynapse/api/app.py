@@ -302,6 +302,13 @@ async def security_headers(request: Request, call_next):
     h.setdefault("X-Frame-Options", "DENY")
     h.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()")
     h.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+    path = request.url.path
+    if "/static/" in path:
+        # Map outlines and libraries change rarely; scripts and styles are versioned in their URLs.
+        long = "/static/vendor/" in path or "/static/geo/" in path or request.url.query
+        h.setdefault("Cache-Control", f"public, max-age={86400 if long else 300}")
+    elif not path.startswith("/api/"):
+        h.setdefault("Cache-Control", "no-cache")
     return response
 
 

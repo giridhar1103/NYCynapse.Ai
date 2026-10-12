@@ -1,17 +1,42 @@
 # NYCynapse.Ai
 
-Ask questions about New York City in plain English and get answers from city data, with the SQL and every step behind them. The data comes from [NYCynapse Lake](https://github.com/giridhar1103/NYCynapse_Lake): taxi and app rides, the subway, Citi Bike, 311, crashes, road speeds and weather, from January 2024 to the last few minutes.
+A guide to New York City you can ask anything. It answers from the city's own data first: the subway, the streets, the weather, Citi Bike, 311, crashes and a billion rows of history in [NYCynapse Lake](https://github.com/giridhar1103/NYCynapse_Lake). When a question is about right now, it reads live city feeds; only when neither has the answer does it search the web. Every answer says where each fact came from, how old it is, and shows the places on a map.
 
 **Live:** [giriworks.com/nycynapse](https://giriworks.com/nycynapse/)
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/img/ask-dark.png">
-  <img alt="The ask page: a question about daily Citi Bike rides, the pipeline drawn as a line of stations, and the answer with a chart" src="docs/img/ask-light.png">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/img/guide-dark.png">
+  <img alt="The guide answering a question about rain and roads in New York, with each source it used and a map shading the boroughs by chance of rain and the roads by speed" src="docs/img/guide-light.png">
 </picture>
 
-The design follows the path Uber described for [QueryGPT](https://www.uber.com/blog/query-gpt/) and the semantic layers that came after it. A question is never answered by handing a model the whole schema. It is narrowed step by step: which domain, which tables, which values, which joins, and only then SQL, checked before and after it runs.
+Under the guide is a QueryGPT-style text-to-SQL pipeline, following the path Uber described for [QueryGPT](https://www.uber.com/blog/query-gpt/) and the semantic layers that came after it: a question is never answered by handing a model the whole schema, but narrowed step by step to a domain, tables, values and joins, and only then SQL, checked before and after it runs. That pipeline is the guide's first and cheapest tool, and it is what the evaluation below measures.
 
-## How a question is answered
+## How the guide answers
+
+The guide is a small, budgeted agent that works with any model provider. Each step, the model replies with JSON: a status line for the reader and either up to three tool calls, run in parallel, or the answer. Tool results, failures included, go back to it on the next step.
+
+1. **The lake first.** `ask_lake` sends one precise question through the governed pipeline below and gets rows back. It knows what the lake covers, table by table, so it does not ask the lake about tonight.
+2. **Live city feeds next.** Weather and alerts by borough (Open-Meteo, National Weather Service), NYC DOT road speeds, 511NY road events, MTA subway alerts, NYC Open Data and the city's address search.
+3. **The web last.** Google results through Serper (Tavily and a self-hosted SearXNG behind it), and the text of the best pages, treated as untrusted material.
+4. **One answer.** Short, with the time of every reading and where it came from. A mixed question ("rain and roads right now") is split and sent to the right tools in one step; a failed tool is reported and the agent tries another way.
+
+Each tool result can carry map layers: boroughs, neighborhoods or ZIP codes shaded by value, points for stations and places, road segments colored by speed, subway lines with alerts lit up. Lake results are turned into layers using the lake's own reference tables.
+
+| Limit | Value |
+|---|---|
+| Steps and calls per answer | 4 rounds, 7 calls; 2 web searches, 2 page reads, 3 lake questions |
+| Time per answer | 150 seconds, then it answers with what it has |
+| Conversation | A question and 3 follow-ups, with memory of earlier turns; ends after 30 minutes idle |
+| Answers at once | 3, with a line of 10 that shows each reader their place, then a full-capacity message |
+| Models | Claude Sonnet 5.5, with Gemini 3.7 Flash taking over when it is out of allowance |
+
+The live and web tools run as an MCP server; the guide is an MCP host that connects to it, and falls back to calling the same functions directly if the server process dies. See [MCP servers](#mcp-servers).
+
+Guardrails, from scope and prompt injection to page reads that cannot reach private networks, are in [docs/SECURITY.md](docs/SECURITY.md).
+
+## The text-to-SQL pipeline
+
+Used by the guide as `ask_lake`, by the MCP `ask` tool, and by the evaluation.
 
 The pipeline is a [LangGraph](https://github.com/langchain-ai/langgraph) state graph. Each stage is a node, and every stage's output is streamed to the page and kept in a trace.
 
@@ -115,21 +140,27 @@ Generated SQL runs on a DuckDB connection with DuckLake attached read-only, netw
 
 ## The site and API
 
-A FastAPI service streams each answer as server-sent events, one per stage, and stores a trace of every question in Postgres. The pages are plain HTML, CSS and JavaScript with no build step, styled after transit signage: a black sign band, route bullets for each domain and the pipeline drawn as a line of stations. Each reader gets a few questions an hour, the site has a daily spending cap, questions run one at a time, and a question asked recently is replayed from its trace without calling a model. The example questions are answered again every morning after the daily data build, so they open instantly.
+A FastAPI service, with plain HTML, CSS and JavaScript pages and no build step, styled after transit signage. The landing page draws the city from the lake's own boundaries and the MTA's subway shapes, with Citi Bike docks and arriving trains from the last few minutes. The guide opens over it.
+
+`GET /api/chat?q=&chat=` streams one turn as server-sent events: `chat`, `queue` (place in line), `status`, `tool` (each call starting and finishing, with errors), `lake` (the pipeline's stages inside a lake call), `map`, then `answer` or `error`. A comment line goes out every few seconds so proxies keep the stream open. The work runs in its own thread and gives its seat back when done, even if the reader has left.
+
+Conversations are stored privately for 30 days and then deleted. Nothing one reader asks is shown to another. Example questions about past data are answered every morning after the daily data build and replayed; questions about right now are always answered live.
 
 | Page | Shows |
 |---|---|
-| `/` | Ask, with the stages lighting up as they finish, then the answer, chart, table and SQL |
-| `/trace?id=` | The route one answer took, with the plan, SQL, timings and cost |
-| `/evals` | The results above, by split and by question type |
+| `/` | The landing page and the guide |
+| `/evals` | The results above, by model and by question type |
 | `/data` | How fresh every lake table is and recent gaps in live feeds |
 | `/catalog` | The domains, models and governed metrics |
+| `/trace?id=` | The route one pipeline answer took, with the plan, SQL, timings and cost |
 
-The model provider is pluggable and set in a providers file, by role: one for routing, one for planning, one for writing answers.
+The model provider is pluggable and set in a providers file, by role.
 
-## MCP server
+## MCP servers
 
-The same pipeline is available to any MCP client over stdio, with four read-only tools:
+Two stdio servers, both read-only, usable from Claude Desktop or any MCP client.
+
+`nycynapse-mcp`, the lake:
 
 | Tool | Does |
 |---|---|
@@ -138,16 +169,34 @@ The same pipeline is available to any MCP client over stdio, with four read-only
 | `metric` | Shows how a governed metric is defined and where it comes from |
 | `run_sql` | Runs one `SELECT` on gold tables through the same guard and read-only connection |
 
+`nycynapse-tools`, the city right now and the web:
+
+| Tool | Does |
+|---|---|
+| `weather` | Weather now and for the next hours by borough, plus National Weather Service alerts |
+| `road_speeds` | NYC DOT sensor speeds, by borough and the slowest segments, with how fresh the feed is |
+| `road_events` | 511NY incidents, construction and closures, as published (needs a 511NY key) |
+| `subway_alerts` | MTA alerts in effect now, optionally for one line |
+| `find_place` | An address, landmark or venue: coordinates, neighborhood, borough |
+| `open_data` | SoQL on six NYC Open Data datasets (311, crashes, permitted events, film permits, restaurant inspections, farmers markets) |
+| `web_search` | Web search, Google results first |
+| `read_page` | The main text of one public page; private network addresses are refused |
+
 ```json
 {
   "mcpServers": {
     "nycynapse": {
       "command": "/path/to/NYCynapse/.venv/bin/nycynapse-mcp",
       "env": { "NYC_LAKE_PG_DSN": "...", "NYC_APP_PG_DSN": "..." }
+    },
+    "nyc-live": {
+      "command": "/path/to/NYCynapse/.venv/bin/nycynapse-tools"
     }
   }
 }
 ```
+
+Keys for the live tools (Serper, Tavily, an NYC Open Data app token, 511NY) are read from a separate env file; any tool whose key is missing is simply left out.
 
 ## Running it
 
@@ -167,8 +216,11 @@ set -a; . /path/to/env; set +a        # NYC_LAKE_PG_DSN, NYC_APP_PG_DSN
 .venv/bin/nycynapse audit-gold --split dev             # have three models review the answer key
 .venv/bin/nycynapse eval-report                        # intervals, paired tests, the table above
 
+.venv/bin/nycynapse export-geo                         # map outlines for the site, from the lake
+.venv/bin/nycynapse chat "is the 7 running normally?"  # ask the guide in the terminal
 .venv/bin/uvicorn nycynapse.api.app:app --port 8031    # the site and API
 .venv/bin/nycynapse warm-examples                      # answer the example questions again
+.venv/bin/nycynapse purge --days 30                    # delete old conversations
 ```
 
 `deploy/` has the systemd units and the nginx configuration used in production.

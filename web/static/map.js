@@ -177,6 +177,9 @@ export class GuideMap {
       NY.el("b", {}, title || "Value"),
       NY.el("div", { class: "bar", style: `background:linear-gradient(90deg,${ramp.join(",")})` }),
       NY.el("div", { class: "ends" }, NY.el("span", {}, `${fmt(lo)} ${unit || ""}`), NY.el("span", {}, `${fmt(hi)} ${unit || ""}`)));
+    for (const old of this.legendEl.querySelectorAll(".lg")) {
+      if (old.firstChild.textContent === (title || "Value")) old.remove();
+    }
     this.legendEl.append(block);
     while (this.legendEl.children.length > 2) this.legendEl.firstChild.remove();
   }
