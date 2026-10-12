@@ -199,6 +199,7 @@ pre.code { background: #0f0f0e; color: #e8e7df; border-radius: 14px; padding: 18
 .src span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .src .stale { color: var(--warn); }
 .meta { font-size: 12px; color: var(--muted); margin-top: 8px; }
+.meta.warnline { color: var(--warn); }
 .follow { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
 .follow button { text-align: left; background: transparent; border: 1px dashed var(--rule-strong); border-radius: 12px; padding: 7px 11px; cursor: pointer; font-size: 14px; color: var(--ink); }
 .follow button:hover { border-style: solid; background: var(--surface); }

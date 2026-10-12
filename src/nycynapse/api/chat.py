@@ -36,6 +36,7 @@ router = APIRouter()
 ACTIVE = int(os.environ.get("NYCYNAPSE_CHAT_ACTIVE", "3"))
 WAITING = int(os.environ.get("NYCYNAPSE_CHAT_WAITING", "10"))
 PER_HOUR = int(os.environ.get("NYCYNAPSE_CHAT_PER_HOUR", "16"))
+PER_DAY = int(os.environ.get("NYCYNAPSE_CHAT_PER_DAY", "48"))
 DAILY_USD = float(os.environ.get("NYCYNAPSE_CHAT_DAILY_USD", "10"))
 WAIT_S = 150
 KEEPALIVE_S = 8
@@ -161,10 +162,11 @@ async def _turn(question: str, chat_id: str | None, token: str, client: str, ip:
     store_ = chats()
     try:
         recent = await asyncio.to_thread(store_.asked_recently, client)
+        today = await asyncio.to_thread(store_.asked_recently, client, 24 * 60)
         spent = await asyncio.to_thread(store_.spent_today)
     except psycopg.Error:
-        recent, spent = 0, 0.0
-    if recent >= PER_HOUR:
+        recent, today, spent = 0, 0, 0.0
+    if recent >= PER_HOUR or today >= PER_DAY:
         yield err("rate")
         return
     if spent >= DAILY_USD:
@@ -289,6 +291,7 @@ def _answer_payload(slot: Slot, out: dict, cached: bool = False) -> dict:
         "cost_usd": out.get("cost_usd"),
         "latency_ms": out.get("latency_ms"),
         "cached": cached,
+        "untraced": out.get("untraced") or [],
     }
 
 

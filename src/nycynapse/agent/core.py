@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import contextvars
 import json
+import re
 import threading
 import time
 import uuid
@@ -369,9 +370,16 @@ class Agent:
                     seen.add(key)
                     sources.append(s)
         kinds = {x.name: x.kind for x in self.tools()}
-        facts = "; ".join(_short(r["result"].summary, 300) for r in t.results if r["result"].ok)[
-            :1800
-        ]
+        # What the next turn remembers: facts from city data only. Web text is untrusted and
+        # could carry instructions into later turns, so only page titles are kept from it.
+        facts = "; ".join(
+            _short(r["result"].summary, 300)
+            if kinds.get(r["tool"]) != "web"
+            else "web: " + ", ".join(s.get("title", "") for s in r["result"].sources[:3])
+            for r in t.results
+            if r["result"].ok
+        )[:1800]
+        untraced = _untraced_numbers(answer or "", [r["result"] for r in t.results])
         return {
             "answer": answer,
             "follow_ups": [f.strip() for f in follow_ups if f.strip()][:3],
@@ -397,7 +405,53 @@ class Agent:
             "model_calls": t.model_calls,
             "latency_ms": int((time.monotonic() - t.started) * 1000),
             "memory": {"q": t.question, "answer": (answer or "")[:900], "facts": facts},
+            "untraced": untraced,
         }
+
+
+_NUM = re.compile(r"(?<![\w.])(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?")
+_SMALL = {str(i) for i in range(0, 13)}
+
+
+_CLOCK = re.compile(r"\d{1,2}:\d{2}|\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?)?")
+
+
+def _numbers(text: str) -> set[str]:
+    out = set()
+    for m in _NUM.finditer(_CLOCK.sub(" ", text or "")):
+        whole = m.group(1).replace(",", "")
+        out.add(whole + (f".{m.group(2)}" if m.group(2) else ""))
+    return out
+
+
+def _untraced_numbers(answer: str, results: list[ToolResult]) -> list[str]:
+    """Numbers in the answer that no tool result contains, rounding allowed. Small counts,
+    years and times are skipped: they are usually words, dates or clock times."""
+    seen = set()
+    values: list[float] = []
+    for r in results:
+        if not r.ok:
+            continue
+        text = r.summary + " " + json.dumps(r.data, default=str)[:20000]
+        for n in _numbers(text):
+            seen.add(n)
+            try:
+                values.append(float(n))
+            except ValueError:
+                pass
+    out = []
+    for n in _numbers(answer):
+        if n in _SMALL or n in seen or (len(n) == 4 and n.startswith("20")):
+            continue
+        try:
+            x = float(n)
+        except ValueError:
+            continue
+        slack = 0.5 if "." not in n else 0.051
+        if any(abs(x - v) <= slack + abs(v) * 0.006 for v in values):
+            continue  # a rounded form of a number the tools returned
+        out.append(n)
+    return out[:8]
 
 
 def _short(text: str, n: int = 160) -> str:

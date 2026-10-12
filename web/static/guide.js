@@ -251,6 +251,9 @@ class TurnView {
       const notes = srcs.filter((s) => s.note).map((s) => s.note);
       if (notes.length) card.append(el("div", { class: "meta" }, [...new Set(notes)].join(" ")));
     }
+    if ((d.untraced || []).length) {
+      card.append(el("div", { class: "meta warnline" }, `Check: ${d.untraced.join(", ")} could not be matched to the data the guide found.`));
+    }
     const secs = ((d.latency_ms || performance.now() - this.started) / 1000).toFixed(1);
     card.append(el("div", { class: "meta" }, d.cached ? "Stored answer from this morning"
       : `${secs} s${d.cost_usd ? ` · about $${Number(d.cost_usd).toFixed(3)} in model calls` : ""}${d.fell_back ? " · answered by the backup model" : ""}`));

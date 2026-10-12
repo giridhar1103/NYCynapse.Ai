@@ -168,12 +168,15 @@ def map_from_rows(lake: Lake, columns: list[str], rows: list[list], label: str) 
     out: list[dict] = []
     places = lake.places()
     for i in range(len(columns)):
-        if i == vi or _number(rows[0][i]) is not None:
+        if i == vi:
             continue
         vals = [str(r[i]) for r in rows if r[i] is not None]
         if not vals:
             continue
-        if "zip" in columns[i].lower() and all(re.fullmatch(r"\d{5}", v) for v in vals[:20]):
+        is_zip = "zip" in columns[i].lower() and all(re.fullmatch(r"\d{5}", v) for v in vals[:20])
+        if not is_zip and _number(rows[0][i]) is not None:
+            continue
+        if is_zip:
             if vi is not None:
                 out.append(
                     {
