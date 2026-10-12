@@ -22,7 +22,8 @@ from .. import lake
 from ..catalog import store
 from ..config import REPO, Settings
 from ..pipeline.context import Context
-from .service import PAUSED, WARM_CLIENT, Answerer, client_hash
+from . import chat
+from .service import PAUSED, Answerer, client_hash
 
 PER_HOUR = int(os.environ.get("NYCYNAPSE_PER_HOUR", "8"))
 DAILY_BUDGET = float(os.environ.get("NYCYNAPSE_DAILY_BUDGET_USD", "4"))
@@ -177,22 +178,6 @@ def trace(trace_id: str):
     return t
 
 
-@app.get("/api/recent")
-def recent(limit: int = 12):
-    rows = (
-        answerer()
-        .ctx.conn.execute(
-            "SELECT id, question, classification, asked_at, latency_ms FROM app.traces "
-            "WHERE error IS NULL AND answer IS NOT NULL AND client_hash <> %s "
-            "AND (classification <> 'answerable' OR jsonb_array_length(result->'columns') > 0) "
-            "ORDER BY asked_at DESC LIMIT %s",
-            (WARM_CLIENT, min(limit, 50)),
-        )
-        .fetchall()
-    )
-    return [{**r, "id": str(r["id"]), "asked_at": str(r["asked_at"])} for r in rows]
-
-
 @app.get("/api/freshness")
 def freshness():
     # A cursor of its own: a question may be using the main connection right now.
@@ -288,7 +273,34 @@ def evals():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "catalog": answerer().ctx.version}
+    return {"ok": True, "catalog": answerer().ctx.version, "chat": chat.gate.stats()}
+
+
+chat.setup(settings, lambda: answerer().ctx)
+app.include_router(chat.router)
+
+# Only this site's own scripts, styles and data, plus the bot check and the map tiles.
+CSP = (
+    "default-src 'self'; script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com; "
+    "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://tiles.openfreemap.org; "
+    "font-src 'self' data: https://tiles.openfreemap.org; "
+    "connect-src 'self' https://tiles.openfreemap.org; worker-src 'self' blob:; "
+    "frame-src https://challenges.cloudflare.com; frame-ancestors 'none'; base-uri 'self'; "
+    "form-action 'self'; object-src 'none'"
+)
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    h = response.headers
+    h.setdefault("Content-Security-Policy", CSP)
+    h.setdefault("X-Content-Type-Options", "nosniff")
+    h.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    h.setdefault("X-Frame-Options", "DENY")
+    h.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()")
+    h.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+    return response
 
 
 if WEB.exists():

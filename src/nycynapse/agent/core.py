@@ -366,6 +366,7 @@ class Agent:
                 if key and key not in seen:
                     seen.add(key)
                     sources.append(s)
+        kinds = {x.name: x.kind for x in self.tools()}
         facts = "; ".join(_short(r["result"].summary, 300) for r in t.results if r["result"].ok)[
             :1800
         ]
@@ -380,6 +381,7 @@ class Agent:
             + [
                 {
                     "tool": r["tool"],
+                    "kind": kinds.get(r["tool"]),
                     "args": _public_args(r["args"]),
                     "ok": r["result"].ok,
                     "error": r["result"].error,
