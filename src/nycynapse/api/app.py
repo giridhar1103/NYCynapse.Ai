@@ -184,6 +184,7 @@ def recent(limit: int = 12):
         .ctx.conn.execute(
             "SELECT id, question, classification, asked_at, latency_ms FROM app.traces "
             "WHERE error IS NULL AND answer IS NOT NULL AND client_hash <> %s "
+            "AND (classification <> 'answerable' OR jsonb_array_length(result->'columns') > 0) "
             "ORDER BY asked_at DESC LIMIT %s",
             (WARM_CLIENT, min(limit, 50)),
         )

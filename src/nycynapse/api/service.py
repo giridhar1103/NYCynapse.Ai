@@ -72,6 +72,7 @@ class Answerer:
         row = self.ctx.conn.execute(
             "SELECT id FROM app.traces WHERE lower(question) = lower(%s) AND error IS NULL "
             "AND answer IS NOT NULL AND asked_at > now() - make_interval(hours => %s) "
+            "AND (classification <> 'answerable' OR jsonb_array_length(result->'columns') > 0) "
             "ORDER BY asked_at DESC LIMIT 1",
             (question.strip(), hours),
         ).fetchone()
@@ -180,6 +181,17 @@ class Answerer:
                     "Some numbers in this answer could not be traced to the "
                     "result; check the table.",
                 ]
+        elif error is None and classification == "answerable":
+            # No query ran cleanly, even after repairs. Said plainly, and kept out of the cache.
+            failed = (ex.error if ex is not None else None) or state.get("problem") or "no query"
+            answer_text = (
+                "That needs more data than one query can read in time. Try a shorter period, "
+                "such as a single month."
+                if "timed out" in failed
+                else "I could not get a working query for that, even after repairs. Try "
+                "rephrasing it."
+            )
+            error = f"no result: {failed}"[:400]
         elif error is None:
             answer_text = (
                 state.get("abstain")
