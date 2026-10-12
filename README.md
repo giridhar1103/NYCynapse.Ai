@@ -33,14 +33,30 @@ The pipeline is a [LangGraph](https://github.com/langchain-ai/langgraph) state g
 ## Results
 
 <!-- results:start -->
-Results are being produced.
+**Dev**, 167 questions. Right answers, with 95% intervals.
+
+| Model | E0 | E4 |
+|---|---:|---:|
+| Claude Opus 5.5 | 67.1% (59 to 75) | 76% (68 to 83) |
+| Claude Sonnet 5.5 | 64.1% (56 to 72) | 74.3% (66 to 82) |
+| Gemini 3.7 Flash | 59.3% (51 to 67) | 74.3% (66 to 82) |
+| Claude Haiku 4.5 | 40.7% (33 to 49) | 70.1% (62 to 78) |
+| GPT-5.6-Sol | 62.9% (55 to 71) | 70.1% (62 to 78) |
+| GPT-6-Astra | 65.3% (57 to 73) | 70.1% (62 to 78) |
+| GPT-6.1-Sol | 65.9% (58 to 74) | 70.1% (62 to 78) |
+| Gemini 3.8 Flash | 56.3% (48 to 65) | 69.5% (61 to 77) |
+| Gemini 3.1 Pro | 53.9% (45 to 62) | 62.9% (54 to 71) |
+| GPT-6-Luna | 52.1% (43 to 61) | 61.1% (53 to 69) |
 <!-- results:end -->
+
+Ten models from three vendors, each run bare with the whole schema (E0) and inside the full pipeline (E4), one run each on the development questions. Every model does better with the pipeline, and the gain is largest for the smaller models: Claude Haiku 4.5 goes from 41% to 70%. The intervals are wide at this size, so the top three are not separable yet. Holdout results, repeated runs and the middle builds are being produced. Charts, latency, cost and results by question type are on the [evals page](https://giriworks.com/nycynapse/evals).
 
 ## Evaluation
 
-The evaluation set was written before the pipeline and has 175 questions with reference SQL, across one table and joins, dates and periods, names and places, live feeds, and questions that should be declined: future dates, data the city does not publish, unsafe requests and questions that need clarifying.
+The first 95 questions were written by hand before the pipeline, with reference SQL, across one table and joins, dates and periods, names and places, live feeds, and questions that should be declined: future dates, data the city does not publish, unsafe requests and questions that need clarifying. More were drafted by two models from other vendors and reviewed by hand. The rules every reference follows are in [`evals/CONVENTIONS.md`](evals/CONVENTIONS.md).
 
-* **Splits.** 95 development questions used while building, 25 regression questions from earlier mistakes, and 55 holdout questions kept outside the repository and never used while building. Paraphrases of the same question always land in the same split.
+* **Splits.** 167 development questions used while building, 25 regression questions from earlier mistakes, and a holdout set kept outside the repository and never used while building. Paraphrases of the same question always land in the same split.
+* **Audited answer key.** The strongest model of each vendor reviewed every reference answer, with the table documentation, the result and the conventions in front of it. Disagreements are settled by hand and logged in [`evals/audit/DECISIONS.md`](evals/audit/DECISIONS.md).
 * **Frozen data.** Every run reads the lake at one pinned DuckLake snapshot, so live tables do not move the answers between runs.
 * **Correct means the rows match.** The result is compared with the reference query's result as a multiset, with a tolerance for numbers and extra columns allowed. SQL that looks similar but returns different rows is wrong; different SQL that returns the same rows is right.
 * **Five builds**, each adding one piece, run on the same questions:
@@ -53,7 +69,7 @@ The evaluation set was written before the pipeline and has 175 questions with re
 | E3 | Typed plans compiled to SQL from governed metrics and declared joins |
 | E4 | Reviewed question and plan pairs, found by similarity, as examples |
 
-Each run records the catalog version, prompt versions, model, latency, tokens and cost per question. `nycynapse eval-publish` copies only the summary of a run to `evals/results/`, so holdout questions never reach the repository or the site.
+Each run records the catalog version, prompt versions, model, latency, tokens and cost per question. `nycynapse eval-report` turns the raw runs into `evals/results/summary.json`, with 95% cluster bootstrap intervals and paired McNemar tests between builds and between models. Per-question results are published for the development and regression splits only, so holdout questions never reach the repository or the site.
 
 ## Semantic layer
 
@@ -99,7 +115,7 @@ Generated SQL runs on a DuckDB connection with DuckLake attached read-only, netw
 
 ## The site and API
 
-A FastAPI service streams each answer as server-sent events, one per stage, and stores a trace of every question in Postgres. The pages are plain HTML, CSS and JavaScript with no build step, styled after transit signage: a black sign band, route bullets for each domain and the pipeline drawn as a line of stations. Each reader gets a few questions an hour, the site has a daily spending cap, questions run one at a time, and a question asked recently is replayed from its trace without calling a model.
+A FastAPI service streams each answer as server-sent events, one per stage, and stores a trace of every question in Postgres. The pages are plain HTML, CSS and JavaScript with no build step, styled after transit signage: a black sign band, route bullets for each domain and the pipeline drawn as a line of stations. Each reader gets a few questions an hour, the site has a daily spending cap, questions run one at a time, and a question asked recently is replayed from its trace without calling a model. The example questions are answered again every morning after the daily data build, so they open instantly.
 
 | Page | Shows |
 |---|---|
@@ -146,10 +162,13 @@ set -a; . /path/to/env; set +a        # NYC_LAKE_PG_DSN, NYC_APP_PG_DSN
 .venv/bin/pytest -q
 
 .venv/bin/nycynapse eval-pin                           # freeze a lake snapshot for evaluation
-.venv/bin/nycynapse eval --system e4 --split dev       # run a build over a split
-.venv/bin/nycynapse eval-publish evals/runs/<run>.json # publish its summary
+.venv/bin/nycynapse eval --system e4 --split dev \
+    --model claude-sonnet-5.5                          # run a build over a split
+.venv/bin/nycynapse audit-gold --split dev             # have three models review the answer key
+.venv/bin/nycynapse eval-report                        # intervals, paired tests, the table above
 
 .venv/bin/uvicorn nycynapse.api.app:app --port 8031    # the site and API
+.venv/bin/nycynapse warm-examples                      # answer the example questions again
 ```
 
-`deploy/` has the systemd unit and the nginx configuration used in production.
+`deploy/` has the systemd units and the nginx configuration used in production.
