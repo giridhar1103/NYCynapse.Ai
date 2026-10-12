@@ -47,6 +47,7 @@ def main(argv: list[str] | None = None) -> int:
     au.add_argument("--split", default="dev,regression", help="comma separated splits")
     au.add_argument("--only", help="comma separated case ids")
     au.add_argument("--auditors", help="comma separated provider ids (default: all auditors)")
+    sub.add_parser("export-geo", help="write map outlines to web/static/geo from the lake")
     sub.add_parser("warm-examples", help="answer the site's example questions again")
     pg = sub.add_parser("purge", help="delete conversations and traces past the retention period")
     pg.add_argument("--days", type=int, default=30)
@@ -407,6 +408,13 @@ def main(argv: list[str] | None = None) -> int:
         )
         for s in out["sources"]:
             print(" source:", s.get("kind"), s.get("title"), s.get("url") or "")
+        return 0
+
+    if args.cmd == "export-geo":
+        from . import geo, lake
+        from .config import REPO
+
+        print(geo.export(lake.connect(settings), REPO / "web" / "static" / "geo"))
         return 0
 
     if args.cmd == "purge":

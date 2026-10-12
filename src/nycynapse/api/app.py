@@ -22,7 +22,7 @@ from .. import lake
 from ..catalog import store
 from ..config import REPO, Settings
 from ..pipeline.context import Context
-from . import chat
+from . import chat, pulse
 from .service import PAUSED, Answerer, client_hash
 
 PER_HOUR = int(os.environ.get("NYCYNAPSE_PER_HOUR", "8"))
@@ -278,6 +278,8 @@ def health():
 
 chat.setup(settings, lambda: answerer().ctx)
 app.include_router(chat.router)
+pulse.setup(lambda: answerer().ctx.lake)
+app.include_router(pulse.router)
 
 # Only this site's own scripts, styles and data, plus the bot check and the map tiles.
 CSP = (
