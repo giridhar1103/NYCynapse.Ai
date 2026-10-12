@@ -6,7 +6,7 @@ A guide to New York City you can ask anything. It answers from the city's own da
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/img/guide-dark.png">
-  <img alt="The guide answering a question about rain and roads in New York, with each source it used and a map shading the boroughs by chance of rain and the roads by speed" src="docs/img/guide-light.png">
+  <img alt="The guide answering which parts of the city have the cheapest rent, with a cited source and a map shading ZIP code areas by median rent and numbering the six cheapest neighborhoods" src="docs/img/guide-light.png">
 </picture>
 
 Under the guide is a QueryGPT-style text-to-SQL pipeline, following the path Uber described for [QueryGPT](https://www.uber.com/blog/query-gpt/) and the semantic layers that came after it: a question is never answered by handing a model the whole schema, but narrowed step by step to a domain, tables, values and joins, and only then SQL, checked before and after it runs. That pipeline is the guide's first and cheapest tool, and it is what the evaluation below measures.

@@ -305,7 +305,7 @@ def _answer_payload(slot: Slot, out: dict, cached: bool = False) -> dict:
 
 def _replay(cached: dict):
     """A stored example answer, played back as the same events, quickly."""
-    yield _sse("status", {"text": "Answered this morning from the same sources"})
+    yield _sse("status", {"text": "Answered earlier today from the same sources"})
     for i, s in enumerate(cached.get("steps") or []):
         if "tool" not in s:
             continue

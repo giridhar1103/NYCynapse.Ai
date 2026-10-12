@@ -297,7 +297,7 @@ class TurnView {
   fold(d, nSources) {
     const steps = Object.keys(this.steps).length;
     const secs = ((d.latency_ms || performance.now() - this.started) / 1000).toFixed(1);
-    const bits = d.cached ? ["Stored answer from this morning"]
+    const bits = d.cached ? ["Stored answer from earlier today"]
       : [`Worked for ${secs} s`, steps ? `${steps} ${steps === 1 ? "check" : "checks"}` : "",
         d.cost_usd ? `$${Number(d.cost_usd).toFixed(3)}` : "", d.fell_back ? "backup model" : ""];
     this.now.textContent = "";
