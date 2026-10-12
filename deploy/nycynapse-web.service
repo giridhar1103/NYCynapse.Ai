@@ -12,6 +12,7 @@ Environment=PATH=/root/.local/bin:/usr/local/bin:/usr/bin:/bin
 ExecStart=/root/NYCynapse/.venv/bin/uvicorn nycynapse.api.app:app --host 127.0.0.1 --port 8031 --workers 1 --proxy-headers --forwarded-allow-ips 127.0.0.1
 Restart=on-failure
 RestartSec=5
+TimeoutStopSec=15
 MemoryMax=1200M
 CPUQuota=150%
 TasksMax=96

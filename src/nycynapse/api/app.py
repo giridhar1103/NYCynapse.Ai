@@ -7,6 +7,7 @@ allowance and the whole site a daily spending cap, and a question asked recently
 from its stored trace without calling a model.
 """
 
+import asyncio
 import json
 import os
 import threading
@@ -21,11 +22,12 @@ from .. import lake
 from ..catalog import store
 from ..config import REPO, Settings
 from ..pipeline.context import Context
-from .service import PAUSED, Answerer, client_hash
+from .service import PAUSED, WARM_CLIENT, Answerer, client_hash
 
 PER_HOUR = int(os.environ.get("NYCYNAPSE_PER_HOUR", "8"))
 DAILY_BUDGET = float(os.environ.get("NYCYNAPSE_DAILY_BUDGET_USD", "4"))
 WAITING = int(os.environ.get("NYCYNAPSE_QUEUE", "3"))
+KEEPALIVE_S = 10
 WEB = REPO / "web"
 RESULTS = REPO / "evals" / "results"
 
@@ -74,6 +76,43 @@ def _sse(event: str, data) -> bytes:
     return f"event: {event}\ndata: {json.dumps(data, default=str)}\n\n".encode()
 
 
+async def _relay(a: Answerer, question: str, client: str):
+    """Run the question in its own thread and pass its events on.
+
+    The thread owns the queue places and gives them back when the question is done, even if
+    the reader left. A reader who leaves early still gets the stored answer on asking again.
+    While waiting, a comment line goes out now and then so proxies keep the stream open.
+    """
+    loop = asyncio.get_running_loop()
+    events: asyncio.Queue = asyncio.Queue()
+
+    def work():
+        try:
+            with _busy:
+                loop.call_soon_threadsafe(
+                    events.put_nowait, _sse("stage", {"stage": "start", "label": "Start", "ms": 0})
+                )
+                for event, data in a.stream(question, client):
+                    loop.call_soon_threadsafe(events.put_nowait, _sse(event, data))
+        except Exception as e:  # noqa: BLE001 - reported to the reader
+            msg = {"message": f"Something went wrong answering that ({type(e).__name__})."}
+            loop.call_soon_threadsafe(events.put_nowait, _sse("error", msg))
+        finally:
+            _queue.release()
+            loop.call_soon_threadsafe(events.put_nowait, None)
+
+    threading.Thread(target=work, daemon=True).start()
+    while True:
+        try:
+            chunk = await asyncio.wait_for(events.get(), KEEPALIVE_S)
+        except TimeoutError:
+            yield b": still working\n\n"
+            continue
+        if chunk is None:
+            return
+        yield chunk
+
+
 @app.get("/api/ask")
 def ask(request: Request, q: str = Query(min_length=3, max_length=400)):
     a = answerer()
@@ -120,17 +159,8 @@ def ask(request: Request, q: str = Query(min_length=3, max_length=400)):
     if not _queue.acquire(blocking=False):
         raise HTTPException(503, "Busy answering other questions. Try again in a minute.")
 
-    def run():
-        try:
-            with _busy:
-                yield _sse("stage", {"stage": "start", "label": "Start", "ms": 0})
-                for event, data in a.stream(question, client):
-                    yield _sse(event, data)
-        finally:
-            _queue.release()
-
     return StreamingResponse(
-        run(),
+        _relay(a, question, client),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
     )
@@ -153,8 +183,9 @@ def recent(limit: int = 12):
         answerer()
         .ctx.conn.execute(
             "SELECT id, question, classification, asked_at, latency_ms FROM app.traces "
-            "WHERE error IS NULL AND answer IS NOT NULL ORDER BY asked_at DESC LIMIT %s",
-            (min(limit, 50),),
+            "WHERE error IS NULL AND answer IS NOT NULL AND client_hash <> %s "
+            "ORDER BY asked_at DESC LIMIT %s",
+            (WARM_CLIENT, min(limit, 50)),
         )
         .fetchall()
     )
@@ -250,10 +281,8 @@ def catalog():
 
 @app.get("/api/evals")
 def evals():
-    out = []
-    for path in sorted(RESULTS.glob("*.json")):
-        out.append(json.loads(path.read_text()))
-    return out
+    path = RESULTS / "summary.json"
+    return json.loads(path.read_text()) if path.exists() else {"groups": [], "paired": []}
 
 
 @app.get("/api/health")
