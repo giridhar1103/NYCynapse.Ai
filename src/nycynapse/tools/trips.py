@@ -967,6 +967,21 @@ def parse_when(text: str | None) -> datetime | None:
     return t
 
 
+def _free_flow(a: dict, b: dict) -> tuple[int, float] | None:
+    """Driving minutes and miles with no traffic, for trips the lake has no record of."""
+    try:
+        d = get_json(
+            f"https://router.project-osrm.org/route/v1/driving/"
+            f"{a['lon']:.5f},{a['lat']:.5f};{b['lon']:.5f},{b['lat']:.5f}",
+            {"overview": "false"},
+            ttl_s=86400,
+        )
+        r = d["routes"][0]
+    except Exception:  # noqa: BLE001
+        return None
+    return round(r["duration"] / 60), r["distance"] / 1609.34
+
+
 def _hour(h: int) -> str:
     return datetime(2000, 1, 1, h).strftime("%-I %p")
 
@@ -1116,7 +1131,22 @@ def trip_plan(
                 }
             )
         else:
-            lines.append("No typical car trip time is available for this pair of places.")
+            free = _free_flow(a, b)
+            if free:
+                lines.append(
+                    f"By car: at least {free[0]} min for {free[1]:.0f} miles with no traffic "
+                    "(OpenStreetMap routing). That is a floor, not a typical time: no record of "
+                    "past trips covers this pair, and rush hour adds more."
+                )
+                sources.append(
+                    {
+                        "kind": "live",
+                        "title": "OSRM routing on OpenStreetMap",
+                        "url": "https://project-osrm.org",
+                    }
+                )
+            else:
+                lines.append("No car trip time is available for this pair of places.")
     layers.append(
         {
             "type": "points",
