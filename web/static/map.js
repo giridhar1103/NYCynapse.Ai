@@ -11,6 +11,9 @@ const STYLE = {
   dark: "https://tiles.openfreemap.org/styles/dark",
 };
 const SCALES = { value: ["#fff1df", "#f6b26b", "#eb6834", "#a8320f"] };
+const ROAD_KIND = ["closure", "incident", "roadwork", "event"];
+const ROAD_COLOR = { closure: "#d62d20", incident: "#e8590c", roadwork: "#f2a51a", event: "#7c4dff" };
+const ROAD_NAME = { closure: "Closed", incident: "Crash or blockage", roadwork: "Roadwork", event: "Street event" };
 const SPEED = ["interpolate", ["linear"], ["get", "value"], 5, "#d62d20", 15, "#f08a24", 25, "#f2c12e", 40, "#2fae2f"];
 // Where to put a borough's weather badge (inside the borough, clear of the others).
 const BORO_AT = {
@@ -109,6 +112,7 @@ export class GuideMap {
     this.markers.forEach((mk) => mk.remove());
     this.markers = [];
     this.hl = [];
+    this._road = null;
     for (const k of [...this.anims.keys()]) if (k !== "busy") this.anims.delete(k);
     this.legendEl.replaceChildren();
     this.chipbar.replaceChildren();
@@ -213,6 +217,62 @@ export class GuideMap {
         any = true;
         this.hover(id, (p) => `<b>${esc(p.label)}</b>${p.value != null ? "<br>" + fmt(p.value) + " " + esc(L.unit || "") : ""}${p.detail ? "<br>" + esc(p.detail) : ""}${p.updated ? "<br><small>updated " + esc(p.updated) + "</small>" : ""}`);
         if (L.label) this.chip(L.label);
+      } else if (L.type === "road_events" && (L.events || []).length) {
+        // Closed stretches are drawn along the road itself; the rest are dots, one color per kind.
+        // Several calls in one answer (closures, then roadwork) share one layer, closures on top.
+        const had = this._road && this.map.getSource(this._road.id) ? this._road : null;
+        const seen = new Set((had?.events || []).map(roadKey));
+        const events = [...(had?.events || []), ...L.events.filter((e) => e.geometry && !seen.has(roadKey(e)))];
+        const feats = events.map((e) => ({ type: "Feature", geometry: e.geometry,
+          properties: { kind: e.kind, title: e.title, what: e.what, when: e.when, detail: e.detail,
+            rank: ROAD_KIND.indexOf(e.kind) } }))
+          .sort((a, b) => b.properties.rank - a.properties.rank);
+        if (!feats.length) continue;
+        const counts = ROAD_KIND.map((k) => [k, feats.filter((f) => f.properties.kind === k).length]).filter(([, n]) => n);
+        const keyRows = counts.map(([k, n]) => [ROAD_COLOR[k], `${ROAD_NAME[k]} (${n})`]);
+        feats.forEach((f) => extend(bounds, f.geometry));
+        any = true;
+        if (had) {
+          had.events = events;
+          this.map.getSource(had.id).setData({ type: "FeatureCollection", features: feats });
+          this.key(L.label || "Road events", keyRows);
+          continue;
+        }
+        this._road = { id, events };
+        const color = ["match", ["get", "kind"], ...ROAD_KIND.flatMap((k) => [k, ROAD_COLOR[k]]), ROAD_COLOR.roadwork];
+        const isLine = ["==", ["geometry-type"], "LineString"], isPt = ["==", ["geometry-type"], "Point"];
+        const closed = ["==", ["get", "kind"], "closure"];
+        this.map.addSource(id, { type: "geojson", data: { type: "FeatureCollection", features: feats } });
+        this.addLayer({ id: id + "-glow", type: "line", source: id, filter: ["all", isLine, closed],
+          layout: { "line-cap": "round", "line-join": "round" },
+          paint: { "line-color": ROAD_COLOR.closure, "line-width": 14, "line-blur": 6, "line-opacity": 0.35 } });
+        this.addLayer({ id: id + "-case", type: "line", source: id, filter: isLine,
+          layout: { "line-cap": "round", "line-join": "round" },
+          paint: { "line-color": theme() === "dark" ? "#0b0b0b" : "#ffffff", "line-width": 8 } });
+        this.addLayer({ id: id + "-work", type: "line", source: id, filter: ["all", isLine, ["!", closed]],
+          layout: { "line-cap": "butt", "line-join": "round" },
+          paint: { "line-color": color, "line-width": 3.5, "line-dasharray": [2, 1.4] } });
+        this.addLayer({ id: id + "-line", type: "line", source: id, filter: ["all", isLine, closed],
+          layout: { "line-cap": "round", "line-join": "round" },
+          paint: { "line-color": ROAD_COLOR.closure, "line-width": 5 } });
+        this.addLayer({ id: id + "-ring", type: "circle", source: id, filter: ["all", isPt, closed],
+          paint: { "circle-color": "rgba(0,0,0,0)", "circle-stroke-color": ROAD_COLOR.closure,
+            "circle-stroke-width": 1.5, "circle-radius": 7, "circle-stroke-opacity": 0 } });
+        this.addLayer({ id: id + "-dot", type: "circle", source: id, filter: isPt,
+          layout: { "circle-sort-key": ["-", 9, ["get", "rank"]] },
+          paint: { "circle-color": color, "circle-radius": ["case", closed, 7, 5.5],
+            "circle-stroke-color": "#ffffff", "circle-stroke-width": 1.5 } });
+        this.animate(id, (ts) => {
+          const k = (ts % 1800) / 1800, wave = 0.5 + 0.5 * Math.sin((ts / 1800) * Math.PI * 2);
+          this.map.setPaintProperty(id + "-glow", "line-opacity", 0.15 + 0.35 * wave);
+          this.map.setPaintProperty(id + "-ring", "circle-stroke-opacity", 0.8 * (1 - k));
+          this.map.setPaintProperty(id + "-ring", "circle-radius", 7 + 14 * k);
+        });
+        const tip = (p) => `<b>${esc(p.title)}</b><br>${esc(p.what)} · <i>${esc(p.when)}</i>${p.detail ? `<br><small>${esc(p.detail)}</small>` : ""}`;
+        this.hover(id + "-line", tip);
+        this.hover(id + "-work", tip);
+        this.hover(id + "-dot", tip);
+        this.key(L.label || "Road events", keyRows);
       } else if (L.type === "lines") {
         const lines = (L.lines || []).filter((l) => (l.coords || []).length > 1);
         if (!lines.length) continue;
@@ -393,6 +453,16 @@ export class GuideMap {
     while (this.legendEl.children.length > 2) this.legendEl.firstChild.remove();
   }
 
+  key(title, rows) {
+    const block = NY.el("div", { class: "lg" }, NY.el("b", {}, title),
+      ...rows.map(([c, text]) => NY.el("div", { class: "key" }, NY.el("i", { style: `background:${c}` }), text)));
+    for (const old of this.legendEl.querySelectorAll(".lg")) {
+      if (old.firstChild.textContent === title) old.remove();
+    }
+    this.legendEl.append(block);
+    while (this.legendEl.children.length > 2) this.legendEl.firstChild.remove();
+  }
+
   hover(id, html) {
     this.map.on("click", id, (e) => {
       const f = e.features && e.features[0];
@@ -433,6 +503,9 @@ export function wxIcon(kind, day = true) {
 function routeColor(g, r) {
   const f = g.subway.features.find((x) => String(x.properties.route) === r);
   return f ? f.properties.color : "#808183";
+}
+function roadKey(e) {
+  return [e.title, e.what, e.when, e.detail].join("|");
 }
 function extend(bounds, geom) {
   const walk = (c) => (typeof c[0] === "number" ? bounds.extend(c) : c.forEach(walk));

@@ -229,6 +229,8 @@ pre.code { background: #0f0f0e; color: #e8e7df; border-radius: 14px; padding: 18
 .g-map .legend b { display: block; margin-bottom: 6px; font-size: 13px; }
 .g-map .legend .lg + .lg { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--rule); }
 .g-map .legend .bar { height: 8px; border-radius: 4px; margin: 4px 0; }
+.g-map .legend .key { display: flex; align-items: center; gap: 8px; line-height: 1.7; }
+.g-map .legend .key i { width: 14px; height: 4px; border-radius: 2px; flex: none; }
 .g-map .legend .ends { display: flex; justify-content: space-between; gap: 14px; color: var(--muted); }
 .g-map .scan { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .4s; }
 .g-map.busy .scan { opacity: 1; }

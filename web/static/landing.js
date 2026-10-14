@@ -1,7 +1,7 @@
 // Landing page: the live map drawing, the ticker, examples, the lakehouse diagram, and the
 // hand-off to the guide overlay.
 
-import { guide } from "./guide.js?v=8";
+import { guide } from "./guide.js?v=9";
 import { drawHero } from "./hero.js?v=3";
 
 const { el, get } = NY;
