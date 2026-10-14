@@ -113,8 +113,18 @@ _DRAFT_SMELLS = [
 ]
 
 
+MAX_WORDS = 150
+
+
 def _draft_issues(answer: str) -> list[str]:
-    return [why for pattern, why in _DRAFT_SMELLS if pattern.search(_uncite(answer))]
+    text = _uncite(answer)
+    issues = [why for pattern, why in _DRAFT_SMELLS if pattern.search(text)]
+    if len(text.split()) > MAX_WORDS:
+        issues.append(
+            f"it runs past {MAX_WORDS} words; keep only what decides the reader's plan, "
+            "best option first, and drop side notes"
+        )
+    return issues
 
 
 BUSY = (
