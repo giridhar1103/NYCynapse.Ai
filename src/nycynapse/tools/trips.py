@@ -109,6 +109,30 @@ def _neighborhood(n: str) -> dict | None:
     return {"name": n.title(), "lat": lat, "lon": lon}
 
 
+# PATH stations by the names people use. Grove Street and Harrison also name places in New
+# York, so they count only with a word that puts them in New Jersey.
+PATH_NAMES = {
+    "journal square": ("JSQ", False),
+    "exchange place": ("EXP", False),
+    "newport": ("NEW", False),
+    "pavonia": ("NEW", False),
+    "grove": ("GRV", True),
+    "harrison": ("HAR", True),
+    "newark penn": ("NWK", False),
+    "hoboken path": ("HOB", False),
+    "hoboken terminal": ("HOB", False),
+}
+
+
+def _path_station(n: str) -> dict | None:
+    nj = re.search(r"\b(?:path|jersey|jc|nj)\b", n)
+    for key, (code, needs_nj) in PATH_NAMES.items():
+        if re.search(rf"\b{key}\b", n) and (nj or not needs_nj):
+            name, lat, lon = PATH["stations"][code]
+            return {"name": f"{name} PATH station", "lat": lat, "lon": lon}
+    return None
+
+
 def locate(text: str) -> dict | None:
     """A trip end from what the reader wrote: coordinates, a hub, an NYC address or landmark,
     or a place nearby (Hoboken, Newark Airport). None when it cannot be placed in the region."""
@@ -123,6 +147,9 @@ def locate(text: str) -> dict | None:
     for key, ap in AIRPORT_WORDS.items():
         if re.search(rf"\b{key}\b", n):
             return {"name": ap["name"], "lat": ap["lat"], "lon": ap["lon"], "airport": "jfk"}
+    station = _path_station(n)
+    if station:
+        return station
     for key, (name, lat, lon) in NAMED.items():
         if n == key or re.search(rf"\b{key}\b", n) and len(n.split()) <= len(key.split()) + 2:
             return {"name": name, "lat": lat, "lon": lon}
@@ -141,7 +168,9 @@ def locate(text: str) -> dict | None:
         lon, lat = f["geometry"]["coordinates"]
         want = set(n.split()) - {"st", "street", "ave", "avenue", "new", "york"}
         got = set(_norm(label).split())
-        if want and len(want & got) >= max(1, len(want) - 1):
+        # Every word must match ("Journal Square" is not "Todd Square"); a long address may
+        # miss one.
+        if want and len(want & got) >= len(want) - (1 if len(want) >= 3 else 0):
             return {"name": label.split(",")[0], "lat": lat, "lon": lon}
     try:
         hits = get_json(
@@ -312,6 +341,8 @@ def _itinerary(it: dict, end: str, extra: tuple[str, int, int] | None = None) ->
     walk = round(sum(lg["duration"] for lg in it["legs"] if lg["mode"] == "WALK") / 60)
     return {
         "minutes": (lo, hi),
+        "arrive_ts": datetime.fromisoformat(it["endTime"].replace("Z", "+00:00")).timestamp()
+        + 60 * (hi - round(it["duration"] / 60)),
         "leave": _hm(it["startTime"]),
         "arrive": _hm(it["endTime"]),
         "transfers": it.get("transfers", 0),
@@ -391,7 +422,198 @@ def transit(a: dict, b: dict, when: datetime, arrive_by: bool) -> tuple[list[dic
             notes.append(f"AirTrain alert: {status}.")
         options.sort(key=lambda o: o["minutes"][1])
         return options[:4], notes
-    return [_itinerary(it, b["name"]) for it in _plan(a, b, when, arrive_by)[:4]], notes
+    options = [_itinerary(it, b["name"]) for it in _plan(a, b, when, arrive_by)[:4]]
+    try:
+        by_path = _path_options(a, b, when, arrive_by)
+    except Exception:  # noqa: BLE001 - the planner's own options still stand
+        by_path = []
+    if by_path:
+        notes.append(
+            "PATH times marked live use PATH's own next-train times; the others use its "
+            "scheduled ride times between stations plus a typical wait."
+        )
+    options.sort(key=lambda o: o["arrive_ts"] + 300 * o["transfers"])
+    by_path.sort(key=lambda o: o["arrive_ts"] + 300 * o["transfers"])
+    merged = sorted(options[:3] + by_path, key=lambda o: o["arrive_ts"] + 300 * o["transfers"])
+    return merged[:4], notes
+
+
+# PATH ------------------------------------------------------------------------------------------
+# The trip planner does not carry PATH, so PATH trips are built here: station order and ride
+# times between stations from PATH's schedule data, next trains from PATH's own live feed, and
+# walking or the trip planner for the rest of the way.
+
+PATH = json.loads((Path(__file__).with_name("path_lines.json")).read_text())
+RIDEPATH = "https://www.panynj.gov/bin/portauthority/ridepath.json"
+PATH_COLOR = {
+    frozenset(("NWK", "WTC")): "#d93a30",
+    frozenset(("HOB", "33S")): "#4d92fb",
+    frozenset(("HOB", "WTC")): "#65c100",
+    frozenset(("JSQ", "33S")): "#ff9900",
+    frozenset(("WTC", "33S")): "#65c100",
+}
+NJ_SIDE = {"NWK", "HAR", "JSQ", "GRV", "NEW", "EXP", "HOB"}
+WALK_MAX_M = 1500
+
+
+def _station(code: str) -> dict:
+    name, lat, lon = PATH["stations"][code]
+    return {"name": f"{name} PATH", "lat": lat, "lon": lon, "code": code}
+
+
+def _walk_min(a: dict, b: dict) -> int:
+    return max(1, round(_metres(a, b) * 1.3 / 80))
+
+
+def in_nj(p: dict) -> bool:
+    return p["lon"] < -73.995 and zone_of(p["lat"], p["lon"]) is None
+
+
+def _path_live() -> dict[str, list[tuple[str, str, int]]]:
+    """Next trains at each PATH station: (destination code, headsign, seconds away)."""
+    try:
+        d = get_json(RIDEPATH, ttl_s=30)
+    except Exception:  # noqa: BLE001
+        return {}
+    out: dict[str, list] = {}
+    for r in d.get("results") or []:
+        for dest in r.get("destinations") or []:
+            for m in dest.get("messages") or []:
+                try:
+                    out.setdefault(r["consideredStation"], []).append(
+                        (m["target"], m.get("headSign") or "", int(m["secondsToArrival"]))
+                    )
+                except (KeyError, ValueError):
+                    continue
+    return out
+
+
+def _rides(o: str, d: str) -> list[tuple[dict, float]]:
+    """Patterns that run from o to d without changing trains, with the ride time."""
+    out = []
+    for p in PATH["patterns"]:
+        st = p["stops"]
+        if o in st and d in st and st.index(o) < st.index(d):
+            out.append((p, sum(p["minutes"][st.index(o) : st.index(d)])))
+    return out
+
+
+def _next_train(live: dict, at: str, p: dict, after_s: float) -> int | None:
+    """Seconds until the first live train at a station that runs this pattern."""
+    target = p["stops"][-1]
+    for tgt, head, secs in sorted(live.get(at, []), key=lambda x: x[2]):
+        via = "via hoboken" in head.lower()
+        same = target != "33S" or via == p["via_hoboken"] or at not in ("JSQ", "GRV", "NEW")
+        if tgt == target and secs >= after_s and same:
+            return secs
+    return None
+
+
+def _path_options(a: dict, b: dict, when: datetime, arrive_by: bool) -> list[dict]:
+    if not (in_nj(a) or in_nj(b)):
+        return []
+    live = _path_live() if abs((when - _now()).total_seconds()) < 900 and not arrive_by else {}
+    starts = sorted(PATH["stations"], key=lambda c: _metres(a, _station(c)))[:3]
+    ends = sorted(PATH["stations"], key=lambda c: _metres(b, _station(c)))[:3]
+    options = []
+    for o in starts:
+        so = _station(o)
+        if _metres(a, so) > WALK_MAX_M:
+            continue
+        for d in ends:
+            sd = _station(d)
+            if o == d:
+                continue
+            walk1 = _walk_min(a, so)
+            best = None
+            for p, ride in _rides(o, d):
+                wait_s = None
+                if live:
+                    if not _next_train(live, o, p, 0) and o != p["stops"][-1]:
+                        continue  # no train on that pattern is coming: it is not running now
+                    secs = _next_train(live, o, p, walk1 * 60 + 60)
+                    # The live list shows the next two trains; past that, use the schedule.
+                    wait_s = None if secs is None else secs - walk1 * 60
+                total = walk1 + (wait_s or 0) / 60 + ride
+                if best is None or total < best[0]:
+                    best = (total, p, ride, wait_s)
+            if not best:
+                continue
+            _, p, ride, wait_s = best
+            board = when + timedelta(minutes=walk1, seconds=wait_s or 0)
+            off = board + timedelta(minutes=ride)
+            stops = p["stops"][p["stops"].index(o) : p["stops"].index(d) + 1]
+            head = PATH["stations"][p["stops"][-1]][0]
+            n = len(stops) - 1
+            steps = [
+                f"walk {walk1} min to {so['name']}",
+                f"PATH train toward {head} from {PATH['stations'][o][0]} "
+                + (
+                    f"at {board.strftime('%-I:%M %p')} (live)"
+                    if wait_s is not None
+                    else "(next train; departure time not known)"
+                )
+                + f" to {PATH['stations'][d][0]}, {n} stop{'s' if n > 1 else ''}, "
+                f"{round(ride)} min",
+            ]
+            color = PATH_COLOR.get(frozenset((p["stops"][0], p["stops"][-1])), "#d93a30")
+            lines = [
+                {
+                    "mode": "walk",
+                    "name": "",
+                    "color": None,
+                    "coords": [[a["lon"], a["lat"]], [so["lon"], so["lat"]]],
+                },
+                {
+                    "mode": "train",
+                    "name": "PATH",
+                    "color": color,
+                    "coords": [[PATH["stations"][c][2], PATH["stations"][c][1]] for c in stops],
+                },
+            ]
+            # Without live times, allow for the wait: a few minutes by day, more at night.
+            spare = 0 if wait_s is not None else (20 if when.hour < 6 else 10)
+            if _metres(sd, b) <= WALK_MAX_M:
+                walk2 = _walk_min(sd, b)
+                steps.append(f"walk {walk2} min to {b['name']}")
+                lines.append(
+                    {
+                        "mode": "walk",
+                        "name": "",
+                        "color": None,
+                        "coords": [[sd["lon"], sd["lat"]], [b["lon"], b["lat"]]],
+                    }
+                )
+                end = off + timedelta(minutes=walk2)
+            else:
+                rest = _plan(sd, b, off, False, n=2)
+                if not rest:
+                    continue
+                tail = _itinerary(rest[0], b["name"])
+                steps += [x for x in tail["steps"] if not x.startswith("walk 0")]
+                lines += tail["lines"]
+                end = datetime.fromtimestamp(tail["arrive_ts"], NY)
+            mins = round((end - when).total_seconds() / 60)
+            options.append(
+                {
+                    "minutes": (mins, mins + spare),
+                    "arrive_ts": end.timestamp() + spare * 60,
+                    "leave": when.strftime("%-I:%M %p"),
+                    "arrive": end.strftime("%-I:%M %p"),
+                    "transfers": sum(x["mode"] != "walk" for x in lines) - 1,
+                    "walk_minutes": walk1,
+                    "steps": steps,
+                    "live": wait_s is not None,
+                    "lines": lines,
+                }
+            )
+    options.sort(key=lambda o: o["arrive_ts"])
+    seen, out = set(), []
+    for o in options:
+        if o["steps"][1] not in seen:
+            seen.add(o["steps"][1])
+            out.append(o)
+    return out[:2]
 
 
 # Driving ---------------------------------------------------------------------------------------
@@ -551,13 +773,6 @@ def trip_plan(
         if any(x.get("airport") == "jfk" for x in (a, b)):
             sources.append(
                 {"kind": "official", "title": "AirTrain JFK (Port Authority)", "url": AIRTRAIN_URL}
-            )
-        if re.search(
-            r"\b(?:nj|new jersey|hoboken|jersey city|newark)\b", f"{origin} {destination}", re.I
-        ):
-            lines.append(
-                "PATH trains are not in this planner; between Manhattan and Hoboken or Jersey "
-                "City PATH may be quicker than the options above."
             )
     if mode in ("both", "drive"):
         try:

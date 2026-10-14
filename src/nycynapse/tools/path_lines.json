@@ -1,0 +1,386 @@
+{
+"stations": {
+"14S": [
+"14th Street",
+40.73735,
+-73.99684
+],
+"23S": [
+"23rd Street",
+40.7429,
+-73.99278
+],
+"33S": [
+"33rd Street",
+40.74912,
+-73.98827
+],
+"09S": [
+"9th Street",
+40.73424,
+-73.9991
+],
+"CHR": [
+"Christopher Street",
+40.73295,
+-74.00707
+],
+"EXP": [
+"Exchange Place",
+40.71676,
+-74.03238
+],
+"GRV": [
+"Grove Street",
+40.71966,
+-74.04245
+],
+"HAR": [
+"Harrison",
+40.73942,
+-74.15587
+],
+"HOB": [
+"Hoboken",
+40.73586,
+-74.02922
+],
+"JSQ": [
+"Journal Square",
+40.73301,
+-74.06289
+],
+"NEW": [
+"Newport",
+40.72699,
+-74.03383
+],
+"NWK": [
+"Newark",
+40.73454,
+-74.16375
+],
+"WTC": [
+"World Trade Center",
+40.71271,
+-74.01193
+]
+},
+"patterns": [
+{
+"stops": [
+"NWK",
+"HAR",
+"JSQ",
+"GRV",
+"EXP",
+"WTC"
+],
+"minutes": [
+2.0,
+11.0,
+4.0,
+3.0,
+5.0
+],
+"via_hoboken": false
+},
+{
+"stops": [
+"WTC",
+"EXP",
+"GRV",
+"JSQ",
+"HAR",
+"NWK"
+],
+"minutes": [
+4.0,
+3.0,
+4.0,
+11.0,
+3.0
+],
+"via_hoboken": false
+},
+{
+"stops": [
+"JSQ",
+"GRV",
+"NEW",
+"HOB",
+"CHR",
+"09S",
+"14S",
+"23S",
+"33S"
+],
+"minutes": [
+4.0,
+4.0,
+8.0,
+9.0,
+2.0,
+1.0,
+1.0,
+2.0
+],
+"via_hoboken": true
+},
+{
+"stops": [
+"33S",
+"23S",
+"14S",
+"09S",
+"CHR",
+"HOB",
+"NEW",
+"GRV",
+"JSQ"
+],
+"minutes": [
+2.0,
+1.0,
+2.0,
+2.0,
+13.0,
+4.0,
+4.0,
+5.0
+],
+"via_hoboken": true
+},
+{
+"stops": [
+"JSQ",
+"GRV",
+"NEW",
+"CHR",
+"09S",
+"14S",
+"23S",
+"33S"
+],
+"minutes": [
+4.0,
+4.0,
+8.0,
+1.0,
+2.0,
+1.0,
+3.0
+],
+"via_hoboken": false
+},
+{
+"stops": [
+"33S",
+"23S",
+"14S",
+"09S",
+"CHR",
+"NEW",
+"GRV",
+"JSQ"
+],
+"minutes": [
+2.0,
+1.0,
+2.0,
+1.0,
+8.0,
+4.0,
+5.0
+],
+"via_hoboken": false
+},
+{
+"stops": [
+"33S",
+"23S",
+"14S",
+"09S",
+"CHR",
+"HOB"
+],
+"minutes": [
+2.0,
+1.0,
+2.0,
+1.0,
+10.0
+],
+"via_hoboken": false
+},
+{
+"stops": [
+"HOB",
+"CHR",
+"09S",
+"14S",
+"23S",
+"33S"
+],
+"minutes": [
+9.0,
+1.0,
+2.0,
+1.0,
+3.0
+],
+"via_hoboken": false
+},
+{
+"stops": [
+"HOB",
+"NEW",
+"EXP",
+"WTC"
+],
+"minutes": [
+4.0,
+3.0,
+4.0
+],
+"via_hoboken": false
+},
+{
+"stops": [
+"WTC",
+"EXP",
+"NEW",
+"HOB"
+],
+"minutes": [
+4.0,
+3.0,
+4.0
+],
+"via_hoboken": false
+},
+{
+"stops": [
+"33S",
+"23S",
+"14S",
+"09S",
+"CHR",
+"HOB",
+"NEW",
+"JSQ"
+],
+"minutes": [
+2.0,
+1.0,
+2.0,
+2.0,
+13.0,
+4.0,
+9.0
+],
+"via_hoboken": true
+},
+{
+"stops": [
+"WTC",
+"EXP",
+"JSQ",
+"HAR",
+"NWK"
+],
+"minutes": [
+4.0,
+11.0,
+13.0,
+2.0
+],
+"via_hoboken": false
+},
+{
+"stops": [
+"JSQ",
+"GRV",
+"NEW",
+"HOB",
+"CHR",
+"14S",
+"33S"
+],
+"minutes": [
+4.0,
+4.0,
+8.0,
+9.0,
+3.0,
+4.0
+],
+"via_hoboken": true
+},
+{
+"stops": [
+"33S",
+"14S",
+"CHR",
+"HOB",
+"NEW",
+"GRV",
+"JSQ"
+],
+"minutes": [
+3.0,
+3.0,
+8.0,
+4.0,
+4.0,
+5.0
+],
+"via_hoboken": true
+},
+{
+"stops": [
+"WTC",
+"EXP",
+"NEW",
+"CHR",
+"09S",
+"14S",
+"23S",
+"33S"
+],
+"minutes": [
+4.0,
+3.0,
+8.0,
+1.0,
+2.0,
+1.0,
+3.0
+],
+"via_hoboken": false
+},
+{
+"stops": [
+"33S",
+"23S",
+"14S",
+"09S",
+"CHR",
+"NEW",
+"EXP",
+"WTC"
+],
+"minutes": [
+2.0,
+1.0,
+2.0,
+1.0,
+8.0,
+3.0,
+5.0
+],
+"via_hoboken": false
+}
+],
+"source": "PATH GTFS (Trillium), ride times are median minutes between stations"
+}
