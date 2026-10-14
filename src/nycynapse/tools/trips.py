@@ -374,6 +374,25 @@ def _plan(a: dict, b: dict, when: datetime, arrive_by: bool, n: int = 5) -> list
         },
         ttl_s=120,
     )
+    its = list(d.get("itineraries") or [])
+    if its and all(it.get("transfers", 0) >= 2 for it in its):
+        # Every option has two or more changes: ask for the simplest ones too.
+        try:
+            d2 = get_json(
+                TRANSITOUS,
+                {
+                    "fromPlace": f"{a['lat']:.5f},{a['lon']:.5f}",
+                    "toPlace": f"{b['lat']:.5f},{b['lon']:.5f}",
+                    "time": when.astimezone(NY).isoformat(timespec="minutes"),
+                    "arriveBy": "true" if arrive_by else "false",
+                    "numItineraries": n,
+                    "maxTransfers": 1,
+                },
+                ttl_s=120,
+            )
+            its += d2.get("itineraries") or []
+        except Exception:  # noqa: BLE001
+            pass
     out, seen = [], set()
 
     # Best first, where each transfer counts as five extra minutes: people prefer one seat.
@@ -389,7 +408,7 @@ def _plan(a: dict, b: dict, when: datetime, arrive_by: bool, n: int = 5) -> list
     # Arriving by a time: leave as late as possible. Otherwise arrive as early as possible.
     # Either way each ride after the first costs five minutes, since people prefer one seat.
     ranked = sorted(
-        d.get("itineraries") or [],
+        its,
         key=lambda it: (-departure(it) if arrive_by else arrival(it)) + 300 * len(rides(it)),
     )
     for it in ranked:
@@ -1003,6 +1022,7 @@ def trip_plan(
     if mode not in ("both", "transit", "drive", "bike"):
         return failed("mode must be transit, drive, bike or both")
     a, b = locate(origin), locate(destination)
+    notes_placed: list[str] = []
     if not a or not b:
         missing = origin if not a else destination
         return failed(f"could not place {missing!r}; name a station, landmark, address or area")
@@ -1011,11 +1031,25 @@ def trip_plan(
         return failed("when must be a New York time like 2026-10-16T17:30, 'Saturday 10 PM' or now")
     if t.tzinfo is None:
         t = t.replace(tzinfo=NY)
+    for asked, got, end in ((origin, a, "start"), (destination, b, "end")):
+        # Also when a street was named without a number and one point on it was picked.
+        picked = re.match(r"\d", got["name"]) and not re.search(r"\d", asked)
+        if (
+            not (_words(_norm(asked)) & _words(_norm(got["name"])))
+            or got["name"].startswith("near")
+            or picked
+        ):
+            notes_placed.append(
+                f"The {end} '{asked}' was placed at {got['name']}. If that is not where the reader "
+                "means, say so and ask for the address or a nearby station rather than treating it "
+                "as theirs."
+            )
     lines = [
         f"Trip from {a['name']} to {b['name']}, "
         + ("arriving by " if arrive_by else "leaving ")
         + f"{t:%a %b %-d %-I:%M %p}."
     ]
+    lines += notes_placed
     data: dict = {"from": a, "to": b, "when": t.isoformat()}
     sources: list[dict] = []
     layers: list[dict] = []
@@ -1027,11 +1061,19 @@ def trip_plan(
         data["transit"] = options
         if options:
             lines.append("Transit options (best first):")
+            # Name the quickest and the simplest, so a reader who wants fewer changes (luggage,
+            # a stroller, stairs) is not handed the bus-bus-train option because it saves a minute.
+            quick = min(options, key=lambda o: o["arrive_ts"])
+            easy = min(options, key=lambda o: (o["transfers"], o["arrive_ts"]))
             for i, o in enumerate(options, 1):
                 lo, hi = o["minutes"]
                 span = f"{lo} min" if lo == hi else f"{lo} to {hi} min"
+                tag = ", ".join(
+                    t for t, x in (("quickest", quick), ("fewest changes", easy)) if o is x
+                )
                 lines.append(
-                    f"{i}. {span} door to door, leave {o['leave']}, {o['transfers']} transfer"
+                    f"{i}.{f' [{tag}]' if tag else ''} {span} door to door, leave {o['leave']}, "
+                    f"arrive {o.get('arrive', '?')}, {o['transfers']} transfer"
                     f"{'s' if o['transfers'] != 1 else ''}, {o['walk_minutes']} min walking: "
                     + "; ".join(o["steps"])
                 )
