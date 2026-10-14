@@ -508,6 +508,10 @@ def transit(a: dict, b: dict, when: datetime, arrive_by: bool) -> tuple[list[dic
         by_path = []
     if by_path:
         notes.append(
+            "PATH lines: on weekends the direct lines run 10 AM to 9 PM; outside those hours "
+            "and late on weeknights the Journal Square-33rd Street line runs via Hoboken."
+        )
+        notes.append(
             "PATH times marked live use PATH's own next-train times; the others use its "
             "scheduled ride times between stations plus a typical wait."
         )
@@ -630,7 +634,9 @@ def _path_options(a: dict, b: dict, when: datetime, arrive_by: bool) -> list[dic
             board = when + timedelta(minutes=walk1, seconds=wait_s or 0)
             off = board + timedelta(minutes=ride)
             stops = p["stops"][p["stops"].index(o) : p["stops"].index(d) + 1]
-            head = PATH["stations"][p["stops"][-1]][0]
+            head = PATH["stations"][p["stops"][-1]][0] + (
+                " via Hoboken (one train, no change)" if p["via_hoboken"] else ""
+            )
             n = len(stops) - 1
             steps = [
                 f"walk {walk1} min to {so['name']}",
@@ -971,6 +977,14 @@ def trip_plan(
         if any(x.get("airport") == "jfk" for x in (a, b)):
             sources.append(
                 {"kind": "official", "title": "AirTrain JFK (Port Authority)", "url": AIRTRAIN_URL}
+            )
+        if any("PATH train" in step for o in options for step in o["steps"]):
+            sources.append(
+                {
+                    "kind": "official",
+                    "title": "PATH schedules and live train times (Port Authority)",
+                    "url": "https://www.panynj.gov/path/en/schedules-maps/weekend-schedules.html",
+                }
             )
         if any(x.get("airport") == "ewr" for x in (a, b)):
             sources.append(
