@@ -18,6 +18,7 @@ from pathlib import Path
 
 from ..tools import Tool, ToolResult, failed
 from ..tools import live as live_tools
+from ..tools import trips as trip_tools
 from ..tools import web as web_tools
 
 log = logging.getLogger(__name__)
@@ -29,7 +30,9 @@ def _server_params():
     from mcp import StdioServerParameters
 
     src = str(Path(__file__).resolve().parents[2])
-    env = {k: v for k, v in os.environ.items() if k in ("HOME", "PATH", "LANG", "TZ")}
+    # The trip planner reads typical car trip times from the lake, read only.
+    keep = ("HOME", "PATH", "LANG", "TZ", "NYC_LAKE_PG_DSN", "NYC_LAKE_DATA_PATH")
+    env = {k: v for k, v in os.environ.items() if k in keep}
     env["PYTHONPATH"] = src
     return StdioServerParameters(
         command=sys.executable, args=["-m", "nycynapse.mcp_tools"], env=env
@@ -38,7 +41,7 @@ def _server_params():
 
 class MCPHost:
     def __init__(self):
-        self.local = {t.name: t for t in live_tools.TOOLS + web_tools.TOOLS}
+        self.local = {t.name: t for t in live_tools.TOOLS + trip_tools.TOOLS + web_tools.TOOLS}
         self._loop = asyncio.new_event_loop()
         self._thread = threading.Thread(target=self._loop.run_forever, daemon=True, name="mcp-host")
         self._thread.start()
