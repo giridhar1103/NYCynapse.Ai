@@ -44,17 +44,27 @@ JFK = {
 # From the Port Authority's AirTrain page: any terminal in under 20 minutes from Jamaica or
 # Howard Beach, trains every 5 to 15 minutes, $8.75 one way.
 AIRTRAIN = {"minutes": (8, 20), "fare_usd": 8.75}
+EWR_URL = "https://www.newarkairport.com/to-from-airport/air-train"
+EWR = {
+    "name": "Newark Airport",
+    "lat": 40.6895,
+    "lon": -74.1745,
+    "station": ("Newark Liberty International Airport train station", 40.7046, -74.1906),
+}
+JFK["code"], EWR["code"] = "jfk", "ewr"
 AIRPORT_WORDS = {
     "jfk": JFK,
     "kennedy": JFK,
     "john f kennedy": JFK,
+    "ewr": EWR,
+    "newark airport": EWR,
+    "newark liberty": EWR,
+    "newark international": EWR,
 }
 NAMED = {
     "lga": ("LaGuardia Airport", 40.7746, -73.8719),
     "laguardia": ("LaGuardia Airport", 40.7746, -73.8719),
     "la guardia": ("LaGuardia Airport", 40.7746, -73.8719),
-    "ewr": ("Newark Liberty International Airport", 40.6895, -74.1745),
-    "newark airport": ("Newark Liberty International Airport", 40.6895, -74.1745),
     "midtown": ("Midtown Manhattan", 40.7549, -73.9840),
     "times square": ("Times Square", 40.7580, -73.9855),
     "penn station": ("Penn Station", 40.7506, -73.9935),
@@ -75,6 +85,32 @@ def _now() -> datetime:
 def _norm(s: str) -> str:
     s = re.sub(r"[^a-z0-9 ]+", " ", s.lower().replace("'", ""))
     return " ".join(w for w in s.split() if w not in {"the", "airport", "nyc", "ny"})
+
+
+_ABBR = {
+    "st": "street",
+    "av": "avenue",
+    "ave": "avenue",
+    "blvd": "boulevard",
+    "pl": "place",
+    "rd": "road",
+    "pkwy": "parkway",
+    "sq": "square",
+    "e": "east",
+    "w": "west",
+}
+
+
+def _words(text: str) -> set[str]:
+    text = re.sub(r"\b(\d+)(?:st|nd|rd|th)\b", r"\1", text)
+    return {_ABBR.get(w, w) for w in text.split()} - {
+        "new",
+        "york",
+        "manhattan",
+        "brooklyn",
+        "queens",
+        "bronx",
+    }
 
 
 def _inside(lat: float, lon: float) -> bool:
@@ -144,9 +180,10 @@ def locate(text: str) -> dict | None:
         lat, lon = float(m.group(1)), float(m.group(2))
         return {"name": raw, "lat": lat, "lon": lon} if _inside(lat, lon) else None
     n = _norm(raw)
+    low = " ".join(re.sub(r"[^a-z0-9 ]+", " ", raw.lower()).split())
     for key, ap in AIRPORT_WORDS.items():
-        if re.search(rf"\b{key}\b", n):
-            return {"name": ap["name"], "lat": ap["lat"], "lon": ap["lon"], "airport": "jfk"}
+        if re.search(rf"\b{key}\b", low):
+            return {"name": ap["name"], "lat": ap["lat"], "lon": ap["lon"], "airport": ap["code"]}
     station = _path_station(n)
     if station:
         return station
@@ -166,11 +203,12 @@ def locate(text: str) -> dict | None:
     if f:
         label = f["properties"].get("label") or ""
         lon, lat = f["geometry"]["coordinates"]
-        want = set(n.split()) - {"st", "street", "ave", "avenue", "new", "york"}
-        got = set(_norm(label).split())
-        # Every word must match ("Journal Square" is not "Todd Square"); a long address may
-        # miss one.
-        if want and len(want & got) >= len(want) - (1 if len(want) >= 3 else 0):
+        want, got = _words(n), _words(_norm(label.split(",")[0]))
+        if not any(w[0].isdigit() for w in want):  # "Grove St" may come back as "2 Grove St"
+            got = {w for w in got if not w[0].isdigit()}
+        # The same name both ways: "Journal Square" is not "Todd Square", and "Newark" is not
+        # "63B Newark Avenue". A long address may differ by one word.
+        if want and (want == got or len(want) >= 3 and len(want ^ got) <= 1):
             return {"name": label.split(",")[0], "lat": lat, "lon": lon}
     try:
         hits = get_json(
@@ -189,7 +227,11 @@ def locate(text: str) -> dict | None:
     if hits:
         h = hits[0]
         lat, lon = float(h["lat"]), float(h["lon"])
-        if _inside(lat, lon):
+        # Every word asked for, and nothing more than a generic word: "Fort Lee" or "Town of
+        # Huntington", not "Juniors Barber Shop" for "Juniors".
+        got = _words(_norm(h.get("name") or ""))
+        extra = got - _words(n) - {"town", "of", "city", "village", "borough", "township"}
+        if _inside(lat, lon) and _words(n) <= got and not extra:
             return {"name": h.get("name") or raw, "lat": lat, "lon": lon}
     return None
 
@@ -391,6 +433,34 @@ def _airtrain_status(at: datetime) -> str | None:
     return None
 
 
+def _newark(a: dict, b: dict, when: datetime, arrive_by: bool) -> tuple[list[dict], list[str]]:
+    """Trips to and from Newark Airport go by rail to the airport's train station, then the
+    AirTrain. The planner has the trains; the AirTrain leg is from the Port Authority."""
+    to_airport = b.get("airport") == "ewr"
+    city = a if to_airport else b
+    name, lat, lon = EWR["station"]
+    st = {"name": name, "lat": lat, "lon": lon}
+    pair = (city, st) if to_airport else (st, city)
+    t0 = when if to_airport else when + timedelta(minutes=12)
+    leg = (
+        "AirTrain between the train station and the terminals: about 7 min to Terminal C, "
+        "11 min to Terminal B; Terminal A is about 20 min (AirTrain then a walk or shuttle)"
+    )
+    options = [
+        _itinerary(it, name, (leg, 7, 20))
+        for it in _plan(*pair, t0, arrive_by, n=4)
+        if any(lg.get("mode") in ("REGIONAL_RAIL", "RAIL", "SUBURBAN") for lg in it["legs"])
+    ][:3]
+    notes = [
+        "The AirTrain leg is from the Port Authority. Its $8.75 fee is included in an NJ "
+        "Transit or Amtrak ticket to the airport station; riders arriving another way pay it at "
+        "the station. From 11 PM to 5 AM AirTrains run every 15 minutes."
+    ]
+    if not options:
+        notes.append("No rail itinerary to the airport station was found for that time.")
+    return options, notes
+
+
 def transit(a: dict, b: dict, when: datetime, arrive_by: bool) -> tuple[list[dict], list[str]]:
     notes: list[str] = []
     if a.get("airport") == "jfk" or b.get("airport") == "jfk":
@@ -422,6 +492,8 @@ def transit(a: dict, b: dict, when: datetime, arrive_by: bool) -> tuple[list[dic
             notes.append(f"AirTrain alert: {status}.")
         options.sort(key=lambda o: o["minutes"][1])
         return options[:4], notes
+    if a.get("airport") == "ewr" or b.get("airport") == "ewr":
+        return _newark(a, b, when, arrive_by)
     options = [_itinerary(it, b["name"]) for it in _plan(a, b, when, arrive_by)[:4]]
     try:
         by_path = _path_options(a, b, when, arrive_by)
@@ -616,6 +688,42 @@ def _path_options(a: dict, b: dict, when: datetime, arrive_by: bool) -> list[dic
     return out[:2]
 
 
+def bike(a: dict, b: dict) -> dict | None:
+    d = get_json(
+        TRANSITOUS,
+        {
+            "fromPlace": f"{a['lat']:.5f},{a['lon']:.5f}",
+            "toPlace": f"{b['lat']:.5f},{b['lon']:.5f}",
+            "directModes": "BIKE",
+            "transitModes": "WALK",
+            "maxDirectTime": 7200,
+        },
+        ttl_s=600,
+    )
+    it = (d.get("direct") or [None])[0]
+    if not it:
+        return None
+    legs = it["legs"]
+    coords = [
+        c
+        for lg in legs
+        if lg.get("legGeometry")
+        for c in _decode(lg["legGeometry"]["points"], lg["legGeometry"].get("precision", 6))
+    ]
+    names = []
+    for lg in legs:
+        for step in lg.get("steps") or []:
+            nm = step.get("streetName")
+            if nm and nm not in names and step.get("distance", 0) > 250:
+                names.append(nm)
+    return {
+        "minutes": round(it["duration"] / 60),
+        "km": sum(lg.get("distance") or 0 for lg in legs) / 1000,
+        "coords": coords,
+        "streets": "mostly along " + ", ".join(names[:5]) if names else "street names not given",
+    }
+
+
 # Driving ---------------------------------------------------------------------------------------
 
 
@@ -669,8 +777,8 @@ def drive(a: dict, b: dict, when: datetime) -> dict | None:
         _lake()
         .execute(
             """
-            select pickup_hour, trips, minutes_p25, minutes_median, minutes_p75, fare_usd_median,
-                   since_month
+            select ride_kind, pickup_hour, trips, minutes_p25, minutes_median, minutes_p75,
+                   fare_usd_median, since_month
             from gold.agg_trip_times_zone_pair
             where pickup_zone_id = ? and dropoff_zone_id = ? and day_type = ?
             """,
@@ -680,21 +788,37 @@ def drive(a: dict, b: dict, when: datetime) -> dict | None:
     )
     if not rows:
         return None
-    by_hour = {r[0]: r for r in rows}
-    hour = when.hour
-    r = by_hour.get(hour) or min(rows, key=lambda r: min(abs(r[0] - hour), 24 - abs(r[0] - hour)))
-    busiest = max(rows, key=lambda r: r[3])
+
+    def near(hrs: list[int]) -> int:
+        return min(hrs, key=lambda h: min(abs(h - when.hour), 24 - abs(h - when.hour)))
+
+    hour = near(sorted({r[1] for r in rows}))
+    at = [r for r in rows if r[1] == hour]
+    # Trip time from all rides at that hour, weighted by how many there were.
+    n = sum(r[2] for r in at)
+    minutes = tuple(round(sum(r[k] * r[2] for r in at) / n) for k in (3, 4, 5))
+    fares = {r[0]: r[6] for r in at}
+    by_hour: dict[int, list] = {}
+    for r in rows:
+        by_hour.setdefault(r[1], []).append(r)
+    slowest = max(
+        by_hour, key=lambda h: sum(r[4] * r[2] for r in by_hour[h]) / sum(r[2] for r in by_hour[h])
+    )
+    slow_rows = by_hour[slowest]
     return {
         "from_zone": za[1],
         "to_zone": zb[1],
         "day": day,
-        "hour": r[0],
-        "trips": r[1],
-        "minutes": (r[2], r[3], r[4]),
-        "fare_usd": r[5],
-        "since": str(r[6])[:7],
-        "slowest_hour": busiest[0],
-        "slowest_minutes": busiest[3],
+        "hour": hour,
+        "trips": n,
+        "minutes": minutes,
+        "taxi_fare_usd": fares.get("taxi"),
+        "app_fare_usd": fares.get("app"),
+        "since": str(at[0][7])[:7],
+        "slowest_hour": slowest,
+        "slowest_minutes": round(
+            sum(r[4] * r[2] for r in slow_rows) / sum(r[2] for r in slow_rows)
+        ),
     }
 
 
@@ -716,8 +840,8 @@ def trip_plan(
     the agencies' schedules (with live times where published) and typical taxi or car times
     for that hour from recent trips."""
     mode = (mode or "both").strip().lower()
-    if mode not in ("both", "transit", "drive"):
-        return failed("mode must be transit, drive or both")
+    if mode not in ("both", "transit", "drive", "bike"):
+        return failed("mode must be transit, drive, bike or both")
     a, b = locate(origin), locate(destination)
     if not a or not b:
         missing = origin if not a else destination
@@ -774,6 +898,40 @@ def trip_plan(
             sources.append(
                 {"kind": "official", "title": "AirTrain JFK (Port Authority)", "url": AIRTRAIN_URL}
             )
+        if any(x.get("airport") == "ewr" for x in (a, b)):
+            sources.append(
+                {"kind": "official", "title": "AirTrain Newark (Port Authority)", "url": EWR_URL}
+            )
+    if mode == "bike":
+        try:
+            ride = bike(a, b)
+        except Exception:  # noqa: BLE001
+            ride = None
+        data["bike"] = ride
+        if ride:
+            lines.append(
+                f"By bike: about {ride['minutes']} min for {ride['km']:.1f} km on the route "
+                f"a bike planner picks (bike lanes and quieter streets where it can), at an easy "
+                f"pace; {ride['streets']}."
+            )
+            sources.append(
+                {
+                    "kind": "live",
+                    "title": "Transitous bike routing",
+                    "url": "https://transitous.org",
+                }
+            )
+            layers.append(
+                {
+                    "type": "route",
+                    "label": f"Bike, {ride['minutes']} min",
+                    "legs": [
+                        {"mode": "bike", "name": "", "color": "#2fae2f", "coords": ride["coords"]}
+                    ],
+                }
+            )
+        else:
+            lines.append("No bike route was found between these places.")
     if mode in ("both", "drive"):
         try:
             d = drive(a, b, t)
@@ -782,13 +940,21 @@ def trip_plan(
         data["drive"] = d
         if d:
             p25, med, p75 = d["minutes"]
+            fares = "; ".join(
+                f"{label} about ${d[k]:.0f}"
+                for label, k in (
+                    ("yellow or green taxi", "taxi_fare_usd"),
+                    ("Uber or Lyft", "app_fare_usd"),
+                )
+                if d.get(k)
+            )
             lines.append(
                 f"By taxi or car: usually {med} min ({p25} to {p75} min for most trips) from "
                 f"{d['from_zone']} to {d['to_zone']} around {_hour(d['hour'])} on a {d['day']}, "
-                f"typical fare about ${d['fare_usd']:.0f} before tip, from {d['trips']} taxi and "
-                f"app trips since {d['since']}. The slowest hour is around "
-                f"{_hour(d['slowest_hour'])} at about {d['slowest_minutes']} min. These are "
-                "past trips, not live traffic."
+                f"from {d['trips']} taxi and app trips since {d['since']}. Typical paid before "
+                f"tip, with tolls and fees: {fares or 'not known'}. The slowest hour is around "
+                f"{_hour(d['slowest_hour'])} at about {d['slowest_minutes']} min. These are past "
+                "trips, not live traffic."
             )
             sources.append(
                 {
@@ -821,13 +987,14 @@ TOOLS = [
         "bus, LIRR, Metro-North, NJ Transit; trips to JFK include the AirTrain leg). Car or "
         "taxi: typical time and fare for that hour from recent taxi and app trips (not live "
         "traffic). Use for every 'how do I get to', 'how long does it take', 'fastest way' or "
-        "airport question; never estimate routes or times yourself.",
+        "airport question, and with mode bike for bike rides; never estimate routes or times "
+        "yourself. Set `when` to the time the reader will travel.",
         {
             "type": "object",
             "properties": {
                 "origin": {"type": "string", "description": "station, landmark, address or area"},
                 "destination": {"type": "string"},
-                "mode": {"type": "string", "enum": ["both", "transit", "drive"]},
+                "mode": {"type": "string", "enum": ["both", "transit", "drive", "bike"]},
                 "when": {
                     "type": "string",
                     "description": "New York time like 2026-10-16T17:30, or now (default)",

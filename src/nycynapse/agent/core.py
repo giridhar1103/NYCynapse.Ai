@@ -93,7 +93,10 @@ _DRAFT_SMELLS = [
         re.compile(
             r"\b(?:is|are|was|were|isn't|aren't|not|nothing|none|no \w+) (?:listed|reported)\b"
             r"|\bfeed(?:'s)?\b|\breadings?\b|\bdataset\b|\bthe data (?:shows|says)\b"
-            r"|\baccording to\b|\bpublished (?:text|wording)\b|\bI (?:found|have no|can't tell)\b",
+            r"|\baccording to\b|\bpublished (?:text|wording)\b|\bI (?:found|have no|can't tell)\b"
+            r"|\b(?:trip )?planner\b|\bavailable to me\b|\bmy (?:tools?|data|numbers|search)\b"
+            r"|\bI (?:searched|pulled|ran|queried)\b|\b(?:tool|search) (?:returned|results?)\b"
+            r"|\bwouldn't load\b",
             re.I,
         ),
         "it talks about the data or what was checked; describe the city itself "
