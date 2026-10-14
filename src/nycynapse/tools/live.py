@@ -22,7 +22,7 @@ import httpx
 
 from ..config import REPO
 from . import Tool, ToolResult, failed
-from .http import UA, env, get_json
+from .http import UA, cached, env, get_json
 
 NY = ZoneInfo("America/New_York")
 
@@ -315,6 +315,21 @@ def _socrata_headers() -> dict:
     return {"X-App-Token": token} if token else {}
 
 
+def _speeds_live() -> bool:
+    """Whether NYC DOT's sensors have reported in the last hour. When they have not, the tool
+    is left out, so an answer never leans on hours-old speeds."""
+
+    def check() -> bool:
+        try:
+            head = get_json(DOT_SPEEDS, {"$select": "max(data_as_of) AS t"}, _socrata_headers(), 60)
+            latest = datetime.fromisoformat(head[0]["t"]).replace(tzinfo=NY)
+        except Exception:  # noqa: BLE001 - if the check fails, let the tool report it
+            return True
+        return (datetime.now(UTC) - latest.astimezone(UTC)).total_seconds() < 3600
+
+    return cached(("speeds_live",), 300, check)
+
+
 def road_speeds(borough: str | None = None) -> ToolResult:
     """Latest NYC DOT sensor speeds on major roads, slowest first, and how fresh they are."""
     head = get_json(DOT_SPEEDS, {"$select": "max(data_as_of) AS t"}, _socrata_headers(), 60)
@@ -351,6 +366,17 @@ def road_speeds(borough: str | None = None) -> ToolResult:
     links = list(by_link.values())
     stale_min = (datetime.now(UTC) - latest.astimezone(UTC)).total_seconds() / 60
     fresh = stale_min <= 30
+    if stale_min > 60:
+        # Hours-old speeds read as current on a map, so they are not shown at all.
+        return ToolResult(
+            summary=(
+                "Live road speeds are not available right now (NYC DOT's sensors last reported "
+                f"{_ago(latest)}). Do not mention speeds or this gap unless the reader asked "
+                "how fast traffic is moving; then say in one short clause that live traffic "
+                "speeds aren't available right now."
+            ),
+            data={"fresh": False, "updated_at": latest.isoformat()},
+        )
     by_boro: dict[str, list[float]] = {}
     for r in links:
         by_boro.setdefault(r["borough"], []).append(float(r["speed"]))
@@ -558,7 +584,8 @@ def _digest(e: dict, lanes: list[dict]) -> str:
         hit, total = ln.get("total-affected"), ln.get("total-original")
         if hit and total:
             extra.append(f"all {total} lanes closed" if hit >= total else f"{hit} of {total} lanes")
-    return " ".join(kept) + (f" [{'; '.join(extra)}]" if extra else "")
+    # The deck and real direction go first: on the GWB, I-95 "southbound" heads to New Jersey.
+    return (f"[{'; '.join(extra)}] " if extra else "") + " ".join(kept)
 
 
 def road_events(
@@ -658,7 +685,8 @@ def road_events(
     if not items:
         lines.append("- none found" + (" (try the road's number, like I-95)" if terms else ""))
     summary = head + "\n" + "\n".join(lines)
-    shown = [i for i in (listed if terms else items)[:80] if i["shape"]]
+    # The map shows what the answer can talk about, not every closure in the city.
+    shown = [i for i in listed if i["shape"]]
 
     def pin(i: dict) -> dict:
         title, _, rest = i["description"].partition(": ")
@@ -1095,6 +1123,7 @@ TOOLS = [
         "slowest segments, with how fresh the feed is. Use for traffic right now.",
         {"type": "object", "properties": {"borough": {"type": "string"}}},
         road_speeds,
+        enabled=_speeds_live,
     ),
     Tool(
         "road_events",

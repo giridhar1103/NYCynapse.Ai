@@ -1,9 +1,10 @@
 """Turn the places an answer names into something the map can highlight.
 
 The model lists the places its answer is about ("Mott Haven", "11224", "Brooklyn", "Barclays
-Center"). Each name is matched against the map's own outlines first (boroughs, neighborhoods,
-ZIP code areas), then against what the tools already highlighted, and only then looked up with
-NYC GeoSearch as a point. Anything that cannot be placed in the city is left off the map.
+Center"). Each name is matched against the map's own outlines first (bridges and tunnels,
+boroughs, neighborhoods, ZIP code areas), then against what the tools already highlighted,
+and only then looked up with NYC GeoSearch as a point. Anything that cannot be placed in the
+city is left off the map.
 """
 
 from __future__ import annotations
@@ -64,6 +65,10 @@ def _load() -> dict:
                 if f["properties"].get("kind") in (None, "residential", "park", "airport")
             ],
             "zips": {f["properties"]["name"]: f["properties"] for f in zips},
+            "crossings": [
+                (f["properties"]["name"], [_norm(a) for a in f["properties"]["aliases"]])
+                for f in json.loads((GEO / "crossings.json").read_text())["features"]
+            ],
         }
     return _index
 
@@ -73,6 +78,10 @@ def _match_area(name: str) -> dict | None:
     n = _norm(name)
     if not n:
         return None
+    # Bridges and tunnels, drawn from their real outlines ("GWB lower level" is the GWB).
+    for full, aliases in idx["crossings"]:
+        if any(re.search(rf"\b{re.escape(a)}\b", n) for a in aliases):
+            return {"level": "crossing", "key": full}
     if n in _BOROUGH_ALIASES:
         return {"level": "borough", "key": _BOROUGH_ALIASES[n]}
     z = re.search(r"\b(1\d{4})\b", name)
