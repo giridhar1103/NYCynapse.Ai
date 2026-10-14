@@ -2,7 +2,7 @@
 // draws each tool call as it runs (with errors and recoveries), renders the answer and its
 // sources as plain text, and keeps the conversation to a question and three follow-ups.
 
-import { GuideMap, wxIcon } from "./map.js?v=6";
+import { GuideMap, wxIcon } from "./map.js?v=7";
 
 const { el, url } = NY;
 const TOOL = {
@@ -364,6 +364,16 @@ function renderText(text, ctx = {}) {
   return out;
 }
 
+// A place name that is only part of a longer name is not that place: "Queens" in
+// "Brooklyn–Queens Expressway" or "Queensboro", "Brooklyn" in "Brooklyn Bridge".
+const LONGER = /^\s(?:Expressway|Expwy|Parkway|Pkwy|Boulevard|Blvd|Bridge|Tunnel|Avenue|Ave|Street|St|Plaza|Center|Mall|College|Hospital|Highway|Hwy|Line|Railroad|Navy Yard|Heights|Museum|Botanic|Public Library|Bus Terminal)\b/;
+function insideName(text, start, end) {
+  const before = text[start - 1] || " ", after = text[end] || " ";
+  if (/[\w'’]/.test(before) || /[\w'’]/.test(after)) return true;
+  if (/[–—/]/.test(before) && /\w/.test(text[start - 2] || "")) return true;
+  return LONGER.test(text.slice(end, end + 20));
+}
+
 function inline(text, ctx, bold = false) {
   const names = (ctx.places || []).map((p, i) => ({ name: p.name, i }))
     .filter((p) => p.name && p.name.length > 2 && !ctx.seen.has(p.i))
@@ -380,7 +390,7 @@ function inline(text, ctx, bold = false) {
     else if (m[2] != null) kids.push(cite(m[2], ctx.sources || {}));
     else if (m[3] != null) {
       const p = names.find((x) => x.name.toLowerCase() === m[3].toLowerCase());
-      if (p && !ctx.seen.has(p.i) && ctx.onPlace) {
+      if (p && !ctx.seen.has(p.i) && ctx.onPlace && !insideName(text, m.index, re.lastIndex)) {
         ctx.seen.add(p.i);
         // Take in the rest of a hyphenated name: "Spring Creek-Starrett City", "Mott Haven-Port Morris".
         const before = text.slice(at, m.index).match(/(?:[A-Z0-9][\w'’]*(?: [A-Z0-9][\w'’]*)*-)+$/);

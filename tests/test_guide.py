@@ -658,16 +658,33 @@ def test_road_events_one_road_keeps_schedule_and_deck(monkeypatch):
     assert not live.road_events(road="LIE").data  # "lie" inside "Earlier" is not a match
 
 
-def test_only_cited_lines_are_checked_for_numbers():
-    text = (
-        "The Lincoln Tunnel takes about 25 minutes from Midtown.\n"
-        "- Holland Tunnel: open [1]\n"
-        "- Lincoln Tunnel: 4321 cars an hour\n"
-        "Rain chance is 77% tonight [2]."
+def test_made_up_figures_are_rewritten_then_dropped(monkeypatch):
+    made_up = "Plan on about 75 minutes to JFK.\n- Rain chance is 10% [1]\n- Taxi: 45 to 60 minutes"
+    agent, seen = _agent(
+        monkeypatch,
+        [
+            _step(calls=[("weather", {})]),
+            _step(answer=made_up),
+            _step(answer=made_up),
+        ],
+        [_tool("weather", text="Rain chance 10%")],
     )
-    cited = core._cited_part(text)
-    assert "25 minutes" not in cited
-    assert "4321" in cited and "77%" in cited
+    out = agent.run("how long to JFK?", [], lambda e, d: None)
+    assert "not in any tool result: 75, 45, 60" in seen[2][1]
+    assert "trip_plan" in seen[2][1]  # the rewrite may still look it up
+    assert out["answer"] == "- Rain chance is 10%[1]"
+    assert out["untraced"] == []
+
+
+@pytest.mark.parametrize(
+    "text,flagged",
+    [
+        ("Take I-278 to Exit 35, then 14th St to 42 St-Port Authority.", []),
+        ("Gate 22 at Terminal 4, about 35 minutes.", ["35"]),
+    ],
+)
+def test_numbers_that_are_names_are_not_figures(text, flagged):
+    assert core._untraced_numbers(text, [], "") == flagged
 
 
 def test_bridges_and_tunnels_resolve_to_their_outlines():
@@ -711,3 +728,54 @@ def test_note_like_draft_is_rewritten_once(monkeypatch):
     out = agent.run("rain tonight?", [], lambda e, d: None)
     assert out["answer"] == "Tonight stays dry."
     assert "No rain is listed" in seen[2][1]
+
+
+def test_alert_hours_say_when_it_ends_and_comes_back():
+    from datetime import datetime
+
+    ny = live.NY
+    now = datetime(2026, 10, 14, 5, 52, tzinfo=ny).timestamp()
+    night = [
+        (datetime(2026, 10, d, 22, tzinfo=ny), datetime(2026, 10, d + 1, 6, tzinfo=ny))
+        for d in (13, 14, 15)
+    ]
+    periods = [{"start": int(a.timestamp()), "end": int(b.timestamp())} for a, b in night]
+    hours, starts = live._alert_hours(periods, now)
+    assert starts is None
+    assert hours == "until 6 AM; again 10 PM to Thu 6 AM, Thu 10 PM to Fri 6 AM"
+    hours, starts = live._alert_hours(periods[1:], now)
+    assert starts == periods[1]["start"] and hours.startswith("10 PM to Thu 6 AM")
+
+
+def test_transit_items_are_kept_off_the_road_list(monkeypatch):
+    bridge = {
+        "event-id": "TRANSCOMTRANSIT-1",
+        "headline": {"category": "obstruction", "code": "drawbridge up"},
+        "counties": ["Queens"],
+        "description": "A Line and Rockaway Park Shuttle: from Broad Channel to Rockaway Park - "
+        "Beach 116 St: The drawbridge is up. Comment: trains are delayed.",
+        "details": [{}],
+    }
+    crash = {
+        **bridge,
+        "event-id": "TRANSCOM-2",
+        "headline": {"category": "incident"},
+        "description": "I-278 eastbound: crash. Right lane closed.",
+    }
+    monkeypatch.setattr(live, "_ny511_configured", lambda: True)
+    monkeypatch.setattr(live, "_ny511_events", lambda: ([bridge, crash], time.time()))
+    roads = live.road_events()
+    assert [i["id"] for i in roads.data] == ["TRANSCOM-2"]
+    rail = live.transit_changes(route="A")
+    assert [i["system"] for i in rail.data] == ["subway"]
+    assert "drawbridge is up" in rail.data[0]["text"]
+    assert not live.transit_changes(route="7").data
+
+
+def test_trip_ends_are_placed_without_guessing():
+    from nycynapse.tools import trips
+
+    assert trips.locate("JFK")["airport"] == "jfk"
+    assert trips.locate("Astoria")["name"] == "Astoria"
+    assert trips.zone_of(40.6441, -73.7823)[1] == "JFK Airport"
+    assert trips.locate("48.85,2.35") is None  # Paris is not a trip end

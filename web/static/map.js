@@ -284,6 +284,53 @@ export class GuideMap {
         this.hover(id + "-work", tip);
         this.hover(id + "-dot", tip);
         this.key(L.label || "Road events", keyRows);
+      } else if (L.type === "route" && (L.legs || []).length) {
+        // A planned trip: each ride in its line's color and each walk dotted, drawn leg by leg
+        // from start to finish, with a dot where the reader boards, transfers and gets off.
+        const legs = L.legs.filter((l) => (l.coords || []).length > 1);
+        if (!legs.length) continue;
+        const ink = theme() === "dark" ? "#0b0b0b" : "#ffffff";
+        const stops = [];
+        legs.forEach((l, k) => {
+          const lid = `${id}-${k}`, walk = l.mode === "walk";
+          this.map.addSource(lid, { type: "geojson", lineMetrics: true,
+            data: { type: "Feature", geometry: { type: "LineString", coordinates: l.coords }, properties: {} } });
+          if (!walk) this.addLayer({ id: lid + "-case", type: "line", source: lid,
+            layout: { "line-cap": "round", "line-join": "round" },
+            paint: { "line-color": ink, "line-width": 9, "line-opacity": 0 } });
+          this.addLayer({ id: lid, type: "line", source: lid, layout: { "line-cap": "round", "line-join": "round" },
+            paint: walk
+              ? { "line-color": "#8a8f98", "line-width": 3, "line-dasharray": [0.6, 1.6], "line-opacity": 0 }
+              : { "line-width": 5.5, "line-gradient": ["step", ["line-progress"], "rgba(0,0,0,0)", 0, "rgba(0,0,0,0)"] } });
+          if (!walk) stops.push(l.coords[0], l.coords[l.coords.length - 1]);
+          l.coords.forEach((c) => bounds.extend(c));
+        });
+        if (stops.length) {
+          this.map.addSource(id + "-stops", { type: "geojson", data: { type: "FeatureCollection",
+            features: stops.map((c) => ({ type: "Feature", geometry: { type: "Point", coordinates: c }, properties: {} })) } });
+          this.addLayer({ id: id + "-stops", type: "circle", source: id + "-stops", paint: {
+            "circle-color": ink, "circle-stroke-color": this.ink, "circle-stroke-width": 2,
+            "circle-radius": 4.5, "circle-opacity": 0, "circle-stroke-opacity": 0 } });
+        }
+        const t0 = performance.now(), per = 700;
+        this.animate(id, () => {
+          const t = this.elapsed(t0);
+          legs.forEach((l, k) => {
+            const lid = `${id}-${k}`, d = Math.max(0, Math.min(1, (t - k * per) / per));
+            if (l.mode === "walk") { this.map.setPaintProperty(lid, "line-opacity", d > 0 ? 0.9 : 0); return; }
+            const c = l.color || "#3987e5";
+            this.map.setPaintProperty(lid, "line-gradient", ["step", ["line-progress"], c, d, "rgba(0,0,0,0)"]);
+            this.map.setPaintProperty(lid + "-case", "line-opacity", d > 0 ? 0.9 : 0);
+          });
+          if (this.map.getLayer(id + "-stops")) {
+            const o = Math.min(1, Math.max(0, (t - legs.length * per) / 300));
+            this.map.setPaintProperty(id + "-stops", "circle-opacity", o);
+            this.map.setPaintProperty(id + "-stops", "circle-stroke-opacity", o);
+          }
+          if (t >= legs.length * per + 300) this.stopAnim(id);
+        });
+        any = true;
+        if (L.label) this.chip(L.label);
       } else if (L.type === "lines") {
         const lines = (L.lines || []).filter((l) => (l.coords || []).length > 1);
         if (!lines.length) continue;
