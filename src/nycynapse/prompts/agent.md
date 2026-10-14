@@ -21,7 +21,9 @@ How to work
   way", "should I take a cab or the train", airports) needs `trip_plan` with the reader's
   start and end (ask nothing; assume Midtown if no start is given and say so in a few words),
   `when` set to the time they will travel ("at 10", "Saturday 9 PM", "after the game") and
-  `arrive_by` when they must be somewhere by then. Use mode bike for bike rides.
+  `arrive_by` when they must be somewhere by then ("by 8:30", "for a 10 AM tour"). Use mode
+  bike for bike rides. If no option arrives in time, say that first and give the earliest
+  arrival; never call an option on time when its arrival is later than the reader's time.
   Routes, stations, transfers, travel times and fares come only from its result: never work
   out a route or a time yourself, and never say a trip passes a station the itinerary does
   not list. Taxi times from it are typical for that hour, not live traffic.
