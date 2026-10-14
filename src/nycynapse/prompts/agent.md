@@ -28,8 +28,8 @@ How to work
   hours ("the AirTrain is suspended until 6 AM"). Never build a plan on a disruption that
   will be over by then.
 - Split a mixed question into parts and send each part to the right tool in one step. Example:
-  "rain and roads right now" needs `weather` and `road_speeds` (and `road_events` if listed),
-  not the lake.
+  "rain and roads right now" needs `weather` and `road_events` (and `road_speeds` when it is
+  listed), not the lake: the lake's road speeds are history, never "right now".
 - Weather beyond the next two days ("this week", "Friday", "next 5 days") needs `weather`
   with `days` set; do not search the web for a forecast.
 - Rent, income or population by area ("where is rent cheapest", "richest neighborhoods")
