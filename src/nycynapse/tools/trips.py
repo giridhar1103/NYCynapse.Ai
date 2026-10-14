@@ -200,9 +200,21 @@ def locate(text: str) -> dict | None:
     hood = _neighborhood(n)
     if hood:
         return hood
+    outside = re.search(
+        r"\b(?:nj|new jersey|hoboken|jersey city|newark|weehawken|fort lee|union city|"
+        r"secaucus|bayonne|yonkers|westchester|long island|nassau)\b",
+        n,
+    )
+    f = None
     try:
-        d = get_json(
-            "https://geosearch.planninglabs.nyc/v2/search", {"text": raw, "size": 1}, ttl_s=86400
+        d = (
+            {}
+            if outside
+            else get_json(
+                "https://geosearch.planninglabs.nyc/v2/search",
+                {"text": raw, "size": 1},
+                ttl_s=86400,
+            )
         )
         f = (d.get("features") or [None])[0]
     except Exception:  # noqa: BLE001 - fall through to the regional search
@@ -217,29 +229,65 @@ def locate(text: str) -> dict | None:
         # "63B Newark Avenue". A long address may differ by one word.
         if want and (want == got or len(want) >= 3 and len(want ^ got) <= 1):
             return {"name": label.split(",")[0], "lat": lat, "lon": lon}
-    try:
-        hits = get_json(
-            "https://nominatim.openstreetmap.org/search",
-            {
-                "q": raw,
-                "format": "jsonv2",
-                "limit": 1,
-                "viewbox": ",".join(str(x) for x in BOX),
-                "bounded": 1,
-            },
-            ttl_s=86400,
+    generic = {
+        "town",
+        "of",
+        "city",
+        "village",
+        "borough",
+        "township",
+        "nj",
+        "ny",
+        "street",
+        "avenue",
+        "road",
+        "boulevard",
+        "place",
+        "terminal",
+        "station",
+    }
+    queries = [raw]
+    # An intersection outside the city ("Washington & 8th, Hoboken"): the first street in that
+    # town is close enough to plan from, and the name says it is approximate.
+    m = re.match(r"\s*(.+?)\s+(?:&|and|at)\s+(.+?)(?:,\s*(.+))?$", raw, re.I)
+    if outside and m:
+        town = m.group(3) or re.sub(
+            r"^.*?\b(hoboken|jersey city|newark|weehawken|fort lee|union "
+            r"city|secaucus|bayonne|yonkers)\b.*$",
+            r"\1",
+            raw,
+            flags=re.I,
         )
-    except Exception:  # noqa: BLE001
-        hits = []
-    if hits:
+        queries.append(f"{m.group(1)}, {town}")
+    for k, q in enumerate(queries):
+        try:
+            hits = get_json(
+                "https://nominatim.openstreetmap.org/search",
+                {
+                    "q": q,
+                    "format": "jsonv2",
+                    "limit": 1,
+                    "viewbox": ",".join(str(x) for x in BOX),
+                    "bounded": 1,
+                },
+                ttl_s=86400,
+            )
+        except Exception:  # noqa: BLE001
+            hits = []
+        if not hits:
+            continue
         h = hits[0]
         lat, lon = float(h["lat"]), float(h["lon"])
-        # Every word asked for, and nothing more than a generic word: "Fort Lee" or "Town of
-        # Huntington", not "Juniors Barber Shop" for "Juniors".
         got = _words(_norm(h.get("name") or ""))
-        extra = got - _words(n) - {"town", "of", "city", "village", "borough", "township"}
-        if _inside(lat, lon) and _words(n) <= got and not extra:
-            return {"name": h.get("name") or raw, "lat": lat, "lon": lon}
+        want = _words(_norm(q))
+        # Every word asked for, and nothing more than a generic word: "Fort Lee" or "Town of
+        # Huntington", not "Juniors Barber Shop" for "Juniors". Outside the city, the name found
+        # may be part of what was asked ("Hoboken" for "Washington St, Hoboken").
+        extra = got - want - generic
+        fits = (want <= got or bool(outside)) and not extra
+        if _inside(lat, lon) and fits:
+            name = h.get("name") or q
+            return {"name": f"near {name}" if k else name, "lat": lat, "lon": lon}
     return None
 
 
@@ -383,17 +431,33 @@ def _itinerary(it: dict, end: str, extra: tuple[str, int, int] | None = None) ->
     it = {**it, "legs": _tidy(it["legs"])}
     it["transfers"] = max(0, sum(lg["mode"] != "WALK" for lg in it["legs"]) - 1)
     legs = [x for x in (_leg_text(lg, end) for lg in it["legs"]) if x]
-    lo = hi = round(it["duration"] / 60)
+    # Leaving and arriving follow the walks as merged above, so "leave 9:29, walk 14 min, train
+    # at 9:40" cannot happen: leave = first ride minus the walk to it.
+    rides = [i for i, lg in enumerate(it["legs"]) if lg["mode"] != "WALK"]
+
+    def ts(x: str) -> float:
+        return datetime.fromisoformat(x.replace("Z", "+00:00")).timestamp()
+
+    if rides:
+        first, last = rides[0], rides[-1]
+        leave_ts = ts(it["legs"][first]["startTime"]) - sum(
+            lg["duration"] for lg in it["legs"][:first]
+        )
+        end_ts = ts(it["legs"][last]["endTime"]) + sum(
+            lg["duration"] for lg in it["legs"][last + 1 :]
+        )
+    else:
+        leave_ts, end_ts = ts(it["startTime"]), ts(it["endTime"])
+    lo = hi = round((end_ts - leave_ts) / 60)
     if extra:
         legs.append(extra[0])
         lo, hi = lo + extra[1], hi + extra[2]
     walk = round(sum(lg["duration"] for lg in it["legs"] if lg["mode"] == "WALK") / 60)
     return {
         "minutes": (lo, hi),
-        "arrive_ts": datetime.fromisoformat(it["endTime"].replace("Z", "+00:00")).timestamp()
-        + 60 * (hi - round(it["duration"] / 60)),
-        "leave": _hm(it["startTime"]),
-        "arrive": _hm(it["endTime"]),
+        "arrive_ts": end_ts + 60 * (hi - lo) + 60 * (extra[1] if extra else 0),
+        "leave": datetime.fromtimestamp(leave_ts, NY).strftime("%-I:%M %p"),
+        "arrive": datetime.fromtimestamp(end_ts, NY).strftime("%-I:%M %p"),
         "transfers": it.get("transfers", 0),
         "walk_minutes": walk,
         "steps": legs,
