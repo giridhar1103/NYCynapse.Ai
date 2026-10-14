@@ -233,15 +233,34 @@ class Agent:
                 t.steps.append({"note": "retried a step that claimed a tool failure"})
                 continue
             issues = [] if step.get("declined") else _draft_issues(answer)
+            loose: list[str] = []
+            if answer and not calls and not step.get("declined"):
+                loose = self._untraced(t, answer)
+                if loose:
+                    issues.append(
+                        "these figures are not in any tool result: "
+                        + ", ".join(loose)
+                        + ". Use the figures the tools gave, or leave them out; never estimate "
+                        "times, distances, prices or counts yourself"
+                    )
             if answer and not calls and issues and t.redraft is None:
+                # Made-up figures may need a tool (trip_plan for a travel time), so that rewrite
+                # may still call one; a rewrite for wording alone answers straight away.
+                can_look = bool(loose) and self._calls(t) < MAX_CALLS and round_no < MAX_ROUNDS - 1
                 t.redraft = (
                     f"Your draft answer was:\n{answer}\n\nRewrite it once more as the final "
                     "answer, with the same facts, citations and places, because "
                     + "; and ".join(issues)
                     + "."
+                    + (
+                        " If a tool can supply what is missing (trip_plan for routes and travel "
+                        "times), call it first."
+                        if can_look
+                        else ""
+                    )
                 )
                 t.steps.append({"note": "redrafted: " + "; ".join(issues)})
-                force = True
+                force = not can_look
                 continue
             if answer and not calls:
                 return self._finish(
@@ -270,6 +289,15 @@ class Agent:
 
     def _calls(self, t: Turn) -> int:
         return len(t.results)
+
+    def _untraced(self, t: Turn, answer: str) -> list[str]:
+        return _untraced_numbers(
+            _uncite(answer),
+            [r["result"] for r in t.results],
+            " ".join(f"{h.get('answer', '')} {h.get('facts', '')}" for h in t.history)
+            + " "
+            + t.question,
+        )
 
     def _valid_calls(self, t: Turn, calls: list[dict]) -> list[dict]:
         names = {x.name for x in self.tools()}
@@ -469,11 +497,12 @@ class Agent:
             for r in t.results
             if r["result"].ok
         )[:1800]
-        untraced = _untraced_numbers(
-            _uncite(_cited_part(answer or "")),
-            [r["result"] for r in t.results],
-            " ".join(f"{h.get('answer', '')} {h.get('facts', '')}" for h in t.history),
-        )
+        untraced = self._untraced(t, answer or "") if answer and not declined else []
+        if untraced and t.redraft is not None:
+            # Rewritten once and still carrying figures nothing supports: drop the sentences
+            # or list lines that hold them rather than publish a made-up number.
+            answer = _drop_untraced(answer, untraced)
+            untraced = self._untraced(t, answer)
         return {
             "answer": answer,
             "follow_ups": [f.strip() for f in follow_ups if f.strip()][:3],
@@ -506,6 +535,16 @@ class Agent:
                 "follow_ups": [f.strip() for f in follow_ups if f.strip()][:3],
             },
             "untraced": untraced,
+            "trace": [
+                {
+                    "tool": r["tool"],
+                    "args": r["args"],
+                    "ok": r["result"].ok,
+                    "summary": (r["result"].summary or "")[:6000],
+                }
+                for r in t.results
+            ]
+            + [{"note": s["note"]} for s in t.steps if "note" in s],
         }
 
 
@@ -515,6 +554,15 @@ _NUM = re.compile(
 _SCALE = {"thousand": 1e3, "million": 1e6, "billion": 1e9}
 _SMALL = {str(i) for i in range(0, 13)}
 _CLOCK = re.compile(r"\d{1,2}:\d{2}|\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?)?")
+
+
+# Numbers that are names, not figures: I-278, Route 9A, 14th St, 42 St, Pier 17, Terminal 4.
+_NAMES = re.compile(
+    r"\b[A-Z]{1,3}-\d+[A-Z]?\b|\b\d+(?:st|nd|rd|th)\b"
+    r"|\b\d+ (?:St|Street|Av|Ave|Avenue|Pl|Rd|Dr|Blvd)\b"
+    r"|\b(?:Route|Pier|Terminal|Exit|Exits|Gate|Platform|Track|Hall|PS|P\.S\.|Gates)\s+\d+\w*",
+    re.I,
+)
 
 
 def _numbers(text: str) -> list[tuple[str, float, float]]:
@@ -559,7 +607,7 @@ def _untraced_numbers(answer: str, results: list[ToolResult], memory: str = "") 
                 values.append(abs(x - y))
                 values.append(abs(x - y) / abs(y) * 100)
     out = []
-    for written, x, step in _numbers(answer):
+    for written, x, step in _numbers(_NAMES.sub(" ", answer)):
         if written in _SMALL or (len(written) == 4 and written.startswith("20")):
             continue
         slack = step / 2 + 0.051
@@ -614,24 +662,26 @@ def _result_text(r: dict, numbers: dict[str, int]) -> str:
 _CITE = re.compile(r"\s?\[(\d{1,2}(?:\s*[,;]\s*\d{1,2})*)\]")
 
 
-def _cited_part(text: str) -> str:
-    """The lines that claim to come from a source. A run of list lines counts as cited when
-    any of them is, since citations are tidied to the end of a run. Uncited lines are the
-    model's own knowledge of the city (which tunnels go to New Jersey) and are not checked
-    against the tools."""
-    lines = (text or "").splitlines()
-    keep: list[str] = []
-    run: list[str] = []
-    for line in [*lines, ""]:
-        if line.lstrip().startswith("- "):
-            run.append(line)
+def _drop_untraced(answer: str, figures: list[str]) -> str:
+    """Remove the list lines or sentences that hold figures no tool gave, keeping the rest."""
+    bad = [re.compile(rf"(?<![\w.]){re.escape(f)}(?![\w])") for f in figures]
+
+    def holds(text: str) -> bool:
+        clean = _uncite(text)
+        return any(b.search(clean) for b in bad)
+
+    out = []
+    for line in answer.split("\n"):
+        if line.lstrip().startswith(("- ", "* ", "• ")):
+            if not holds(line):
+                out.append(line)
             continue
-        if run and any(_CITE.search(x) for x in run):
-            keep += run
-        run = []
-        if _CITE.search(line):
-            keep.append(line)
-    return "\n".join(keep)
+        parts = re.split(r"(?<=[.!?])\s+(?=[A-Z])", line)
+        kept = [x for x in parts if not holds(x)]
+        if kept or not parts:
+            out.append(" ".join(kept))
+    text = "\n".join(out)
+    return re.sub(r"\n{3,}", "\n\n", text).strip() or answer
 
 
 def _uncite(text: str) -> str:
