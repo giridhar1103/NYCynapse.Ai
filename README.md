@@ -16,7 +16,7 @@ Under the guide is a QueryGPT-style text-to-SQL pipeline, following the path Ube
 The guide is a small, budgeted agent that works with any model provider. Each step, the model replies with JSON: a status line for the reader and either up to three tool calls, run in parallel, or the answer. Tool results, failures included, go back to it on the next step.
 
 1. **The lake first.** `ask_lake` sends one precise question through the governed pipeline below and gets rows back. It knows what the lake covers, table by table, so it does not ask the lake about tonight.
-2. **Live city feeds next.** Weather by borough with a week's forecast and alerts (Open-Meteo, National Weather Service), NYC DOT road speeds, 511NY road events, MTA subway alerts, Census rent, income and population by ZIP code area, NYC Open Data and the city's address search.
+2. **Live city feeds next.** Weather by borough with a week's forecast and alerts (Open-Meteo, National Weather Service), NYC DOT road speeds, 511NY closures and planned street events, MTA subway alerts, Census rent, income and population by ZIP code area, NYC Open Data and the city's address search.
 3. **The web last.** Google results through Serper (Tavily and a self-hosted SearXNG behind it), and the text of the best pages, treated as untrusted material.
 4. **One answer.** Short and direct. Every source the tools return gets a number, the model cites facts with those numbers, and the page shows them as source pills; sources the answer did not use are left out. A mixed question ("rain and roads right now") is split and sent to the right tools in one step; a failed tool is reported and the agent tries another way.
 
@@ -175,7 +175,7 @@ Two stdio servers, both read-only, usable from Claude Desktop or any MCP client.
 |---|---|
 | `weather` | Weather now and for the next hours by borough, a daily forecast up to a week ahead, and National Weather Service alerts |
 | `road_speeds` | NYC DOT sensor speeds, by borough and the slowest segments, with how fresh the feed is |
-| `road_events` | 511NY incidents, construction and closures, as published (needs a 511NY key) |
+| `road_events` | 511NY closures, roadwork, incidents and planned street events (parades, games, concerts), quoted as published (needs a 511NY feed login) |
 | `subway_alerts` | MTA alerts in effect now, optionally for one line |
 | `find_place` | An address, landmark or venue: coordinates, neighborhood, borough |
 | `area_stats` | ZIP code areas ranked by Census median rent, household income, population or share of renters, named by neighborhood |
@@ -197,7 +197,7 @@ Two stdio servers, both read-only, usable from Claude Desktop or any MCP client.
 }
 ```
 
-Keys for the live tools (Serper, Tavily, an NYC Open Data app token, 511NY) are read from a separate env file; any tool whose key is missing is simply left out.
+Keys for the live tools (Serper, Tavily, an NYC Open Data app token, a 511NY feed login) are read from a separate env file; any tool whose key is missing is simply left out.
 
 ## Running it
 
