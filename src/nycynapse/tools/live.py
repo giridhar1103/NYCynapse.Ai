@@ -609,6 +609,8 @@ def road_events(
         cat = (e.get("headline") or {}).get("category", "")
         if cat == "nysdot-road-conditions" or (kind and cat not in NY511_KINDS[kind]):
             continue
+        if _transit(e):  # train and bus service changes have their own tool
+            continue
         boroughs = [NY511_COUNTIES[c] for c in e.get("counties") or [] if c in NY511_COUNTIES]
         if wanted and wanted not in boroughs:
             continue
@@ -722,6 +724,130 @@ def road_events(
     )
 
 
+# Transit service changes reported to 511NY ------------------------------------------------------
+
+TRANSIT_SYSTEMS = {
+    "subway": "MTA NYC Transit Subway",
+    "bus": "MTA NYC Transit Bus",
+    "lirr": "MTA Long Island Rail Road",
+    "metro-north": "MTA Metro-North Railroad",
+    "nj-transit": "NJ Transit Rail",
+    "path": "PATH",
+}
+
+
+def _transit(e: dict) -> bool:
+    return str(e.get("event-id") or "").startswith("TRANSCOMTRANSIT")
+
+
+def _transit_system(e: dict) -> str:
+    text = e.get("description") or ""
+    comment = text.partition(" Comment: ")[2]
+    for key, agency in TRANSIT_SYSTEMS.items():
+        if comment.startswith(agency):
+            return key
+    head = text.partition(":")[0]
+    if re.search(r"\bBus\b|\b(?:QM|BM|BxM|SIM|X)\d", head):
+        return "bus"
+    if re.search(r"\bLine\b|Shuttle", head):
+        return "subway"
+    return "other"
+
+
+def transit_changes(system: str | None = None, route: str | None = None) -> ToolResult:
+    """Service changes on trains and buses in and around NYC from 511NY: LIRR, Metro-North,
+    NJ Transit and PATH schedules and trackwork, subway disruptions such as a drawbridge, and
+    bus stop moves. For subway delays and planned subway work, subway_alerts is the main source."""
+    if not _ny511_configured():
+        return failed("511NY is not set up on this site yet")
+    system = (system or "").strip().lower().replace(" ", "-").replace("_", "-") or None
+    system = {
+        "long-island-rail-road": "lirr",
+        "metro-north-railroad": "metro-north",
+        "njt": "nj-transit",
+        "nj-transit-rail": "nj-transit",
+        "buses": "bus",
+        "subways": "subway",
+    }.get(system or "", system)
+    if system and system not in TRANSIT_SYSTEMS:
+        return failed(f"unknown system {system}; use one of {', '.join(TRANSIT_SYSTEMS)}")
+    route = (route or "").strip()
+    if re.fullmatch(r"[A-Za-z0-9]{1,2}", route):  # a subway line: "A Line", "7 Line"
+        want = re.compile(rf"(?<![\w-]){re.escape(route.upper())}(?:X)? (?:Line|line|train)\b")
+    elif route:
+        want = re.compile(rf"(?<![\w-]){re.escape(route)}(?![\w-])", re.I)
+    else:
+        want = None
+    rows, fetched = _ny511_events()
+    now, week = time.time(), time.time() + 7 * 86400
+    items = []
+    for e in rows:
+        if not _transit(e):
+            continue
+        sysname = _transit_system(e)
+        if system and sysname != system:
+            continue
+        text = " ".join((e.get("description") or "").split())
+        if want and not want.search(text):
+            continue
+        details = e.get("details") or [{}]
+        start = min((_ms(d.get("start-time")) or 0 for d in details), default=0) or None
+        end = max((_ms(d.get("end-time")) or 0 for d in details), default=0) or None
+        if (end and end < now) or (start and start > week):
+            continue
+        title, _, comment = text.partition(" Comment: ")
+        where = title.partition(":")[0]
+        items.append(
+            {
+                "system": sysname,
+                "where": where,
+                "what": (e.get("headline") or {}).get("code"),
+                "text": comment
+                if len(comment) > 120
+                else f"{title.split('. ')[0]}. {comment}".strip(". "),
+                "schedule": re.sub(r"^.*?(?=(?:Until|Starting|From) )", "", title)
+                if re.search(r"(?:Until|Starting|From) ", title)
+                else "",
+                "status": "upcoming" if start and start > now else "now",
+                "starts": _local(start),
+                "start": start or 0,
+            }
+        )
+    rank = {"subway": 0, "lirr": 1, "metro-north": 1, "nj-transit": 1, "path": 1, "bus": 2}
+    items.sort(key=lambda i: (i["status"] != "now", rank.get(i["system"], 3), i["start"]))
+    lines, size = [], 0
+    for i in items:
+        when = "ongoing" if i["status"] == "now" else f"from {i['starts']}"
+        sched = f" Schedule: {i['schedule'][:200]}" if i["schedule"] else ""
+        ln = f"- [{i['system']}, {when}] {i['where']}: {i['text'][:420]}{sched}"
+        if size + len(ln) > 3600:
+            lines.append(f"- {len(items) - len(lines)} more not shown; narrow by system or route.")
+            break
+        lines.append(ln)
+        size += len(ln) + 1
+    head = (
+        f"Train and bus service changes in and around NYC"
+        f"{f' ({system})' if system else ''}{f' on {route}' if route else ''}: "
+        f"{sum(i['status'] == 'now' for i in items)} ongoing, "
+        f"{sum(i['status'] != 'now' for i in items)} starting in the next 7 days "
+        f"({NY511_ATTRIBUTION}). Ongoing changes with a schedule apply only in the hours it "
+        "gives; compare with the current time before saying one affects a trip now."
+    )
+    return ToolResult(
+        summary=head + "\n" + ("\n".join(lines) or "- none"),
+        data=[{k: v for k, v in i.items() if k != "start"} for i in items[:40]],
+        sources=[
+            {
+                "kind": "live",
+                "title": "511NY transit service changes",
+                "url": "https://511ny.org",
+                "attribution": NY511_ATTRIBUTION,
+                "note": NY511_DISCLAIMER,
+            }
+        ],
+    )
+
+
 # Subway ----------------------------------------------------------------------------------------
 
 MTA_ALERTS = "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/camsys%2Fsubway-alerts.json"
@@ -730,20 +856,53 @@ MTA_ALERTS = "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/camsys%2Fsu
 def _plain(translations: list[dict]) -> str:
     for t in translations or []:
         if t.get("language") == "en":
-            return re.sub(r"\s+", " ", html.unescape(t.get("text", ""))).strip()
+            text = re.sub(r"\[[a-z ]+ icon\]\s*", "", html.unescape(t.get("text", "")))
+            return re.sub(r"\s+", " ", text).strip()
     return ""
 
 
+def _clock(ts: float, now: float) -> str:
+    """'6 AM' today, 'Thu 6 AM' on another day, in New York time."""
+    t = datetime.fromtimestamp(ts, NY)
+    hm = t.strftime("%-I:%M %p").replace(":00 ", " ")
+    days = (t.date() - datetime.fromtimestamp(now, NY).date()).days
+    if days == 0:
+        return hm
+    return f"{t.strftime('%a')} {hm}" if 0 < days < 6 else f"{t.strftime('%a %b %-d')} {hm}"
+
+
+def _alert_hours(periods: list[dict], now: float) -> tuple[str, float | None]:
+    """When an alert applies, in plain words, and when its next stretch starts if it is not
+    in effect now. "until 6 AM; again Thu 10 PM to 6 AM, Fri 10 PM to 6 AM"."""
+    spans = sorted(
+        (int(p.get("start") or 0), int(p["end"]) if p.get("end") else None) for p in periods
+    )
+    current = next(((a, b) for a, b in spans if a <= now and (b is None or now < b)), None)
+    later = [(a, b) for a, b in spans if a > now and a < now + 7 * 86400]
+    bits = []
+    if current:
+        bits.append(f"until {_clock(current[1], now)}" if current[1] else "until further notice")
+    nxt = [f"{_clock(a, now)} to {_clock(b, a) if b else 'further notice'}" for a, b in later[:3]]
+    if nxt:
+        bits.append(("again " if current else "") + ", ".join(nxt))
+        if len(later) > 3:
+            more = len(later) - 3
+            bits[-1] += f" and {more} more time{'s' if more > 1 else ''} this week"
+    return "; ".join(bits), (later[0][0] if later and not current else None)
+
+
 def subway_alerts(line: str | None = None) -> ToolResult:
-    """Subway service alerts in effect right now, from the MTA."""
+    """Subway service alerts in effect right now, from the MTA, with the hours each one
+    applies, plus planned changes starting in the next 12 hours."""
     d = get_json(MTA_ALERTS, ttl_s=120)
     now = time.time()
     items = []
     for ent in d.get("entity", []):
         a = ent.get("alert", {})
         periods = a.get("active_period") or [{}]
-        active = any(int(p.get("start", 0)) <= now < int(p.get("end") or now + 1) for p in periods)
-        if not active:
+        hours, starts = _alert_hours(periods, now)
+        active = starts is None and hours != ""
+        if not active and not (starts and starts < now + 12 * 3600):
             continue
         routes = sorted(
             {e.get("route_id") for e in a.get("informed_entity", []) if e.get("route_id")}
@@ -751,29 +910,47 @@ def subway_alerts(line: str | None = None) -> ToolResult:
         if line and line.upper() not in routes:
             continue
         meta = a.get("transit_realtime.mercury_alert", {})
+        detail = _plain((a.get("description_text") or {}).get("translation"))
         items.append(
             {
                 "routes": routes,
                 "type": meta.get("alert_type"),
                 "text": _plain(a.get("header_text", {}).get("translation")),
+                "detail": detail[:400],
+                "hours": hours,
+                "active": active,
                 "updated_at": datetime.fromtimestamp(
                     meta.get("updated_at") or meta.get("created_at") or now, NY
                 ).isoformat(),
             }
         )
     items.sort(key=lambda x: x["updated_at"], reverse=True)
-    delays = [i for i in items if (i["type"] or "").lower() in ("delays", "severe delays")]
+    now_items = [i for i in items if i["active"]]
+    soon = [i for i in items if not i["active"]]
+    delays = [i for i in now_items if (i["type"] or "").lower() in ("delays", "severe delays")]
+
+    def row(i: dict) -> str:
+        detail = f" Details: {i['detail'][:200]}" if i["detail"] else ""
+        return (
+            f"- [{','.join(i['routes'])}] {i['type']}: {i['text'][:220]}"
+            f" (applies {i['hours'] or 'now'}).{detail}"
+        )
+
     summary = (
-        f"{len(items)} MTA subway alerts in effect now"
+        f"{len(now_items)} MTA subway alerts in effect now"
         + (f" for the {line.upper()}" if line else "")
         + (f", {len(delays)} about delays" if delays else "")
         + ":\n"
-        + "\n".join(
-            f"- [{','.join(i['routes'])}] {i['type']}: {i['text'][:220]}"
-            for i in (delays + [i for i in items if i not in delays])[:15]
+        + "\n".join(row(i) for i in (delays + [i for i in now_items if i not in delays])[:15])
+        + (
+            "\nPlanned changes starting in the next 12 hours:\n"
+            + "\n".join(row(i) for i in soon[:6])
+            if soon
+            else ""
         )
+        + "\nEach alert holds only during the hours shown; say when it ends if that is soon."
     )
-    touched = sorted({r for i in (delays if not line else items) for r in i["routes"]})
+    touched = sorted({r for i in (delays if not line else now_items) for r in i["routes"]})
     return ToolResult(
         summary=summary,
         data=items[:60],
@@ -1145,10 +1322,28 @@ TOOLS = [
         enabled=_ny511_configured,
     ),
     Tool(
+        "transit_changes",
+        "live",
+        "Service changes on trains and buses in and around NYC from 511NY: LIRR, Metro-North, "
+        "NJ Transit rail schedules and trackwork, subway disruptions such as a drawbridge, and "
+        "bus stop moves, ongoing or starting in the next 7 days. Use for commuter rail, NJ "
+        "trips and buses; for subway delays and planned subway work use subway_alerts.",
+        {
+            "type": "object",
+            "properties": {
+                "system": {"type": "string", "enum": list(TRANSIT_SYSTEMS)},
+                "route": {"type": "string", "description": "a line or route, like A, 7 or M15"},
+            },
+        },
+        transit_changes,
+        enabled=_ny511_configured,
+    ),
+    Tool(
         "subway_alerts",
         "live",
-        "MTA subway service alerts in effect right now (delays, suspensions, reroutes), "
-        "optionally for one line such as A or 7.",
+        "MTA subway service alerts in effect right now (delays, suspensions, reroutes) with the "
+        "hours each applies, plus planned changes starting in the next 12 hours, optionally for "
+        "one line such as A or 7. Also carries the JFK AirTrain's alerts.",
         {"type": "object", "properties": {"line": {"type": "string"}}},
         subway_alerts,
     ),
