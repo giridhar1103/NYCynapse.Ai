@@ -11,6 +11,8 @@ const STYLE = {
   dark: "https://tiles.openfreemap.org/styles/dark",
 };
 const SCALES = { value: ["#fff1df", "#f6b26b", "#eb6834", "#a8320f"] };
+// The subway map stays in the background unless an answer is about the subway.
+const SUBWAY_REST = 0.16;
 const ROAD_KIND = ["closure", "incident", "roadwork", "event"];
 const ROAD_COLOR = { closure: "#d62d20", incident: "#e8590c", roadwork: "#f2a51a", event: "#7c4dff" };
 const ROAD_NAME = { closure: "Closed", incident: "Crash or blockage", roadwork: "Roadwork", event: "Street event" };
@@ -27,9 +29,9 @@ const radarTile = (m) => `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/
 let geo = null;
 async function geodata() {
   if (!geo) {
-    const [boroughs, nta, subway, zips] = await Promise.all(
-      ["boroughs", "nta", "subway", "zips"].map((n) => fetch(url(`static/geo/${n}.json?v=2`)).then((r) => r.json())));
-    geo = { boroughs, nta, subway, zips };
+    const [boroughs, nta, subway, zips, crossings] = await Promise.all(
+      ["boroughs", "nta", "subway", "zips", "crossings"].map((n) => fetch(url(`static/geo/${n}.json?v=2`)).then((r) => r.json())));
+    geo = { boroughs, nta, subway, zips, crossings };
   }
   return geo;
 }
@@ -68,7 +70,7 @@ export class GuideMap {
       paint: { "line-color": dark ? "#c3c2b7" : "#0b0b0b", "line-width": 1.2, "line-opacity": 0.55 } });
     m.addLayer({ id: "subway", type: "line", source: "subway",
       layout: { "line-cap": "round", "line-join": "round" },
-      paint: { "line-color": ["get", "color"], "line-width": 2, "line-opacity": 0.45 } });
+      paint: { "line-color": ["get", "color"], "line-width": 1.4, "line-opacity": SUBWAY_REST } });
     this.popup = new maplibregl.Popup({ closeButton: false, closeOnClick: true, maxWidth: "260px" });
     this.tick = this.tick.bind(this);
   }
@@ -80,6 +82,8 @@ export class GuideMap {
     if (!this._raf) this._raf = requestAnimationFrame(this.tick);
   }
   stopAnim(key) { this.anims.delete(key); }
+  // Time since an animation began; with reduced motion everything is already at its end.
+  elapsed(t0) { return reduced() ? 1e9 : performance.now() - t0; }
   tick(ts) {
     this._raf = null;
     if (!this.anims.size) return;
@@ -93,11 +97,8 @@ export class GuideMap {
   busy(on) {
     this.el.parentElement.classList.toggle("busy", on);
     if (!this.map) return;
-    if (on && !this._routesLit) {
-      this.animate("busy", (ts) => this.map.setPaintProperty("subway", "line-opacity", 0.35 + 0.3 * Math.abs(Math.sin(ts / 400))));
-    } else if (!on) {
+    if (!on) {
       this.stopAnim("busy");
-      if (!this._routesLit) this.map.setPaintProperty("subway", "line-opacity", 0.45);
     }
   }
 
@@ -118,8 +119,8 @@ export class GuideMap {
     this.chipbar.replaceChildren();
     this.el.parentElement.querySelector(".wxstrip")?.remove();
     if (this._routesLit) {
-      this.map.setPaintProperty("subway", "line-opacity", 0.45);
-      this.map.setPaintProperty("subway", "line-width", 2);
+      this.map.setPaintProperty("subway", "line-opacity", SUBWAY_REST);
+      this.map.setPaintProperty("subway", "line-width", 1.4);
       this._routesLit = false;
     }
   }
@@ -205,14 +206,17 @@ export class GuideMap {
         this.addLayer({ id, type: "circle", source: id, paint: {
           "circle-color": "#eb6834", "circle-stroke-color": "#ffffff", "circle-stroke-width": 1.5,
           "circle-radius": radius, "circle-opacity": 0.92 } });
-        if (pts.length <= 60) {
-          this.animate(id, (ts) => {
-            const k = (ts % 1800) / 1800;
-            this.map.setPaintProperty(id + "-ring", "circle-stroke-opacity", 0.8 * (1 - k));
-            this.map.setPaintProperty(id + "-ring", "circle-radius", vals.length
-              ? ["interpolate", ["linear"], ["coalesce", ["get", "value"], 0], 0, 5 + 14 * k, hi || 1, 14 + 16 * k] : 7 + 16 * k);
-          });
-        }
+        // Dots pop in, ripple three times and then rest.
+        const t0 = performance.now();
+        this.map.setPaintProperty(id, "circle-radius", 0);
+        this.animate(id, () => {
+          const t = this.elapsed(t0), k = (t % 1800) / 1800, grow = Math.min(1, t / 420);
+          this.map.setPaintProperty(id, "circle-radius", vals.length ? ["*", grow, radius] : 7 * grow);
+          this.map.setPaintProperty(id + "-ring", "circle-stroke-opacity", t < 5400 ? 0.8 * (1 - k) : 0);
+          this.map.setPaintProperty(id + "-ring", "circle-radius", vals.length
+            ? ["interpolate", ["linear"], ["coalesce", ["get", "value"], 0], 0, 5 + 14 * k, hi || 1, 14 + 16 * k] : 7 + 16 * k);
+          if (t >= 5400) this.stopAnim(id);
+        });
         pts.forEach((p) => bounds.extend([+p.lon, +p.lat]));
         any = true;
         this.hover(id, (p) => `<b>${esc(p.label)}</b>${p.value != null ? "<br>" + fmt(p.value) + " " + esc(L.unit || "") : ""}${p.detail ? "<br>" + esc(p.detail) : ""}${p.updated ? "<br><small>updated " + esc(p.updated) + "</small>" : ""}`);
@@ -242,7 +246,7 @@ export class GuideMap {
         const color = ["match", ["get", "kind"], ...ROAD_KIND.flatMap((k) => [k, ROAD_COLOR[k]]), ROAD_COLOR.roadwork];
         const isLine = ["==", ["geometry-type"], "LineString"], isPt = ["==", ["geometry-type"], "Point"];
         const closed = ["==", ["get", "kind"], "closure"];
-        this.map.addSource(id, { type: "geojson", data: { type: "FeatureCollection", features: feats } });
+        this.map.addSource(id, { type: "geojson", lineMetrics: true, data: { type: "FeatureCollection", features: feats } });
         this.addLayer({ id: id + "-glow", type: "line", source: id, filter: ["all", isLine, closed],
           layout: { "line-cap": "round", "line-join": "round" },
           paint: { "line-color": ROAD_COLOR.closure, "line-width": 14, "line-blur": 6, "line-opacity": 0.35 } });
@@ -254,7 +258,7 @@ export class GuideMap {
           paint: { "line-color": color, "line-width": 3.5, "line-dasharray": [2, 1.4] } });
         this.addLayer({ id: id + "-line", type: "line", source: id, filter: ["all", isLine, closed],
           layout: { "line-cap": "round", "line-join": "round" },
-          paint: { "line-color": ROAD_COLOR.closure, "line-width": 5 } });
+          paint: { "line-width": 5, "line-gradient": ["step", ["line-progress"], ROAD_COLOR.closure, 0, "rgba(0,0,0,0)"] } });
         this.addLayer({ id: id + "-ring", type: "circle", source: id, filter: ["all", isPt, closed],
           paint: { "circle-color": "rgba(0,0,0,0)", "circle-stroke-color": ROAD_COLOR.closure,
             "circle-stroke-width": 1.5, "circle-radius": 7, "circle-stroke-opacity": 0 } });
@@ -262,11 +266,18 @@ export class GuideMap {
           layout: { "circle-sort-key": ["-", 9, ["get", "rank"]] },
           paint: { "circle-color": color, "circle-radius": ["case", closed, 7, 5.5],
             "circle-stroke-color": "#ffffff", "circle-stroke-width": 1.5 } });
-        this.animate(id, (ts) => {
-          const k = (ts % 1800) / 1800, wave = 0.5 + 0.5 * Math.sin((ts / 1800) * Math.PI * 2);
-          this.map.setPaintProperty(id + "-glow", "line-opacity", 0.15 + 0.35 * wave);
-          this.map.setPaintProperty(id + "-ring", "circle-stroke-opacity", 0.8 * (1 - k));
+        // A closed road draws itself along its length, glows for three beats, then holds.
+        const t0 = performance.now();
+        this.animate(id, () => {
+          const t = this.elapsed(t0), k = (t % 1800) / 1800;
+          const drawn = Math.min(1, t / 1100), wave = t < 5400 ? Math.sin((t / 1800) * Math.PI) ** 2 : 0;
+          this.map.setPaintProperty(id + "-line", "line-gradient", drawn < 1
+            ? ["step", ["line-progress"], ROAD_COLOR.closure, drawn, "rgba(0,0,0,0)"]
+            : ["step", ["line-progress"], ROAD_COLOR.closure, 1, ROAD_COLOR.closure]);
+          this.map.setPaintProperty(id + "-glow", "line-opacity", 0.2 + 0.4 * wave);
+          this.map.setPaintProperty(id + "-ring", "circle-stroke-opacity", t < 5400 ? 0.8 * (1 - k) : 0);
           this.map.setPaintProperty(id + "-ring", "circle-radius", 7 + 14 * k);
+          if (t >= 5400) this.stopAnim(id);
         });
         const tip = (p) => `<b>${esc(p.title)}</b><br>${esc(p.what)} · <i>${esc(p.when)}</i>${p.detail ? `<br><small>${esc(p.detail)}</small>` : ""}`;
         this.hover(id + "-line", tip);
@@ -314,11 +325,12 @@ export class GuideMap {
       }
     }
     if (any && !focused && !bounds.isEmpty()) {
-      this.map.fitBounds(bounds, { padding: 60, maxZoom: 14, duration: 1400 });
+      this.map.fitBounds(bounds, { padding: this.pad(60), maxZoom: 14, duration: 1400 });
     }
   }
 
-  // The places an answer is about: outlined, glowing, numbered and labelled; the map frames them.
+  // The places an answer is about. They are drawn hidden and framed first, then each one lights
+  // up when the answer reaches it: the outline fades in, glows for a few beats and settles.
   highlight(L, g) {
     const items = (L.items || []).slice(0, 6);
     if (!items.length) return false;
@@ -330,7 +342,8 @@ export class GuideMap {
     this.hl = [];
     const feats = [];
     const all = new maplibregl.LngLatBounds();
-    items.forEach((it, i) => {
+    items.forEach((it) => {
+      const i = this.hl.length;
       const b = new maplibregl.LngLatBounds();
       let at = null;
       if (it.level === "point" && Number.isFinite(+it.lat)) {
@@ -338,43 +351,85 @@ export class GuideMap {
         b.extend(at);
       } else {
         const keys = [].concat(it.key || []).map((k) => String(k).toLowerCase());
-        const src = it.level === "zip" ? g.zips : it.level === "borough" ? g.boroughs : g.nta;
+        const src = { zip: g.zips, borough: g.boroughs, crossing: g.crossings }[it.level] || g.nta;
         const fs = src.features.filter((f) => keys.includes(String(f.properties.name).toLowerCase()));
         if (!fs.length) return;
         fs.forEach((f) => { feats.push({ ...f, properties: { ...f.properties, i } }); extend(b, f.geometry); });
         at = centroid(biggest(fs).geometry);
       }
       all.extend(b);
-      const node = NY.el("div", { class: "hl-mark" + (it.level === "point" ? " pin" : ""), style: `--d:${i * 140}ms` },
+      const node = NY.el("div", { class: "hl-mark wait" + (it.level === "point" ? " pin" : "") },
         NY.el("span", { class: "num" }, String(i + 1)),
         NY.el("span", { class: "txt" }, NY.el("b", {}, it.name), it.note ? NY.el("small", {}, it.note) : ""));
       node.addEventListener("click", () => this.focus(i));
       const marker = this.marker(at, node, it.level === "point" ? "bottom-left" : "center");
-      this.hl.push({ bounds: b, marker, node, point: it.level === "point" ? at : null });
+      this.hl.push({ bounds: b, marker, node, point: it.level === "point" ? at : null, lit: 0 });
     });
     if (!this.hl.length) return false;
     if (feats.length) {
-      this.map.addSource("hl", { type: "geojson", data: { type: "FeatureCollection", features: feats } });
+      this.map.addSource("hl", { type: "geojson", data: { type: "FeatureCollection", features: feats }, promoteId: "i" });
       this.layers.push("hl-fill", "hl-glow", "hl-line", "hl");
       // Over shaded areas the outline and glow are enough; a tint would muddy the shading.
       const shaded = this.layers.some((x) => this.map.getLayer(x)?.type === "fill");
-      this.map.addLayer({ id: "hl-fill", type: "fill", source: "hl", paint: { "fill-color": "#3987e5", "fill-opacity": shaded ? 0 : 0.16 } });
-      this.map.addLayer({ id: "hl-glow", type: "line", source: "hl", paint: {
-        "line-color": "#3987e5", "line-width": 9, "line-blur": 6, "line-opacity": 0.6 } });
-      this.map.addLayer({ id: "hl-line", type: "line", source: "hl", paint: { "line-color": this.ink, "line-width": 2.2 } });
-      this.animate("hl", (ts) => {
-        const k = 0.5 + 0.5 * Math.sin(ts / 520);
-        this.map.setPaintProperty("hl-glow", "line-opacity", 0.25 + 0.55 * k);
-        this.map.setPaintProperty("hl-glow", "line-width", 6 + 8 * k);
-      });
+      const on = ["coalesce", ["feature-state", "on"], 0], beat = ["coalesce", ["feature-state", "beat"], 0];
+      this.map.addLayer({ id: "hl-fill", type: "fill", source: "hl",
+        paint: { "fill-color": "#3987e5", "fill-opacity": ["*", on, shaded ? 0 : 0.16] } });
+      this.map.addLayer({ id: "hl-glow", type: "line", source: "hl", layout: { "line-join": "round", "line-cap": "round" },
+        paint: { "line-color": "#3987e5", "line-blur": 6, "line-width": ["+", 5, ["*", 10, beat]],
+          "line-opacity": ["*", on, ["+", 0.22, ["*", 0.6, beat]]] } });
+      this.map.addLayer({ id: "hl-line", type: "line", source: "hl", layout: { "line-join": "round", "line-cap": "round" },
+        paint: { "line-color": this.ink, "line-width": ["case", ["==", ["geometry-type"], "LineString"], 4, 2.2], "line-opacity": on } });
     }
-    this.map.fitBounds(all, { padding: { top: 70, bottom: 70, left: 60, right: 60 }, maxZoom: 14, duration: 1500 });
+    this._hlFeats = feats.length > 0;
+    this.map.fitBounds(all, { padding: this.pad(70), maxZoom: 14, duration: 1400 });
     if (!this._declutter) {
       this._declutter = () => this.declutter();
       this.map.on("moveend", this._declutter);
     }
     this.declutter();
+    const early = this._early || [];
+    this._early = null;
+    if (reduced()) this.revealAll();
+    else early.forEach((i) => this.reveal(i));
     return true;
+  }
+
+  // Light up place i: its number pops in and its outline glows for three beats, then rests.
+  reveal(i) {
+    if (!this.hl.length) { (this._early ||= []).push(i); return; }
+    const h = this.hl[i];
+    if (!h || h.lit) return;
+    h.lit = performance.now();
+    h.node.classList.remove("wait");
+    h.node.classList.add("in");
+    this.glow();
+  }
+
+  glow() {
+    if (!this._hlFeats) return;
+    if (reduced()) {
+      this.hl.forEach((x, j) => x.lit && this.map.setFeatureState({ source: "hl", id: j }, { on: 1, beat: 0 }));
+      return;
+    }
+    this.animate("hl", () => {
+      let busy = false;
+      this.hl.forEach((x, j) => {
+        if (!x.lit || x.done) return;
+        const t = performance.now() - x.lit;
+        const on = Math.min(1, t / 450), beat = t < 2700 ? Math.sin((t / 900) * Math.PI) ** 2 : 0;
+        this.map.setFeatureState({ source: "hl", id: j }, { on, beat });
+        if (t >= 2700) x.done = true; else busy = true;
+      });
+      if (!busy) this.stopAnim("hl");
+    });
+  }
+
+  revealAll() { this.hl.forEach((_, i) => this.reveal(i)); }
+
+  // Room around framed places, keeping them clear of the legend in the bottom corner.
+  pad(n) {
+    const h = this.legendEl.children.length ? this.legendEl.offsetHeight + 24 : 0;
+    return { top: n, right: n, left: n, bottom: Math.max(n, Math.min(h, this.el.clientHeight / 3)) };
   }
 
   // Labels that would sit on top of an earlier one shrink to just their number.
@@ -391,12 +446,18 @@ export class GuideMap {
   focus(i) {
     const h = this.hl[i];
     if (!h) return;
+    this.reveal(i);
     if (h.point) this.map.flyTo({ center: h.point, zoom: 15, speed: 0.9 });
     else this.map.fitBounds(h.bounds, { padding: 80, maxZoom: 15, duration: 1100 });
     this.hl.forEach((x) => x.node.classList.toggle("dim", x !== h));
     h.node.classList.remove("ping");
     void h.node.offsetWidth;
     h.node.classList.add("ping");
+    if (h.done) {
+      h.done = false;
+      h.lit = performance.now() - 450; // glow again without fading the outline back in
+      this.glow();
+    }
     clearTimeout(this._undim);
     this._undim = setTimeout(() => this.hl.forEach((x) => x.node.classList.remove("dim")), 4000);
   }
@@ -527,6 +588,11 @@ function biggest(features) {
 }
 // The centre of the largest ring, nudged inside if the polygon is oddly shaped.
 function centroid(geom) {
+  if (geom.type === "LineString") return geom.coordinates[Math.floor(geom.coordinates.length / 2)];
+  if (geom.type === "MultiLineString") {
+    const longest = geom.coordinates.reduce((a, b) => (b.length > a.length ? b : a));
+    return longest[Math.floor(longest.length / 2)];
+  }
   const rs = rings(geom);
   if (!rs.length) return geom.coordinates;
   const r = rs.reduce((a, b) => (ringArea(b) > ringArea(a) ? b : a));

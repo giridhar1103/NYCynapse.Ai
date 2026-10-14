@@ -192,6 +192,9 @@ pre.code { background: #0f0f0e; color: #e8e7df; border-radius: 14px; padding: 18
 .answer-card p { margin: 0 0 8px; font-size: 15.5px; line-height: 1.55; }
 .answer-card ul { margin: 0 0 8px; padding-left: 18px; font-size: 15px; }
 .answer-card.declined { background: var(--sunk); }
+/* The answer arrives a line at a time, and the map lights each place as its line appears. */
+.answer-card .rv { opacity: 0; transform: translateY(6px); transition: opacity .38s var(--ease), transform .38s var(--ease); }
+.answer-card .rv.on { opacity: 1; transform: none; }
 .srcs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .src { font-size: 12px; border-radius: 999px; padding: 3px 9px 3px 7px; border: 1px solid var(--rule); text-decoration: none; display: inline-flex; gap: 6px; align-items: center; max-width: 100%; }
 .src i { width: 7px; height: 7px; border-radius: 50%; flex: none; }
@@ -320,10 +323,13 @@ a.cite:hover { background: var(--ink); color: var(--bg); border-color: var(--ink
 .fd.wet .rn { color: #2a78d6; font-weight: 700; }
 
 /* ---------- map: highlights, weather, values ---------- */
-.hl-mark { display: flex; align-items: center; gap: 6px; cursor: pointer; animation: hlIn .5s var(--ease) both; animation-delay: var(--d, 0ms); }
+.hl-mark { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.hl-mark.wait { opacity: 0; pointer-events: none; }
+.hl-mark.in { animation: hlIn .5s var(--ease) both; }
 .hl-mark .num { position: relative; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; flex: none;
   background: #0b0b0b; color: #fff; font: 800 12px/1 var(--sans); border: 2px solid #fff; box-shadow: 0 3px 10px rgba(0, 0, 0, .35); }
-.hl-mark .num::after { content: ""; position: absolute; inset: -2px; border-radius: 50%; border: 2px solid #3987e5; animation: hlRing 2.2s ease-out infinite; animation-delay: var(--d, 0ms); }
+.hl-mark .num::after { content: ""; position: absolute; inset: -2px; border-radius: 50%; border: 2px solid #3987e5; opacity: 0; }
+.hl-mark.in .num::after { animation: hlRing .9s ease-out 3; }
 .hl-mark .txt { display: grid; background: rgba(255, 255, 255, .94); color: #0b0b0b; border-radius: 9px; padding: 3px 8px;
   box-shadow: 0 3px 12px rgba(0, 0, 0, .18); font-size: 12px; line-height: 1.25; max-width: 170px; }
 .hl-mark .txt b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

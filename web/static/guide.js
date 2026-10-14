@@ -2,7 +2,7 @@
 // draws each tool call as it runs (with errors and recoveries), renders the answer and its
 // sources as plain text, and keeps the conversation to a question and three follow-ups.
 
-import { GuideMap, wxIcon } from "./map.js?v=5";
+import { GuideMap, wxIcon } from "./map.js?v=6";
 
 const { el, url } = NY;
 const TOOL = {
@@ -173,7 +173,8 @@ class Guide {
           else if (ev === "answer") {
             ended = true;
             this.turn = d.turn;
-            view.answer(d, (f) => this.ask(f), (i) => this.map?.focus(i));
+            view.answer(d, (f) => this.ask(f), (i) => this.map?.focus(i), {
+              place: (i) => this.map?.reveal(i), done: () => this.map?.revealAll(), scroll: () => this.scroll() });
             const name = MODEL_NAMES[d.model] || d.model;
             if (name) $("g-model").textContent = name + (d.fell_back ? " (backup)" : "");
           } else if (ev === "error") {
@@ -258,13 +259,13 @@ class TurnView {
     if (d.problem) s.stages.append(el("span", {}, "repairing"));
   }
 
-  answer(d, onFollow, onPlace) {
+  answer(d, onFollow, onPlace, cue = {}) {
     const srcs = (d.sources || []).filter((x) => x.title);
     const numbered = Object.fromEntries(srcs.filter((x) => x.n).map((x) => [x.n, x]));
     this.fold(d, srcs.length);
     const card = el("div", { class: "answer-card" + (d.declined ? " declined" : "") });
     card.append(...renderText(d.text || "", { sources: numbered, places: d.places || [], onPlace }));
-    const wx = this.layers.find((L) => L.type === "weather" && (L.daily || []).length);
+    const wx = this.layers.find((L) => L.type === "weather" && (L.daily || []).length >= 3);
     if (wx && !d.declined) card.append(forecast(wx.daily));
     if (srcs.length && !d.declined) {
       const list = el("ol", { class: "srclist" }, srcs.map((x, i) => {
@@ -287,10 +288,34 @@ class TurnView {
       card.append(el("div", { class: "meta warnline" }, `Not matched to the data found: ${d.untraced.join(", ")}`));
     }
     this.box.append(card);
+    let follow = null;
     if (d.follow_ups_left > 0 && (d.follow_ups || []).length) {
-      this.box.append(el("div", { class: "follow" }, d.follow_ups.map((f) =>
-        el("button", { type: "button", onclick: () => onFollow(f) }, f))));
+      follow = el("div", { class: "follow" }, d.follow_ups.map((f) =>
+        el("button", { type: "button", onclick: () => onFollow(f) }, f)));
+      this.box.append(follow);
     }
+    this.stage(card, follow, cue);
+  }
+
+  // Lines of the answer appear one after another; as a line naming a place appears, that place
+  // lights up on the map. The sources and follow-ups come in last.
+  stage(card, follow, cue) {
+    const lines = [...card.querySelectorAll(":scope > p, :scope > ul > li")];
+    const rest = [...card.children].filter((x) => x.tagName !== "P" && x.tagName !== "UL");
+    if (follow) rest.push(follow);
+    const all = [...lines, ...rest];
+    all.forEach((x) => x.classList.add("rv"));
+    const quick = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const step = quick ? 0 : Math.max(110, Math.min(260, 1500 / Math.max(lines.length, 1)));
+    lines.forEach((line, n) => setTimeout(() => {
+      line.classList.add("on");
+      line.querySelectorAll("[data-place]").forEach((b) => cue.place?.(+b.dataset.place));
+    }, n * step));
+    setTimeout(() => {
+      rest.forEach((x) => x.classList.add("on"));
+      cue.done?.();
+      cue.scroll?.();
+    }, lines.length * step + (quick ? 0 : 120));
   }
 
   // Once the answer is in, the work log folds into one line that opens again on click.
@@ -363,7 +388,7 @@ function inline(text, ctx, bold = false) {
         const start = before ? m.index - before[0].length : m.index;
         if (before) kids[kids.length - 1] = text.slice(at, start);
         const end = re.lastIndex + (after ? after[0].length : 0);
-        kids.push(el("button", { type: "button", class: "place", title: "Show on the map", onclick: () => ctx.onPlace(p.i) },
+        kids.push(el("button", { type: "button", class: "place", title: "Show on the map", "data-place": String(p.i), onclick: () => ctx.onPlace(p.i) },
           el("i", {}, String(p.i + 1)), text.slice(start, end)));
         re.lastIndex = end;
       } else kids.push(m[3]);

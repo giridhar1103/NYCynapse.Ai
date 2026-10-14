@@ -140,7 +140,7 @@ Generated SQL runs on a DuckDB connection with DuckLake attached read-only, netw
 
 ## The site and API
 
-A FastAPI service, with plain HTML, CSS and JavaScript pages and no build step, styled after transit signage. The landing page draws the city from the lake's own boundaries and the MTA's subway shapes, with Citi Bike docks and arriving trains from the last few minutes. The guide opens over it.
+A FastAPI service, with plain HTML, CSS and JavaScript pages and no build step, styled after transit signage. The landing page draws the city from the lake's own boundaries and the MTA's subway shapes, with Citi Bike docks and arriving trains from the last few minutes. The guide opens over it. Its map lights up the places an answer names as each line of the answer appears; bridges and tunnels are drawn from their OpenStreetMap outlines (© OpenStreetMap contributors, ODbL).
 
 `GET /api/chat?q=&chat=` streams one turn as server-sent events: `chat`, `queue` (place in line), `status`, `tool` (each call starting and finishing, with errors), `lake` (the pipeline's stages inside a lake call), `map`, then `answer` or `error`. A comment line goes out every few seconds so proxies keep the stream open. The work runs in its own thread and gives its seat back when done, even if the reader has left.
 
