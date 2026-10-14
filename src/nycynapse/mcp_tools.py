@@ -43,11 +43,14 @@ def road_speeds(borough: str | None = None) -> dict:
 
 
 @server.tool(annotations=LIVE)
-def road_events(borough: str | None = None, kind: str | None = None) -> dict:
+def road_events(
+    borough: str | None = None, kind: str | None = None, road: str | None = None
+) -> dict:
     """511NY closures, roadwork, incidents and planned events (parades, games, concerts) on New
     York City roads, active now or starting in the next 7 days, quoted as NYSDOT published them.
-    `kind` is one of closure, roadwork, incident or event."""
-    return live.road_events(borough, kind).as_dict()
+    `kind` is one of closure, roadwork, incident or event; `road` narrows to one road, bridge or
+    tunnel (GWB, BQE, I-95, 5th Ave)."""
+    return live.road_events(borough, kind, road).as_dict()
 
 
 @server.tool(annotations=LIVE)

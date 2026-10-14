@@ -490,16 +490,80 @@ def _local(ts: float | None) -> str | None:
     return datetime.fromtimestamp(ts, NY).strftime("%a %b %-d %-I:%M %p") if ts else None
 
 
-def _point(e: dict) -> tuple[float, float] | None:
-    coords = (e.get("geometry") or {}).get("coordinates") or []
-    if coords and isinstance(coords[0], list):
-        coords = coords[len(coords) // 2]
-    if len(coords) == 2:
-        return coords[1], coords[0]
+def _shape(e: dict) -> dict | None:
+    """The event's point, or the stretch of road it covers, thinned to keep the page light."""
+    g = e.get("geometry") or {}
+    coords = g.get("coordinates") or []
+    if g.get("type") == "LineString" and len(coords) > 1:
+        step = max(1, len(coords) // 80)
+        return {"type": "LineString", "coordinates": coords[::step] + coords[-1:]}
+    if g.get("type") == "Point" and len(coords) == 2:
+        return {"type": "Point", "coordinates": coords}
     return None
 
 
-def road_events(borough: str | None = None, kind: str | None = None) -> ToolResult:
+_MAP_KIND = {"closure": "closure", "roadwork": "roadwork", "special event": "event"}
+_MAP_KIND |= {"sporting event": "event", "incident": "incident", "obstruction": "incident"}
+
+
+# Names people use for roads, mapped to how the 511NY text spells them.
+ROAD_ALIASES = {
+    "gwb": ("george washington bridge",),
+    "bqe": ("bklyn/queens expressway", "brooklyn-queens expressway", "brooklyn queens"),
+    "brooklyn queens": ("bklyn/queens expressway",),
+    "lie": ("long island expressway",),
+    "fdr": ("fdr drive", "franklin d. roosevelt"),
+    "rfk": ("rfk bridge", "robert f. kennedy", "triborough"),
+    "triborough": ("rfk bridge", "robert f. kennedy"),
+    "verrazzano": ("verrazano",),
+    "west side highway": ("ny 9a", "west side hwy"),
+    "henry hudson": ("henry hudson pkwy", "henry hudson parkway"),
+    "hhp": ("henry hudson",),
+    "major deegan": ("i-87",),
+    "cross bronx": ("i-95", "cross bronx"),
+    "gowanus": ("i-278", "gowanus"),
+}
+_FILLER = re.compile(
+    r"^(look out for|there is an? |.* work is in progress\.?$)",
+    re.IGNORECASE,
+)
+
+
+def _road_terms(road: str) -> re.Pattern:
+    q = re.sub(r"\s+", " ", road.lower().replace("expwy", "expressway")).strip()
+    terms = [q]
+    for alias, spelled in ROAD_ALIASES.items():
+        if re.search(rf"\b{re.escape(alias)}\b", q):
+            terms.extend(spelled)
+    return re.compile("|".join(rf"\b{re.escape(t)}\b" for t in terms), re.IGNORECASE)
+
+
+def _digest(e: dict, lanes: list[dict]) -> str:
+    """The published text without its filler sentences, plus what only the agency comment says
+    (which deck of a bridge, detours) and the lane count. Nothing is reworded."""
+    text, _, comment = (e.get("description") or "").partition(" Comment:")
+    text = re.sub(r" \((?:near )?New York City\)", "", text)
+    kept = [t for t in re.split(r"(?<=\.) (?=[A-Z])", text) if not _FILLER.match(t.strip())]
+    extra = []
+    # "on George Washington Bridge Lower Level westbound", not a far end of some other road.
+    level = re.search(r"\b(Upper|Lower) Level ((?:east|west|north|south)bound)", comment)
+    if level:
+        extra.append(f"{level.group(1)} Level {level.group(2)}")
+    side = re.search(r"\bto (New Jersey|New York) Side\b", comment)
+    if side:
+        extra.append(f"toward {side.group(1)}")
+    if re.search(r"detour", comment, re.IGNORECASE):
+        extra.append("detoured")
+    for ln in lanes[:1]:
+        hit, total = ln.get("total-affected"), ln.get("total-original")
+        if hit and total:
+            extra.append(f"all {total} lanes closed" if hit >= total else f"{hit} of {total} lanes")
+    return " ".join(kept) + (f" [{'; '.join(extra)}]" if extra else "")
+
+
+def road_events(
+    borough: str | None = None, kind: str | None = None, road: str | None = None
+) -> ToolResult:
     """Closures, roadwork, incidents and planned events on NYC roads from 511NY, word for word."""
     if not _ny511_configured():
         return failed("511NY road events are not set up on this site yet")
@@ -510,6 +574,7 @@ def road_events(borough: str | None = None, kind: str | None = None) -> ToolResu
     kind = (kind or "").strip().lower().rstrip("s") or None
     if kind and kind not in NY511_KINDS:
         return failed(f"unknown kind {kind}; use one of {', '.join(NY511_KINDS)} or leave it empty")
+    terms = _road_terms(road) if road and road.strip() else None
     rows, fetched = _ny511_events()
     now, week = time.time(), time.time() + 7 * 86400
     items = []
@@ -519,6 +584,8 @@ def road_events(borough: str | None = None, kind: str | None = None) -> ToolResu
             continue
         boroughs = [NY511_COUNTIES[c] for c in e.get("counties") or [] if c in NY511_COUNTIES]
         if wanted and wanted not in boroughs:
+            continue
+        if terms and not terms.search((e.get("description") or "").split(" Comment:")[0]):
             continue
         details = e.get("details") or [{}]
         start = min((_ms(d.get("start-time")) or 0 for d in details), default=0) or None
@@ -536,6 +603,7 @@ def road_events(borough: str | None = None, kind: str | None = None) -> ToolResu
                 "direction": (loc.get("link-alignment") or "").lower() or None,
                 "boroughs": boroughs,
                 "description": e.get("description"),  # kept word for word, as published
+                "digest": _digest(e, lanes),
                 "status": "upcoming"
                 if start and start > now
                 else "scheduled"
@@ -544,10 +612,9 @@ def road_events(borough: str | None = None, kind: str | None = None) -> ToolResu
                 "start": start or 0,
                 "starts": _local(start),
                 "ends": _local(end) if end and end - now < 5 * 365 * 86400 else None,
-                "lanes": len(lanes) or None,
                 "priority": e.get("priority"),
                 "last_updated": _local(_ms(e.get("update-time"))),
-                "point": _point(e),
+                "shape": _shape(e),
             }
         )
     status = {"active": 0, "scheduled": 1, "upcoming": 2}
@@ -555,34 +622,65 @@ def road_events(borough: str | None = None, kind: str | None = None) -> ToolResu
     items.sort(key=lambda i: (status[i["status"]], order.get(i["type"], 2), i["priority"] or 9))
     counts = {k: sum(i["status"] == k for i in items) for k in status}
 
-    def brief(text: str | None) -> str:
-        # The text after "Comment:" repeats the event in the agency's own shorthand.
-        text = (text or "").split(" Comment:")[0]
-        return text if len(text) <= 220 else text[:220].rsplit(" ", 1)[0] + " ..."
-
     def line(i: dict) -> str:
-        when = f" starts {i['starts']}" if i["status"] == "upcoming" else ""
+        when = f" from {i['starts']}" if i["status"] == "upcoming" else ""
         where = ", ".join(i["boroughs"])
-        return f'- [{i["status"]}{when}] {i["type"]}, {where}: "{brief(i["description"])}"'
+        return f"- [{i['status']}{when}] {i['type']}, {where}: {i['digest']}"
 
     soon = sorted((i for i in items if i["status"] == "upcoming"), key=lambda i: i["start"])
-    listed = (
-        [i for i in items if i["status"] == "active"][:6]
-        + [i for i in items if i["status"] == "scheduled"][:3]
-        + soon[:5]
+    if terms:
+        # One road: what shuts it comes first, then everything else by when it starts.
+        listed = sorted(items, key=lambda i: (order.get(i["type"], 2), i["start"]))[:14]
+    else:
+        listed = (
+            [i for i in items if i["status"] == "active"][:6]
+            + [i for i in items if i["status"] == "scheduled"][:3]
+            + soon[:5]
+        )
+    head = (
+        f"511NY road events in {wanted or 'New York City'}"
+        f"{f' on {road.strip()}' if terms else ''}{f' ({kind})' if kind else ''}: "
+        f"{counts['active']} active, {counts['scheduled']} on a recurring schedule (they apply "
+        f"only on the days and hours in their text) and {counts['upcoming']} starting in the "
+        f"next 7 days. Now: {_now_ny():%a %b %-d %-I:%M %p}. Feed fetched "
+        f"{_ago(datetime.fromtimestamp(fetched, UTC))} ({NY511_ATTRIBUTION}). Text is as "
+        "published, minus filler; brackets add the bridge deck, detours and lane counts from "
+        "the agency's comment."
     )
-    summary = (
-        f"511NY road events in {wanted or 'New York City'}{f' ({kind})' if kind else ''}: "
-        f"{counts['active']} active, {counts['scheduled']} on a recurring schedule (only on the "
-        f"days and hours in their text) and {counts['upcoming']} starting in the next 7 days. "
-        f"Now: {_now_ny():%a %b %-d %-I:%M %p}. Feed fetched "
-        f"{_ago(datetime.fromtimestamp(fetched, UTC))} ({NY511_ATTRIBUTION}). Quote "
-        "descriptions as published.\n" + "\n".join(line(i) for i in listed)
-    )
-    shown = [i for i in items[:60] if i["point"]]
+    lines, size = [], len(head)
+    for i in listed:
+        ln = line(i)
+        if size + len(ln) > 3700:
+            lines.append(f"- {len(listed) - len(lines)} more not shown; narrow by road or kind.")
+            break
+        lines.append(ln)
+        size += len(ln) + 1
+    if not items:
+        lines.append("- none found" + (" (try the road's number, like I-95)" if terms else ""))
+    summary = head + "\n" + "\n".join(lines)
+    shown = [i for i in (listed if terms else items)[:80] if i["shape"]]
+
+    def pin(i: dict) -> dict:
+        title, _, rest = i["description"].partition(": ")
+        what, _, _ = rest.partition(". ")
+        when = {"active": "Now", "scheduled": "On set days and hours"}.get(i["status"])
+        detail = i["digest"].split(". ", 2)[-1]
+        return {
+            "kind": _MAP_KIND.get(i["type"], "roadwork"),
+            "title": title[:90],
+            "what": what[:60],
+            "when": when or f"From {i['starts']}",
+            "detail": detail if len(detail) <= 240 else detail[:240].rsplit(" ", 1)[0] + " ...",
+            "geometry": i["shape"],
+        }
+
+    pins = [pin(i) for i in shown]
     return ToolResult(
         summary=summary,
-        data=[{k: v for k, v in i.items() if k not in ("point", "start")} for i in items[:40]],
+        data=[
+            {k: v for k, v in i.items() if k not in ("shape", "start", "digest")}
+            for i in items[:40]
+        ],
         sources=[
             {
                 "kind": "live",
@@ -592,24 +690,7 @@ def road_events(borough: str | None = None, kind: str | None = None) -> ToolResu
                 "note": NY511_DISCLAIMER,
             }
         ],
-        map=[
-            {
-                "type": "points",
-                "label": "Road events (511NY)",
-                "points": [
-                    {
-                        "lat": i["point"][0],
-                        "lon": i["point"][1],
-                        "label": f"{i['roadway'] or ''} ({i['type']})".strip(),
-                        "detail": i["description"],
-                        "updated_at": i["last_updated"],
-                    }
-                    for i in shown
-                ],
-            }
-        ]
-        if shown
-        else [],
+        map=[{"type": "road_events", "label": "Road events", "events": pins}] if pins else [],
     )
 
 
@@ -1025,6 +1106,10 @@ TOOLS = [
             "properties": {
                 "borough": {"type": "string"},
                 "kind": {"type": "string", "enum": list(NY511_KINDS)},
+                "road": {
+                    "type": "string",
+                    "description": "a road, bridge or tunnel, like GWB, BQE, I-278 or 5th Ave",
+                },
             },
         },
         road_events,

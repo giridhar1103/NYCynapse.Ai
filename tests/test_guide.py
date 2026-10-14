@@ -623,3 +623,36 @@ def test_road_events_filters_and_labels(monkeypatch):
 def test_road_events_off_without_login(monkeypatch):
     monkeypatch.delenv("NY511_USER", raising=False)
     assert not live.road_events().ok
+
+
+def test_road_events_one_road_keeps_schedule_and_deck(monkeypatch):
+    monkeypatch.setenv("NY511_USER", "u")
+    monkeypatch.setenv("NY511_PASSWORD", "p")
+    gwb = _event(
+        "closure",
+        "New York",
+        5,
+        100,
+        desc="I-95 (George Washington Bridge) southbound: Road closed. between US 9 and Exit 1 "
+        "(near New York City). Look out for roadwork. Bridge maintenance work is in progress. "
+        "From 9:00PM EDT to 6:00AM EDT October 14, 2026 to October 16, 2026 on Wednesday",
+    )
+    gwb["description"] = gwb["description"].replace(
+        "agency shorthand",
+        "bridge work on George Washington Bridge Lower Level westbound New York Side to New "
+        "Jersey Side, detour",
+    )
+    gwb["details"][0]["lanes"] = [{"total-affected": 3, "total-original": 3}]
+    other = _event("roadwork", "Bronx", -1, 5, desc="I-295: Roadwork. Look out for roadwork.")
+    other["description"] += " to George Washington Bridge Lower Level at Amsterdam"
+    earlier = _event("closure", "Queens", -1, 5, desc="Earlier closure on Main St.")
+    monkeypatch.setitem(live._ny511, "rows", [other, gwb, earlier])
+    monkeypatch.setitem(live._ny511, "at", time.time())
+
+    r = live.road_events(road="GWB")
+    assert len(r.data) == 1
+    line = r.summary.splitlines()[1]
+    assert "9:00PM EDT to 6:00AM EDT" in line and "on Wednesday" in line
+    assert "[Lower Level westbound; toward New Jersey; detoured; all 3 lanes closed]" in line
+    assert "Look out" not in line and "in progress" not in line and "near New York" not in line
+    assert not live.road_events(road="LIE").data  # "lie" inside "Earlier" is not a match
