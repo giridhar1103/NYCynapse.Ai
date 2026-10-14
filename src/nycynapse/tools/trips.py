@@ -577,6 +577,12 @@ def _rides(o: str, d: str) -> list[tuple[dict, float]]:
     return out
 
 
+def _runs(p: dict, at: datetime) -> bool:
+    """Whether a PATH line runs at that hour on that kind of day, from its schedule."""
+    day = "weekend" if at.weekday() >= 5 else "weekday"
+    return at.hour in p["hours"][day]
+
+
 def _next_train(live: dict, at: str, p: dict, after_s: float) -> int | None:
     """Seconds until the first live train at a station that runs this pattern."""
     target = p["stops"][-1]
@@ -607,6 +613,8 @@ def _path_options(a: dict, b: dict, when: datetime, arrive_by: bool) -> list[dic
             best = None
             for p, ride in _rides(o, d):
                 wait_s = None
+                if not live and not _runs(p, when):
+                    continue
                 if live:
                     if not _next_train(live, o, p, 0) and o != p["stops"][-1]:
                         continue  # no train on that pattern is coming: it is not running now
@@ -829,6 +837,66 @@ def drive(a: dict, b: dict, when: datetime) -> dict | None:
     }
 
 
+_DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+
+
+def parse_when(text: str | None) -> datetime | None:
+    """A travel time from an ISO string or plain words: "now", "at 10", "tonight 11:30pm",
+    "Saturday 10 PM", "tomorrow morning". The next such time from now, in New York."""
+    now = _now()
+    raw = (text or "now").strip().lower()
+    if raw in ("", "now", "right now", "asap"):
+        return now
+    try:
+        t = datetime.fromisoformat(
+            raw.upper().replace(" ", "T") if re.match(r"\d{4}-", raw) else "x"
+        )
+        return t.replace(tzinfo=NY) if t.tzinfo is None else t.astimezone(NY)
+    except ValueError:
+        pass
+    day, named = now.date(), False
+    for i, name in enumerate(_DAYS):
+        if re.search(rf"\b{name[:3]}\w*\b", raw):
+            day, named = day + timedelta(days=(i - now.weekday()) % 7), True
+            break
+    else:
+        if "tomorrow" in raw:
+            day = day + timedelta(days=1)
+    words = {
+        "noon": (12, 0),
+        "midnight": (0, 0),
+        "morning": (8, 0),
+        "afternoon": (14, 0),
+        "evening": (18, 0),
+        "tonight": (20, 0),
+    }
+    m = re.search(r"\b(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?", raw)
+    if m and int(m.group(1)) <= 24:
+        h, mi, ap = int(m.group(1)), int(m.group(2) or 0), (m.group(3) or "").replace(".", "")
+        if ap == "pm" and h < 12:
+            h += 12
+        if ap == "am" and h == 12:
+            h = 0
+        if not ap and "tonight" in raw or not ap and "evening" in raw:
+            h = h + 12 if h < 12 else h
+    else:
+        key = next((k for k in words if k in raw), None)
+        if key is None:
+            return None
+        h, mi = words[key]
+        ap = "x"
+    t = datetime(day.year, day.month, day.day, h % 24, mi, tzinfo=NY)
+    if t < now - timedelta(minutes=10):
+        if not m or m.group(3) or h >= 12:
+            if day == now.date():  # "at 9 PM" said at 10 PM means tomorrow, or next week
+                t += timedelta(days=7 if named else 1)
+        else:
+            t += timedelta(hours=12)  # "at 10" said at 11 AM means 10 PM
+            if t < now:
+                t += timedelta(hours=12)
+    return t
+
+
 def _hour(h: int) -> str:
     return datetime(2000, 1, 1, h).strftime("%-I %p")
 
@@ -853,10 +921,9 @@ def trip_plan(
     if not a or not b:
         missing = origin if not a else destination
         return failed(f"could not place {missing!r}; name a station, landmark, address or area")
-    try:
-        t = datetime.fromisoformat(when).replace(tzinfo=NY) if when and when != "now" else _now()
-    except ValueError:
-        return failed("when must be an ISO date and time in New York time, like 2026-10-16T17:30")
+    t = parse_when(when)
+    if t is None:
+        return failed("when must be a New York time like 2026-10-16T17:30, 'Saturday 10 PM' or now")
     if t.tzinfo is None:
         t = t.replace(tzinfo=NY)
     lines = [

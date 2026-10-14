@@ -779,3 +779,38 @@ def test_trip_ends_are_placed_without_guessing():
     assert trips.locate("Astoria")["name"] == "Astoria"
     assert trips.zone_of(40.6441, -73.7823)[1] == "JFK Airport"
     assert trips.locate("48.85,2.35") is None  # Paris is not a trip end
+
+
+def test_travel_times_in_plain_words(monkeypatch):
+    from datetime import datetime
+
+    from nycynapse.tools import trips
+
+    now = datetime(2026, 10, 14, 6, 50, tzinfo=trips.NY)  # a Wednesday morning
+    monkeypatch.setattr(trips, "_now", lambda: now)
+    got = {w: trips.parse_when(w) for w in ("at 10", "Saturday 10 PM", "at 6", "tomorrow 5pm")}
+    assert got["at 10"] == now.replace(hour=10, minute=0)
+    assert got["Saturday 10 PM"].strftime("%a %H:%M") == "Sat 22:00"
+    assert got["at 6"].hour == 18  # 6 o'clock said at 6:50 AM means this evening
+    assert got["tomorrow 5pm"].strftime("%a %H") == "Thu 17"
+    assert trips.parse_when("whenever") is None
+
+
+def test_path_lines_run_by_day_and_hour():
+    from datetime import datetime
+
+    from nycynapse.tools import trips
+
+    def line(a, b, via):
+        return next(
+            p
+            for p in trips.PATH["patterns"]
+            if p["stops"][0] == a and p["stops"][-1] == b and p["via_hoboken"] == via
+        )
+
+    sat_night = datetime(2026, 10, 17, 22, tzinfo=trips.NY)
+    wed_noon = datetime(2026, 10, 14, 12, tzinfo=trips.NY)
+    assert trips._runs(line("33S", "JSQ", True), sat_night)
+    assert not trips._runs(line("33S", "JSQ", False), sat_night)
+    assert trips._runs(line("33S", "JSQ", False), wed_noon)
+    assert not trips._runs(line("HOB", "WTC", False), sat_night)
