@@ -13,7 +13,7 @@ const TOOL = {
   area_stats: ["C", "live", "Census by neighborhood"],
   web_search: ["G", "web", "Web search"], read_page: ["R", "web", "Reading a page"],
 };
-const MODEL_NAMES = { "claude-sonnet-5.5": "Claude Sonnet 5.5", "gemini-3.7-flash": "Gemini 3.7 Flash" };
+const MODEL_NAMES = { "claude-sonnet-5.5": "Claude Sonnet 5.5", "gemini-3.8-flash": "Gemini 3.8 Flash", "gemini-3.7-flash": "Gemini 3.7 Flash" };
 
 const $ = (id) => document.getElementById(id);
 

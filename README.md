@@ -29,7 +29,7 @@ Each tool result can carry map layers: boroughs, neighborhoods or ZIP codes shad
 | Time per answer | 150 seconds, then it answers with what it has |
 | Conversation | A question and 3 follow-ups, with memory of earlier turns; ends after 30 minutes idle |
 | Answers at once | 3, with a line of 10 that shows each reader their place, then a full-capacity message |
-| Models | Claude Sonnet 5.5, with Gemini 3.7 Flash taking over when it is out of allowance |
+| Models | Claude Sonnet 5.5, with Gemini 3.8 Flash taking over when it is out of allowance |
 
 The live and web tools run as an MCP server; the guide is an MCP host that connects to it, and falls back to calling the same functions directly if the server process dies. See [MCP servers](#mcp-servers).
 
