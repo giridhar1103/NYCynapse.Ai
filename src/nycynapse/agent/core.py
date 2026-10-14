@@ -146,6 +146,7 @@ class Turn:
     model: str | None = None
     fell_back: bool = False
     retried: bool = False
+    unchecked: bool = False
     redraft: str | None = None
 
 
@@ -244,6 +245,20 @@ class Agent:
                 # reporting that as a failure. Ask again, once, with a reminder.
                 t.retried = True
                 t.steps.append({"note": "retried a step that claimed a tool failure"})
+                continue
+            if (
+                answer
+                and not calls
+                and not t.results
+                and not step.get("declined")
+                and not t.unchecked
+                and not force
+                and len(t.question) > 20
+            ):
+                # An answer about the city written without checking anything is a guess, and
+                # the fallback model does this most. Ask once for the checks it needs.
+                t.unchecked = True
+                t.steps.append({"note": "asked to check before answering"})
                 continue
             issues = [] if step.get("declined") else _draft_issues(answer)
             loose: list[str] = []
@@ -439,6 +454,13 @@ class Agent:
             parts.append(
                 "Reminder: you cannot call tools natively. Put the sources you need "
                 "in the `calls` array of your JSON reply and the system will run them."
+            )
+        if t.unchecked and not t.results:
+            parts.append(
+                "You answered without checking anything. Facts about routes, stations, times, "
+                "hours, conditions and places must come from tools: call the ones this question "
+                "needs now (trip_plan for getting anywhere). Answer straight away only if the "
+                "earlier turns already hold every fact you need."
             )
         if t.redraft:
             parts.append(t.redraft)

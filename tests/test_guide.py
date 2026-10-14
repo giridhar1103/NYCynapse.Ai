@@ -814,3 +814,18 @@ def test_path_lines_run_by_day_and_hour():
     assert not trips._runs(line("33S", "JSQ", False), sat_night)
     assert trips._runs(line("33S", "JSQ", False), wed_noon)
     assert not trips._runs(line("HOB", "WTC", False), sat_night)
+
+
+def test_unchecked_answer_is_sent_back_once(monkeypatch):
+    agent, seen = _agent(
+        monkeypatch,
+        [
+            _step(answer="The C stops at Times Square, then 81 St."),
+            _step(calls=[("trip_plan", {})]),
+            _step(answer="Take the C from 42 St-Port Authority [1]."),
+        ],
+        [_tool("trip_plan", text="C train from 42 St-Port Authority")],
+    )
+    out = agent.run("uptown C from times square to the museum?", [], lambda e, d: None)
+    assert out["answer"].startswith("Take the C")
+    assert "You answered without checking anything" in seen[1][1]
