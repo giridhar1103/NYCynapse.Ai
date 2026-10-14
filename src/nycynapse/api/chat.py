@@ -41,6 +41,8 @@ DAILY_USD = float(os.environ.get("NYCYNAPSE_CHAT_DAILY_USD", "10"))
 WAIT_S = 150
 KEEPALIVE_S = 8
 PAUSED = os.environ.get("NYCYNAPSE_PAUSED", "") == "1"
+# The test server returns what each tool said with the answer, for the evaluation judge.
+TRACE = os.environ.get("NYCYNAPSE_EVAL_TRACE", "") == "1"
 
 gate = Gate(ACTIVE, WAITING)
 _local = threading.local()
@@ -69,7 +71,7 @@ def _conn() -> psycopg.Connection:
 
 
 def chats() -> Chats:
-    return Chats(_conn)
+    return Chats(_conn, os.environ.get("NYCYNAPSE_CHAT_KIND", "public"))
 
 
 def setup(settings, base_ctx_fn) -> None:
@@ -298,6 +300,7 @@ def _answer_payload(slot: Slot, out: dict, cached: bool = False) -> dict:
         "latency_ms": out.get("latency_ms"),
         "cached": cached,
         "untraced": out.get("untraced") or [],
+        **({"trace": out.get("trace") or []} if TRACE else {}),
         "places": out.get("places")
         or next((x.get("items") for x in out.get("map") or [] if x.get("type") == "highlight"), []),
     }

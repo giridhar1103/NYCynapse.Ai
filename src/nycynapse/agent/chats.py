@@ -37,8 +37,9 @@ class ChatError(Exception):
 
 
 class Chats:
-    def __init__(self, conn_factory):
+    def __init__(self, conn_factory, kind: str = "public"):
         self._connect = conn_factory
+        self.kind = kind  # "eval" on the test server: kept apart from readers' chats
 
     def _conn(self) -> psycopg.Connection:
         return self._connect()
@@ -48,7 +49,8 @@ class Chats:
         if not chat_id:
             new_id = str(uuid.uuid4())
             conn.execute(
-                "INSERT INTO app.chats (id, client_hash) VALUES (%s, %s)", (new_id, client)
+                "INSERT INTO app.chats (id, client_hash, kind) VALUES (%s, %s, %s)",
+                (new_id, client, self.kind),
             )
             return Slot(new_id, 1, [])
         try:
@@ -120,8 +122,10 @@ class Chats:
         row = (
             self._conn()
             .execute(
-                "SELECT coalesce(sum(cost_usd), 0) AS c FROM app.chat_turns "
-                "WHERE asked_at > date_trunc('day', now())"
+                "SELECT coalesce(sum(t.cost_usd), 0) AS c FROM app.chat_turns t "
+                "JOIN app.chats c ON c.id = t.chat_id "
+                "WHERE t.asked_at > date_trunc('day', now()) AND c.kind = %s",
+                (self.kind,),
             )
             .fetchone()
         )
@@ -132,8 +136,9 @@ class Chats:
             self._conn()
             .execute(
                 "SELECT count(*) AS n FROM app.chat_turns t JOIN app.chats c ON c.id = t.chat_id "
-                "WHERE c.client_hash = %s AND t.asked_at > now() - make_interval(mins => %s)",
-                (client, minutes),
+                "WHERE c.client_hash = %s AND t.asked_at > now() - make_interval(mins => %s) "
+                "AND c.kind = %s",
+                (client, minutes, self.kind),
             )
             .fetchone()
         )
