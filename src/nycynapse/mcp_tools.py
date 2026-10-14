@@ -5,6 +5,7 @@ Every tool is read-only and returns a summary, structured data, sources and map 
 """
 
 import logging
+import threading
 
 from mcp.server.mcpserver import MCPServer
 from mcp_types import ToolAnnotations
@@ -14,6 +15,7 @@ from .tools.http import load_keys
 
 load_keys()
 logging.getLogger("httpx").setLevel(logging.WARNING)
+threading.Thread(target=live.warm_road_events, daemon=True).start()
 
 LIVE = ToolAnnotations(read_only_hint=True, destructive_hint=False, open_world_hint=True)
 server = MCPServer(
@@ -41,9 +43,11 @@ def road_speeds(borough: str | None = None) -> dict:
 
 
 @server.tool(annotations=LIVE)
-def road_events(borough: str | None = None) -> dict:
-    """511NY incidents, construction and closures in New York City (needs a 511NY key)."""
-    return live.road_events(borough).as_dict()
+def road_events(borough: str | None = None, kind: str | None = None) -> dict:
+    """511NY closures, roadwork, incidents and planned events (parades, games, concerts) on New
+    York City roads, active now or starting in the next 7 days, quoted as NYSDOT published them.
+    `kind` is one of closure, roadwork, incident or event."""
+    return live.road_events(borough, kind).as_dict()
 
 
 @server.tool(annotations=LIVE)

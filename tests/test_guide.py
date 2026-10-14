@@ -2,6 +2,7 @@
 
 import json
 import threading
+import time
 
 import pytest
 
@@ -11,7 +12,7 @@ from nycynapse.agent.lake import map_from_rows
 from nycynapse.api.capacity import Full, Gate
 from nycynapse.llm import client as llm
 from nycynapse.llm.client import LLMResult, ProviderLimit
-from nycynapse.tools import Tool, ToolResult, failed
+from nycynapse.tools import Tool, ToolResult, failed, live
 from nycynapse.tools import http as tools_http
 from nycynapse.tools.live import open_data
 
@@ -571,3 +572,54 @@ def test_area_stats_ranks_zip_areas(monkeypatch):
     assert [i["key"] for i in hl["items"]] == ["11224", "10454"]
     assert live.area_stats("median_rent", borough="Manhattan").data["rows"][0]["zip"] == "10001"
     assert not live.area_stats("crime").ok
+
+
+# 511NY road events
+
+
+def _event(cat, county, start_h, end_h, recurring=False, desc="X ST: Road closed."):
+    now = time.time() * 1000
+    detail = {
+        "start-time": {"time": now + start_h * 3_600_000},
+        "end-time": {"time": now + end_h * 3_600_000},
+        "locations": [{"route-designator": "X ST", "link-alignment": "EASTBOUND"}],
+    }
+    if recurring:
+        detail["recurrent-times"] = [{"period": {"days-of-week": {"bits": 64}}}]
+    return {
+        "event-id": f"E{cat}{county}{start_h}",
+        "headline": {"category": cat, "code": cat},
+        "description": desc + " Comment: agency shorthand",
+        "counties": [county],
+        "priority": 2,
+        "details": [detail],
+        "geometry": {"type": "Point", "coordinates": [-73.98, 40.73]},
+    }
+
+
+def test_road_events_filters_and_labels(monkeypatch):
+    monkeypatch.setenv("NY511_USER", "u")
+    monkeypatch.setenv("NY511_PASSWORD", "p")
+    rows = [
+        _event("closure", "Kings", -2, 5),
+        _event("closure", "New York", -48, 400, recurring=True),
+        _event("special-event", "New York", 30, 34, desc="5TH AVE: Parade."),
+        _event("special-event", "New York", 300, 304),  # more than a week out
+        _event("roadwork", "Queens", -10, -1),  # already over
+        _event("nysdot-road-conditions", "Bronx", -1, 5),
+    ]
+    monkeypatch.setitem(live._ny511, "rows", rows)
+    monkeypatch.setitem(live._ny511, "at", time.time())
+
+    r = live.road_events()
+    assert [d["status"] for d in r.data] == ["active", "scheduled", "upcoming"]
+    assert "agency shorthand" not in r.summary and "Parade" in r.summary
+    assert r.data[0]["boroughs"] == ["Brooklyn"]
+    assert [d["status"] for d in live.road_events("manhattan", "events").data] == ["upcoming"]
+    assert [d["status"] for d in live.road_events("manhattan", "closure").data] == ["scheduled"]
+    assert not live.road_events(kind="parade").ok
+
+
+def test_road_events_off_without_login(monkeypatch):
+    monkeypatch.delenv("NY511_USER", raising=False)
+    assert not live.road_events().ok

@@ -3,7 +3,7 @@
 None of these need a paid key. Weather comes from Open-Meteo and the National Weather Service,
 road speeds from NYC DOT's real-time feed, subway alerts from the MTA, addresses from NYC
 Planning's GeoSearch, and a short allowlist of NYC Open Data datasets can be queried directly.
-511NY road events are used only when an access key is configured, and are shown as NYSDOT
+511NY road events are used only when 511NY feed access is configured, and are shown as NYSDOT
 published them, with their update time and attribution.
 """
 
@@ -12,13 +12,17 @@ from __future__ import annotations
 import html
 import json
 import re
+import threading
 import time
+from contextlib import suppress
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
+import httpx
+
 from ..config import REPO
 from . import Tool, ToolResult, failed
-from .http import env, get_json
+from .http import UA, env, get_json
 
 NY = ZoneInfo("America/New_York")
 
@@ -408,61 +412,181 @@ def road_speeds(borough: str | None = None) -> ToolResult:
     )
 
 
-NYC_COUNTIES = ("new york", "kings", "queens", "bronx", "richmond")
+NY511_EVENTS = "https://nysdot.carsprogram.org/carsapi_v1/api/events"
+NY511_COUNTIES = {
+    "New York": "Manhattan",
+    "Kings": "Brooklyn",
+    "Queens": "Queens",
+    "Bronx": "Bronx",
+    "Richmond": "Staten Island",
+}
+NY511_KINDS = {
+    "closure": ("closure",),
+    "roadwork": ("roadwork",),
+    "incident": ("incident", "obstruction", "restriction"),
+    "event": ("special-event", "sporting-event"),
+}
 NY511_ATTRIBUTION = "powered by 511NY"
 NY511_DISCLAIMER = (
     "511NY data is provided as is by NYSDOT and may not match conditions in the field; "
     "posted restrictions take precedence."
 )
+_ny511: dict = {"at": 0.0, "rows": None, "busy": False}
+_ny511_lock = threading.Lock()
+_ny511_done = threading.Event()
 
 
-def road_events(borough: str | None = None) -> ToolResult:
-    """Incidents, construction and closures from 511NY, as NYSDOT published them."""
-    key = env("NY511_API_KEY")
-    if not key:
+def _ny511_configured() -> bool:
+    return bool(env("NY511_USER") and env("NY511_PASSWORD"))
+
+
+def _ny511_fetch() -> None:
+    """The statewide feed is about 9 MB and takes several seconds, so only the NYC part is kept,
+    refreshed in the background every 5 minutes (the polling rate 511NY asks for)."""
+    try:
+        r = httpx.get(
+            NY511_EVENTS,
+            auth=(env("NY511_USER"), env("NY511_PASSWORD")),
+            headers={"User-Agent": UA},
+            timeout=httpx.Timeout(45.0, connect=8.0),
+        )
+        r.raise_for_status()
+        rows = [e for e in r.json() if set(e.get("counties") or []) & NY511_COUNTIES.keys()]
+        with _ny511_lock:
+            _ny511.update(at=time.time(), rows=rows)
+    finally:
+        with _ny511_lock:
+            _ny511["busy"] = False
+        _ny511_done.set()
+
+
+def _ny511_events() -> tuple[list[dict], float]:
+    with _ny511_lock:
+        age = time.time() - _ny511["at"]
+        start = (_ny511["rows"] is None or age > 300) and not _ny511["busy"]
+        if start:
+            _ny511["busy"] = True
+            _ny511_done.clear()
+    if start:
+        threading.Thread(target=_ny511_fetch, daemon=True).start()
+    if _ny511["rows"] is None or age > 1800:
+        _ny511_done.wait(timeout=40)
+    if _ny511["rows"] is None or time.time() - _ny511["at"] > 1800:
+        raise RuntimeError("511NY did not answer in time")
+    return _ny511["rows"], _ny511["at"]
+
+
+def warm_road_events() -> None:
+    if _ny511_configured():
+        with suppress(Exception):
+            _ny511_events()
+
+
+def _ms(t: dict | None) -> float | None:
+    return t["time"] / 1000 if t and t.get("time") else None
+
+
+def _local(ts: float | None) -> str | None:
+    return datetime.fromtimestamp(ts, NY).strftime("%a %b %-d %-I:%M %p") if ts else None
+
+
+def _point(e: dict) -> tuple[float, float] | None:
+    coords = (e.get("geometry") or {}).get("coordinates") or []
+    if coords and isinstance(coords[0], list):
+        coords = coords[len(coords) // 2]
+    if len(coords) == 2:
+        return coords[1], coords[0]
+    return None
+
+
+def road_events(borough: str | None = None, kind: str | None = None) -> ToolResult:
+    """Closures, roadwork, incidents and planned events on NYC roads from 511NY, word for word."""
+    if not _ny511_configured():
         return failed("511NY road events are not set up on this site yet")
-    rows = get_json("https://511ny.org/api/getevents", {"key": key, "format": "json"}, ttl_s=180)
+    try:
+        wanted = _borough(borough)
+    except ValueError as err:
+        return failed(str(err))
+    kind = (kind or "").strip().lower().rstrip("s") or None
+    if kind and kind not in NY511_KINDS:
+        return failed(f"unknown kind {kind}; use one of {', '.join(NY511_KINDS)} or leave it empty")
+    rows, fetched = _ny511_events()
+    now, week = time.time(), time.time() + 7 * 86400
     items = []
     for e in rows:
-        county = str(e.get("CountyName") or "").lower()
-        if not any(c in county for c in NYC_COUNTIES):
+        cat = (e.get("headline") or {}).get("category", "")
+        if cat == "nysdot-road-conditions" or (kind and cat not in NY511_KINDS[kind]):
             continue
-        try:
-            wanted = _borough(borough)
-        except ValueError as err:
-            return failed(str(err))
-        if wanted and wanted.lower() not in (str(e.get("RegionName", "")) + county).lower():
+        boroughs = [NY511_COUNTIES[c] for c in e.get("counties") or [] if c in NY511_COUNTIES]
+        if wanted and wanted not in boroughs:
             continue
+        details = e.get("details") or [{}]
+        start = min((_ms(d.get("start-time")) or 0 for d in details), default=0) or None
+        end = max((_ms(d.get("end-time")) or 0 for d in details), default=0) or None
+        if (end and end < now) or (start and start > week):
+            continue
+        loc = ((details[0].get("locations") or [{}])[0]) or {}
+        lanes = [ln for d in details for ln in d.get("lanes") or []]
         items.append(
             {
-                "type": e.get("EventType"),
-                "roadway": e.get("RoadwayName"),
-                "direction": e.get("DirectionOfTravel"),
-                "description": e.get("Description"),  # kept word for word, as published
-                "lanes": e.get("LanesAffected"),
-                "full_closure": e.get("IsFullClosure"),
-                "severity": e.get("Severity"),
-                "last_updated": e.get("LastUpdated"),
-                "lat": e.get("Latitude"),
-                "lon": e.get("Longitude"),
+                "id": e.get("event-id"),
+                "type": cat.replace("-", " "),
+                "what": (e.get("headline") or {}).get("code"),
+                "roadway": loc.get("route-designator") or loc.get("landmark-name"),
+                "direction": (loc.get("link-alignment") or "").lower() or None,
+                "boroughs": boroughs,
+                "description": e.get("description"),  # kept word for word, as published
+                "status": "upcoming"
+                if start and start > now
+                else "scheduled"
+                if any(d.get("recurrent-times") for d in details)
+                else "active",
+                "start": start or 0,
+                "starts": _local(start),
+                "ends": _local(end) if end and end - now < 5 * 365 * 86400 else None,
+                "lanes": len(lanes) or None,
+                "priority": e.get("priority"),
+                "last_updated": _local(_ms(e.get("update-time"))),
+                "point": _point(e),
             }
         )
-    items.sort(key=lambda x: str(x.get("last_updated") or ""), reverse=True)
-    summary = (
-        f"{len(items)} 511NY road events in New York City ({NY511_ATTRIBUTION}).\n"
-        + "\n".join(
-            f'- {i["type"]}: {i["roadway"]} {i["direction"] or ""}: "{i["description"]}" '
-            f"(updated {i['last_updated']})"
-            for i in items[:15]
-        )
+    status = {"active": 0, "scheduled": 1, "upcoming": 2}
+    order = {"incident": 0, "obstruction": 0, "closure": 1, "restriction": 1}
+    items.sort(key=lambda i: (status[i["status"]], order.get(i["type"], 2), i["priority"] or 9))
+    counts = {k: sum(i["status"] == k for i in items) for k in status}
+
+    def brief(text: str | None) -> str:
+        # The text after "Comment:" repeats the event in the agency's own shorthand.
+        text = (text or "").split(" Comment:")[0]
+        return text if len(text) <= 220 else text[:220].rsplit(" ", 1)[0] + " ..."
+
+    def line(i: dict) -> str:
+        when = f" starts {i['starts']}" if i["status"] == "upcoming" else ""
+        where = ", ".join(i["boroughs"])
+        return f'- [{i["status"]}{when}] {i["type"]}, {where}: "{brief(i["description"])}"'
+
+    soon = sorted((i for i in items if i["status"] == "upcoming"), key=lambda i: i["start"])
+    listed = (
+        [i for i in items if i["status"] == "active"][:6]
+        + [i for i in items if i["status"] == "scheduled"][:3]
+        + soon[:5]
     )
+    summary = (
+        f"511NY road events in {wanted or 'New York City'}{f' ({kind})' if kind else ''}: "
+        f"{counts['active']} active, {counts['scheduled']} on a recurring schedule (only on the "
+        f"days and hours in their text) and {counts['upcoming']} starting in the next 7 days. "
+        f"Now: {_now_ny():%a %b %-d %-I:%M %p}. Feed fetched "
+        f"{_ago(datetime.fromtimestamp(fetched, UTC))} ({NY511_ATTRIBUTION}). Quote "
+        "descriptions as published.\n" + "\n".join(line(i) for i in listed)
+    )
+    shown = [i for i in items[:60] if i["point"]]
     return ToolResult(
         summary=summary,
-        data=items[:50],
+        data=[{k: v for k, v in i.items() if k not in ("point", "start")} for i in items[:40]],
         sources=[
             {
                 "kind": "live",
-                "title": "511NY traffic events",
+                "title": "511NY road events (NYSDOT)",
                 "url": "https://511ny.org",
                 "attribution": NY511_ATTRIBUTION,
                 "note": NY511_DISCLAIMER,
@@ -474,17 +598,18 @@ def road_events(borough: str | None = None) -> ToolResult:
                 "label": "Road events (511NY)",
                 "points": [
                     {
-                        "lat": i["lat"],
-                        "lon": i["lon"],
-                        "label": i["roadway"],
+                        "lat": i["point"][0],
+                        "lon": i["point"][1],
+                        "label": f"{i['roadway'] or ''} ({i['type']})".strip(),
                         "detail": i["description"],
                         "updated_at": i["last_updated"],
                     }
-                    for i in items[:50]
-                    if i["lat"] and i["lon"]
+                    for i in shown
                 ],
             }
-        ],
+        ]
+        if shown
+        else [],
     )
 
 
@@ -893,10 +1018,17 @@ TOOLS = [
     Tool(
         "road_events",
         "live",
-        "511NY incidents, construction and closures on New York City roads right now.",
-        {"type": "object", "properties": {"borough": {"type": "string"}}},
+        "511NY closures, roadwork, incidents and planned events (parades, games, concerts) on "
+        "New York City roads, active now or starting in the next 7 days.",
+        {
+            "type": "object",
+            "properties": {
+                "borough": {"type": "string"},
+                "kind": {"type": "string", "enum": list(NY511_KINDS)},
+            },
+        },
         road_events,
-        enabled=lambda: bool(env("NY511_API_KEY")),
+        enabled=_ny511_configured,
     ),
     Tool(
         "subway_alerts",
