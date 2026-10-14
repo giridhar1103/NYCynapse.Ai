@@ -159,7 +159,7 @@ def weather(hours: int = 6, days: int = 0) -> ToolResult:
         }
         rows.append(row)
         lines.append(
-            f"{name}: {row['temp_f']}F, {row['now']}, wind {row['wind_mph']} mph, "
+            f"{name}: {row['temp_f']}F, {row['now']}, steady wind {row['wind_mph']} mph, "
             f"{row['rain_now_in']} in falling now; next {hours} h: up to {p_max}% chance of "
             f"rain, {total} in expected"
             + (f" (wet at {', '.join(wet_hours[:6])})" if wet_hours else "")
@@ -191,7 +191,7 @@ def weather(hours: int = 6, days: int = 0) -> ToolResult:
             + "\n".join(
                 f"{x['label']}: {x['sky']}, high {x['high_f']}F, low {x['low_f']}F, rain chance "
                 f"{x['rain_chance_low_pct']}-{x['rain_chance_pct']}%, {x['rain_in']} in, "
-                f"wind up to {x['wind_max_mph']} mph"
+                f"steady wind up to {x['wind_max_mph']} mph (not gusts)"
                 for x in daily
             )
         )
@@ -1216,6 +1216,14 @@ DATASETS = {
         "dba, boro, building, street, zipcode, cuisine_description, "
         "inspection_date, grade, score, violation_description, "
         "latitude, longitude",
+    ),
+    "crime": (
+        "5uac-w243",
+        "NYPD crime complaints this year, released quarterly (felonies, misdemeanors and "
+        "violations); for counts near a place use where within_circle(lat_lon, LAT, LON, "
+        "METERS); count by ofns_desc or law_cat_cd, never list individual people",
+        "cmplnt_fr_dt, cmplnt_fr_tm, boro_nm, addr_pct_cd, ofns_desc, law_cat_cd, "
+        "prem_typ_desc, station_name, latitude, longitude, lat_lon",
     ),
     "farmers_markets": (
         "8vwk-6iz2",

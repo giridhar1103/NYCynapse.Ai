@@ -187,6 +187,13 @@ def locate(text: str) -> dict | None:
     station = _path_station(n)
     if station:
         return station
+    # "Red Hook, Brooklyn" is Red Hook: a borough or city name after a place adds nothing.
+    bare = re.sub(r"\b(?:brooklyn|queens|manhattan|bronx|staten island|new york|nyc)\b", " ", n)
+    bare = " ".join(bare.split())
+    if bare and bare != n:
+        hood = _neighborhood(bare)
+        if hood:
+            return hood
     for key, (name, lat, lon) in NAMED.items():
         if n == key or re.search(rf"\b{key}\b", n) and len(n.split()) <= len(key.split()) + 2:
             return {"name": name, "lat": lat, "lon": lon}

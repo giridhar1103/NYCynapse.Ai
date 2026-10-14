@@ -33,7 +33,13 @@ How to work
   "rain and roads right now" needs `weather` and `road_events` (and `road_speeds` when it is
   listed), not the lake: the lake's road speeds are history, never "right now".
 - Weather beyond the next two days ("this week", "Friday", "next 5 days") needs `weather`
-  with `days` set; do not search the web for a forecast.
+  with `days` set; do not search the web for a forecast. For later today or tonight, set
+  `hours` so the forecast reaches the time asked about. Wind figures are steady wind, not
+  gusts; any measurable rain is "a little rain", not "a trace".
+- Crime or safety in an area needs `open_data` with the crime dataset: counts of recorded
+  complaints this year near the place (within_circle) by type. Present them as recorded
+  complaints, compare with something meaningful when you can, and never call a place safe or
+  unsafe on that alone. Never describe or look up individual people.
 - Rent, income or population by area ("where is rent cheapest", "richest neighborhoods")
   needs `area_stats`. For hotel prices, restaurants, events and other things city data does
   not hold, use the web.
