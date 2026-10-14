@@ -266,7 +266,7 @@ def test_failed_tool_is_reported_and_the_agent_moves_on(monkeypatch):
         [
             _step(calls=[("road_speeds", {})]),
             _step(calls=[("web_search", {"query": "nyc traffic"})]),
-            _step(answer="Roads look normal according to the web."),
+            _step(answer="Roads look normal tonight."),
         ],
         [_tool("road_speeds", ok=False), _tool("web_search", kind="web", text="normal")],
     )
@@ -653,6 +653,61 @@ def test_road_events_one_road_keeps_schedule_and_deck(monkeypatch):
     assert len(r.data) == 1
     line = r.summary.splitlines()[1]
     assert "9:00PM EDT to 6:00AM EDT" in line and "on Wednesday" in line
-    assert "[Lower Level westbound; toward New Jersey; detoured; all 3 lanes closed]" in line
+    assert "[Lower Level westbound; toward New Jersey; detoured; all 3 lanes closed] I-95" in line
     assert "Look out" not in line and "in progress" not in line and "near New York" not in line
     assert not live.road_events(road="LIE").data  # "lie" inside "Earlier" is not a match
+
+
+def test_only_cited_lines_are_checked_for_numbers():
+    text = (
+        "The Lincoln Tunnel takes about 25 minutes from Midtown.\n"
+        "- Holland Tunnel: open [1]\n"
+        "- Lincoln Tunnel: 4321 cars an hour\n"
+        "Rain chance is 77% tonight [2]."
+    )
+    cited = core._cited_part(text)
+    assert "25 minutes" not in cited
+    assert "4321" in cited and "77%" in cited
+
+
+def test_bridges_and_tunnels_resolve_to_their_outlines():
+    from nycynapse.agent import places
+
+    got = places.resolve(
+        [{"name": "GWB lower level"}, {"name": "Lincoln Tunnel"}, {"name": "Triborough Bridge"}]
+    )
+    assert [(g["level"], g["key"]) for g in got] == [
+        ("crossing", "George Washington Bridge"),
+        ("crossing", "Lincoln Tunnel"),
+        ("crossing", "RFK Bridge"),
+    ]
+
+
+@pytest.mark.parametrize(
+    "text,hit",
+    [
+        ("Closes 10 PM to 10 AM Wed... correct: it starts at 9 PM [1].", True),
+        ("No closure is listed for the Lincoln Tunnel [1].", True),
+        ("Tonight (it's about 3 AM now) the GWB lower level closes [1].", True),
+        ("The Lincoln Tunnel is open all night [1]; the GWB lower level closes at 9 PM.", False),
+        ("A crash on the BQE has the right lane blocked [1].", False),
+        ("All lanes close after 9 PM tonight [1].", False),
+    ],
+)
+def test_draft_smells(text, hit):
+    assert bool(core._draft_issues(text)) is hit
+
+
+def test_note_like_draft_is_rewritten_once(monkeypatch):
+    agent, seen = _agent(
+        monkeypatch,
+        [
+            _step(calls=[("weather", {})]),
+            _step(answer="No rain is listed for tonight."),
+            _step(answer="Tonight stays dry."),
+        ],
+        [_tool("weather")],
+    )
+    out = agent.run("rain tonight?", [], lambda e, d: None)
+    assert out["answer"] == "Tonight stays dry."
+    assert "No rain is listed" in seen[2][1]

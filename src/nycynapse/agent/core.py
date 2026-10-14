@@ -79,6 +79,41 @@ _CLAIMS_FAILURE = re.compile(
     re.I,
 )
 
+# Drafts that read like notes instead of an answer: thinking out loud, talking about the data
+# rather than the city, or announcing the time. Each is sent back once to be rewritten.
+_DRAFT_SMELLS = [
+    (
+        re.compile(
+            r"\.\.\.\s*(?:correct|actually|wait)\b|\b(?:correction|scratch that|wait,|I mean,)",
+            re.I,
+        ),
+        "it corrects itself mid-answer; write only the final, correct version",
+    ),
+    (
+        re.compile(
+            r"\b(?:is|are|was|were|isn't|aren't|not|nothing|none|no \w+) (?:listed|reported)\b"
+            r"|\bfeed(?:'s)?\b|\breadings?\b|\bdataset\b|\bthe data (?:shows|says)\b"
+            r"|\baccording to\b|\bpublished (?:text|wording)\b|\bI (?:found|have no|can't tell)\b",
+            re.I,
+        ),
+        "it talks about the data or what was checked; describe the city itself "
+        '("open tonight", not "no closure listed")',
+    ),
+    (
+        re.compile(
+            r"\b(?:it's|it is) (?:about |now |already )?\d{1,2}(?::\d\d)? ?[AP]M\b"
+            r"|\b\d{1,2}(?::\d\d)? ?[AP]M now\b",
+            re.I,
+        ),
+        "it announces the current time; leave the clock out",
+    ),
+]
+
+
+def _draft_issues(answer: str) -> list[str]:
+    return [why for pattern, why in _DRAFT_SMELLS if pattern.search(_uncite(answer))]
+
+
 BUSY = (
     "Our models are at full capacity right now. Please wait a minute and try again; "
     "nothing you asked was lost."
@@ -98,6 +133,7 @@ class Turn:
     model: str | None = None
     fell_back: bool = False
     retried: bool = False
+    redraft: str | None = None
 
 
 class Agent:
@@ -195,6 +231,17 @@ class Agent:
                 # reporting that as a failure. Ask again, once, with a reminder.
                 t.retried = True
                 t.steps.append({"note": "retried a step that claimed a tool failure"})
+                continue
+            issues = [] if step.get("declined") else _draft_issues(answer)
+            if answer and not calls and issues and t.redraft is None:
+                t.redraft = (
+                    f"Your draft answer was:\n{answer}\n\nRewrite it once more as the final "
+                    "answer, with the same facts, citations and places, because "
+                    + "; and ".join(issues)
+                    + "."
+                )
+                t.steps.append({"note": "redrafted: " + "; ".join(issues)})
+                force = True
                 continue
             if answer and not calls:
                 return self._finish(
@@ -352,6 +399,8 @@ class Agent:
                 "Reminder: you cannot call tools natively. Put the sources you need "
                 "in the `calls` array of your JSON reply and the system will run them."
             )
+        if t.redraft:
+            parts.append(t.redraft)
         if force:
             parts.append("Answer now with what you have. Do not call any more tools.")
         else:
@@ -421,7 +470,7 @@ class Agent:
             if r["result"].ok
         )[:1800]
         untraced = _untraced_numbers(
-            _uncite(answer or ""),
+            _uncite(_cited_part(answer or "")),
             [r["result"] for r in t.results],
             " ".join(f"{h.get('answer', '')} {h.get('facts', '')}" for h in t.history),
         )
@@ -563,6 +612,26 @@ def _result_text(r: dict, numbers: dict[str, int]) -> str:
 
 
 _CITE = re.compile(r"\s?\[(\d{1,2}(?:\s*[,;]\s*\d{1,2})*)\]")
+
+
+def _cited_part(text: str) -> str:
+    """The lines that claim to come from a source. A run of list lines counts as cited when
+    any of them is, since citations are tidied to the end of a run. Uncited lines are the
+    model's own knowledge of the city (which tunnels go to New Jersey) and are not checked
+    against the tools."""
+    lines = (text or "").splitlines()
+    keep: list[str] = []
+    run: list[str] = []
+    for line in [*lines, ""]:
+        if line.lstrip().startswith("- "):
+            run.append(line)
+            continue
+        if run and any(_CITE.search(x) for x in run):
+            keep += run
+        run = []
+        if _CITE.search(line):
+            keep.append(line)
+    return "\n".join(keep)
 
 
 def _uncite(text: str) -> str:
