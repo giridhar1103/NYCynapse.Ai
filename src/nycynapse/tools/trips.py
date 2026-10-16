@@ -591,8 +591,10 @@ def transit(a: dict, b: dict, when: datetime, arrive_by: bool) -> tuple[list[dic
         by_path = []
     if by_path:
         notes.append(
-            "PATH lines: on weekends the direct lines run 10 AM to 9 PM; outside those hours "
-            "and late on weeknights the Journal Square-33rd Street line runs via Hoboken."
+            "PATH lines: on weekdays from about 6 AM to 11 PM all four lines run direct; from "
+            "about 11 PM to 6 AM on weeknights, and on weekends outside 10 AM to 9 PM, the "
+            "Journal Square-33rd Street line runs via Hoboken. These options already use the "
+            "right pattern for the trip time."
         )
         notes.append(
             "PATH times marked live use PATH's own next-train times; the others use its "
@@ -936,6 +938,10 @@ def parse_when(text: str | None) -> datetime | None:
     raw = (text or "now").strip().lower()
     if raw in ("", "now", "right now", "asap"):
         return now
+    rel = re.search(r"\bin\s+(\d+|an|a|half an)\s*(min|minute|minutes|hr|hour|hours)\b", raw)
+    if rel:
+        n = {"an": 1, "a": 1, "half an": 0.5}.get(rel.group(1)) or float(rel.group(1))
+        return now + timedelta(minutes=n * (60 if rel.group(2).startswith(("h", "hr")) else 1))
     try:
         t = datetime.fromisoformat(
             raw.upper().replace(" ", "T") if re.match(r"\d{4}-", raw) else "x"
@@ -1095,6 +1101,20 @@ def trip_plan(
         elif not notes:
             lines.append("No transit itinerary was found for that time.")
         lines += notes
+        if b.get("airport") or "airport" in (b.get("name") or "").lower():
+            lines.append(
+                "For a flight: the TSA advises being at the airport at least 2 hours before a "
+                "domestic departure, and airlines advise 3 hours for international. The times "
+                "above end at the terminal entrance, before check-in, security and the walk to "
+                "the gate; count back from the flight with that margin."
+            )
+            sources.append(
+                {
+                    "kind": "official",
+                    "title": "TSA: arrive early for your flight",
+                    "url": "https://www.tsa.gov/travel/frequently-asked-questions",
+                }
+            )
         if any(x.get("airport") == "jfk" for x in (a, b)):
             sources.append(
                 {"kind": "official", "title": "AirTrain JFK (Port Authority)", "url": AIRTRAIN_URL}
