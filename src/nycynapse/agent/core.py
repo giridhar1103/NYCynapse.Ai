@@ -73,6 +73,24 @@ STEP_SCHEMA = {
     "additionalProperties": False,
 }
 
+VERIFY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "problems": {
+            "type": "array",
+            "maxItems": 4,
+            "items": {
+                "type": "object",
+                "properties": {"quote": {"type": "string"}, "why": {"type": "string"}},
+                "required": ["quote", "why"],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["problems"],
+    "additionalProperties": False,
+}
+
 _CLAIMS_FAILURE = re.compile(
     r"no such tool|tools? (?:is |are )?(?:not available|unavailable)|(?:tool|request|call) "
     r"(?:failed|error)|could(?:n't| not) (?:run|reach|call|use)|didn't run",
@@ -151,6 +169,8 @@ class Turn:
 
 
 class Agent:
+    verify_answers = True
+
     def __init__(self, lake: Lake, host: MCPHost):
         self.lake = lake
         self.host = host
@@ -271,6 +291,18 @@ class Agent:
                         + ". Use the figures the tools gave, or leave them out; never estimate "
                         "times, distances, prices or counts yourself"
                     )
+            if (
+                answer
+                and not calls
+                and not issues
+                and t.results
+                and t.redraft is None
+                and not force
+                and self.verify_answers
+                and not step.get("declined")
+                and time.monotonic() - t.started < TURN_SECONDS - 60
+            ):
+                issues = self._verify(t, answer)
             if answer and not calls and issues and t.redraft is None:
                 # Made-up figures may need a tool (trip_plan for a travel time), so that rewrite
                 # may still call one; a rewrite for wording alone answers straight away.
@@ -317,6 +349,43 @@ class Agent:
 
     def _calls(self, t: Turn) -> int:
         return len(t.results)
+
+    def _verify(self, t: Turn, answer: str) -> list[str]:
+        """A second look at a finished draft: claims the tool results do not support, times
+        that do not fit together, places or details stated without a source. Problems found
+        go into the one rewrite; a failed check never blocks the answer."""
+        numbers = {key: n for n, key, _ in _registry(t.results)}
+        prompt = (
+            f"Now: {now_as_of()} (New York).\n\nReader's question: {t.question}\n\n"
+            + (
+                "Earlier in the conversation:\n"
+                + "\n".join(f"Q: {h['q']}\nA: {_uncite(h['answer'])}" for h in t.history)
+                + "\n\n"
+                if t.history
+                else ""
+            )
+            + "Tool results:\n\n"
+            + "\n\n".join(_result_text(r, numbers) for r in t.results)
+            + f"\n\nDraft answer:\n{answer}"
+        )
+        try:
+            r = llm.complete_with(
+                t.model or self.models()[0],
+                load_prompt("verify"),
+                prompt,
+                schema=VERIFY_SCHEMA,
+                retries=0,
+            )
+            found = r.json().get("problems") or []
+            t.cost_usd += r.cost_usd or 0
+            t.model_calls += 1
+        except Exception:  # noqa: BLE001 - the check is a safety net, not a gate
+            return []
+        out = [f'"{p["quote"][:120]}": {p["why"][:200]}' for p in found[:4] if p.get("quote")]
+        if out:
+            t.steps.append({"note": "verify: " + " | ".join(out)[:600]})
+            return ["a check against the tool results found problems: " + "; ".join(out)]
+        return []
 
     def _untraced(self, t: Turn, answer: str) -> list[str]:
         return _untraced_numbers(

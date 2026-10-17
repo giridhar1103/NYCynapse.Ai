@@ -210,6 +210,7 @@ def _agent(monkeypatch, replies, tools):
 
     monkeypatch.setattr(llm, "complete_with", complete_with)
     agent = core.Agent.__new__(core.Agent)
+    agent.verify_answers = False  # scripted replies cover the answer steps only
     agent.lake = _Lake()
     agent.host = _Host(tools)
     agent._rest_until = {}
@@ -829,3 +830,20 @@ def test_unchecked_answer_is_sent_back_once(monkeypatch):
     out = agent.run("uptown C from times square to the museum?", [], lambda e, d: None)
     assert out["answer"].startswith("Take the C")
     assert "You answered without checking anything" in seen[1][1]
+
+
+def test_verified_draft_is_rewritten_with_the_problems(monkeypatch):
+    agent, seen = _agent(
+        monkeypatch,
+        [
+            _step(calls=[("trip_plan", {})]),
+            _step(answer="Use Gate A on Southern Blvd [1]."),
+            {"problems": [{"quote": "Gate A on Southern Blvd", "why": "no source names a gate"}]},
+            _step(answer="Get off at Southern Blvd and 183rd St [1]."),
+        ],
+        [_tool("trip_plan", text="Bx9 to Southern Blvd/E 183 St")],
+    )
+    agent.verify_answers = True
+    out = agent.run("which zoo gate from the bus?", [], lambda e, d: None)
+    assert out["answer"].startswith("Get off at Southern Blvd")
+    assert "no source names a gate" in seen[3][1]
