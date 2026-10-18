@@ -929,28 +929,60 @@ def subway_alerts(line: str | None = None) -> ToolResult:
     soon = [i for i in items if not i["active"]]
     delays = [i for i in now_items if (i["type"] or "").lower() in ("delays", "severe delays")]
 
-    def row(i: dict) -> str:
-        detail = f" Details: {i['detail'][:200]}" if i["detail"] else ""
+    def row(i: dict, detail_chars: int = 140) -> str:
+        detail = f" {i['detail'][:detail_chars]}" if i["detail"] and detail_chars else ""
         return (
-            f"- [{','.join(i['routes'])}] {i['type']}: {i['text'][:220]}"
+            f"- [{','.join(i['routes'])}] {i['type']}: {i['text'][:180]}"
             f" (applies {i['hours'] or 'now'}).{detail}"
         )
 
+    # Everything in effect fits: delays and service changes in full, then the rest shorter,
+    # and anything past the budget summed up by line, so nothing is silently cut off.
+    minor = re.compile(r"station notice|boarding change|elevator|escalator", re.I)
+    major = [i for i in now_items if not minor.search(i["type"] or "")]
+    ordered = delays + [i for i in major if i not in delays]
+    rest = [i for i in now_items if i not in ordered]
+    lines_out, size, left = [], 0, []
+    for k, i in enumerate(ordered + rest):
+        ln = row(i, 140 if i in ordered else 0)
+        if size + len(ln) > 2600:
+            left = (ordered + rest)[k:]
+            break
+        lines_out.append(ln)
+        size += len(ln) + 1
+    if left:
+        routes_left = sorted({r for i in left for r in i["routes"]})
+        lines_out.append(
+            f"- Also in effect: {len(left)} smaller notices (station entrances, boarding) on "
+            + ", ".join(routes_left)
+        )
     summary = (
-        f"{len(now_items)} MTA subway alerts in effect now"
+        f"All {len(now_items)} MTA subway alerts in effect now"
         + (f" for the {line.upper()}" if line else "")
-        + (f", {len(delays)} about delays" if delays else "")
+        + (f", {len(delays)} about delays" if delays else ", none about delays")
         + ":\n"
-        + "\n".join(row(i) for i in (delays + [i for i in now_items if i not in delays])[:15])
+        + "\n".join(lines_out)
         + (
             "\nPlanned changes starting in the next 12 hours:\n"
-            + "\n".join(row(i) for i in soon[:6])
+            + "\n".join(row(i, 0)[:200] for i in soon[:5])
             if soon
             else ""
         )
-        + "\nEach alert holds only during the hours shown; say when it ends if that is soon."
+        + "\nThis is the complete list. Each alert holds only during the hours shown; say when it "
+        "ends if that is soon."
     )
-    touched = sorted({r for i in (delays if not line else now_items) for r in i["routes"]})
+    if line:
+        touched, label = (
+            sorted({r for i in now_items for r in i["routes"]}),
+            f"{line.upper()} line alerts",
+        )
+    elif delays:
+        touched, label = sorted({r for i in delays for r in i["routes"]}), "Lines with delays now"
+    else:
+        # Only lines that are cut or moved, not every skipped stop: a calm map stays readable.
+        cut = re.compile(r"suspend|no service|reroute|shuttle", re.I)
+        touched = sorted({r for i in major if cut.search(i["type"] or "") for r in i["routes"]})
+        label = "Lines suspended or rerouted now"
     return ToolResult(
         summary=summary,
         data=items[:60],
@@ -958,7 +990,7 @@ def subway_alerts(line: str | None = None) -> ToolResult:
             {
                 "type": "routes",
                 "routes": touched,
-                "label": "Lines with delays now" if not line else f"{line.upper()} line alerts",
+                "label": label,
             }
         ]
         if touched
