@@ -65,7 +65,7 @@ def transit_changes(system: str | None = None, route: str | None = None) -> dict
 def trip_plan(
     origin: str,
     destination: str,
-    mode: str = "both",
+    mode: str = "all",
     when: str | None = None,
     arrive_by: bool = False,
 ) -> dict:

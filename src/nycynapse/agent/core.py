@@ -580,9 +580,12 @@ class Agent:
     ) -> dict:
         answer, sources = _cite(answer or "", t.results, declined) if answer else (answer, [])
         layers = [layer for r in t.results if r["result"].ok for layer in r["result"].map]
-        if any(x.get("type") == "route" for x in layers):
-            # A trip answer is about its own route: delays on other lines are noise on its map.
-            layers = [x for x in layers if x.get("type") != "routes"]
+        trips = [x for x in layers if x.get("type") == "trip"]
+        if trips:
+            # A trip answer shows one trip, the last one planned (earlier attempts were
+            # superseded), and nothing else that would compete with its route on the map.
+            layers = [x for x in layers if x.get("type") not in ("trip", "routes", "points")]
+            layers.append(trips[-1])
         highlight = None
         if places and not declined:
             hints = [i for x in layers if x.get("type") == "highlight" for i in x.get("items", [])]

@@ -2,7 +2,7 @@
 // draws each tool call as it runs (with errors and recoveries), renders the answer and its
 // sources as plain text, and keeps the conversation to a question and three follow-ups.
 
-import { GuideMap, wxIcon } from "./map.js?v=8";
+import { GuideMap, wxIcon } from "./map.js?v=9";
 
 const { el, url } = NY;
 const TOOL = {
@@ -11,6 +11,7 @@ const TOOL = {
   road_events: ["R", "live", "511NY road events"], subway_alerts: ["S", "live", "Subway alerts"],
   find_place: ["P", "live", "Place search"], open_data: ["O", "live", "NYC Open Data"],
   area_stats: ["C", "live", "Census by neighborhood"],
+  trip_plan: ["T", "live", "Trip planner"], transit_changes: ["T", "live", "Train and bus changes"],
   web_search: ["G", "web", "Web search"], read_page: ["R", "web", "Reading a page"],
 };
 const MODEL_NAMES = { "claude-sonnet-5.5": "Claude Sonnet 5.5", "gemini-3.8-flash": "Gemini 3.8 Flash", "gemini-3.7-flash": "Gemini 3.7 Flash" };
@@ -174,7 +175,8 @@ class Guide {
             ended = true;
             this.turn = d.turn;
             view.answer(d, (f) => this.ask(f), (i) => this.map?.focus(i), {
-              place: (i) => this.map?.reveal(i), done: () => this.map?.revealAll(), scroll: () => this.scroll() });
+              place: (i) => this.map?.reveal(i), done: () => this.map?.revealAll(), scroll: () => this.scroll(),
+              trip: (trip, sel) => this.map?.showTrip(trip, sel) });
             const name = MODEL_NAMES[d.model] || d.model;
             if (name) $("g-model").textContent = name + (d.fell_back ? " (backup)" : "");
           } else if (ev === "error") {
@@ -198,6 +200,107 @@ class Guide {
   }
 
   scroll() { this.log.scrollTop = this.log.scrollHeight; }
+}
+
+
+// A trip the way map apps show one: a switch between transit, car, walking and bike with each
+// one's time, route cards for transit with the lines in their own colors, and the steps of the
+// chosen route. Choosing a mode or a route redraws it on the map.
+const MODE_NAME = { transit: "Transit", drive: "Car", walk: "Walk", bike: "Bike" };
+const MODE_ICON = {
+  transit: '<svg viewBox="0 0 24 24"><path d="M12 2c-4 0-8 .5-8 4v9.5A3.5 3.5 0 0 0 7.5 19L6 20.5v.5h12v-.5L16.5 19a3.5 3.5 0 0 0 3.5-3.5V6c0-3.5-4-4-8-4zM7.5 17a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm3.5-7H6V6h5v4zm2 0V6h5v4h-5zm3.5 7a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z"/></svg>',
+  drive: '<svg viewBox="0 0 24 24"><path d="M18.9 6c-.2-.6-.8-1-1.4-1h-11c-.7 0-1.2.4-1.4 1L3 12v8a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-1h12v1a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-8l-2.1-6zM6.5 16a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm11 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zM5 11l1.5-4.5h11L19 11H5z"/></svg>',
+  walk: '<svg viewBox="0 0 24 24"><path d="M13.5 5.5a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM9.8 8.9 7 23h2.1l1.8-8 2.1 2v6h2v-7.5l-2.1-2 .6-3A7.3 7.3 0 0 0 19 13v-2a5 5 0 0 1-4.3-2.4l-1-1.6a2 2 0 0 0-1.7-1c-.3 0-.5.1-.8.1L6 8.3V13h2V9.6l1.8-.7"/></svg>',
+  bike: '<svg viewBox="0 0 24 24"><path d="M15.5 5.5a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM5 12a5 5 0 1 0 0 10 5 5 0 0 0 0-10zm0 8.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7zm5.8-10.3 2.4-2.4.8.8a7 7 0 0 0 5 2.1V8.9a5.3 5.3 0 0 1-3.6-1.5l-1.9-1.9c-.4-.4-1-.6-1.5-.6s-1.1.2-1.4.6L7.8 8.4a2 2 0 0 0 0 2.8L11 14v5h2v-6.2l-2.2-2.6zM19 12a5 5 0 1 0 0 10 5 5 0 0 0 0-10zm0 8.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"/></svg>',
+};
+
+function icon(kind, cls = "ico") {
+  const i = el("span", { class: cls, "aria-hidden": "true" });
+  i.innerHTML = MODE_ICON[kind] || "";
+  return i;
+}
+
+function minLabel(m) {
+  if (m == null) return "";
+  return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60 ? (m % 60) + " min" : ""}`.trim() : `${m} min`;
+}
+
+function lineBadge(leg) {
+  const bg = leg.color || "#5f6368";
+  const fg = leg.text_color || (/^#?(fccc0a|ffd200|ffc72c|fdb827)/i.test(bg) ? "#000" : "#fff");
+  const name = leg.name || (leg.mode === "train" ? "Train" : leg.mode === "ferry" ? "Ferry" : "Bus");
+  return el("span", { class: `badge ${leg.mode}${name.length <= 2 ? " round" : ""}`, style: `background:${bg};color:${fg}` }, name);
+}
+
+function chain(legs) {
+  const out = [];
+  legs.forEach((g, i) => {
+    if (i) out.push(el("span", { class: "sep", "aria-hidden": "true" }, "›"));
+    out.push(g.mode === "walk" ? el("span", { class: "walkbit" }, icon("walk", "ico sm"), el("small", {}, String(g.minutes || ""))) : lineBadge(g));
+  });
+  return el("span", { class: "chain" }, out);
+}
+
+function stepList(legs, trip) {
+  return el("ol", { class: "steps" }, legs.map((g) => {
+    if (g.mode === "walk") {
+      return el("li", { class: "walk" }, icon("walk", "ico sm"), el("span", {}, `Walk ${minLabel(g.minutes)}`, g.to ? ` to ${g.to}` : ` to ${trip.to.name}`));
+    }
+    const bits = [g.depart ? `${g.depart} from ${g.from}` : g.from ? `from ${g.from}` : "",
+      g.stops ? `${g.stops} stop${g.stops > 1 ? "s" : ""}` : "", minLabel(g.minutes)].filter(Boolean).join(" · ");
+    return el("li", { class: "ride" }, lineBadge(g),
+      el("span", {}, el("b", {}, g.headsign ? `toward ${g.headsign}` : `to ${g.to || ""}`), el("br"),
+        el("small", {}, bits, g.live ? el("i", { class: "livedot", title: "Live times" }) : "", g.headsign && g.to ? ` · get off at ${g.to}` : "")));
+  }));
+}
+
+function tripPanel(trip, draw) {
+  const modes = Object.keys(trip.modes || {});
+  const state = { mode: trip.default || modes[0], i: 0 };
+  const box = el("div", { class: "trip" });
+  const head = el("div", { class: "trip-head" },
+    el("span", { class: "dot start" }), el("b", {}, trip.from.name), el("span", { class: "arrow" }, "→"),
+    el("span", { class: "dot end" }), el("b", {}, trip.to.name), el("small", { class: "when" }, trip.when || ""));
+  const tabs = el("div", { class: "trip-modes", role: "tablist" });
+  const body = el("div", { class: "trip-body" });
+  box.append(head, tabs, body);
+
+  const render = () => {
+    tabs.replaceChildren(...modes.map((m) => el("button", {
+      type: "button", role: "tab", class: "mode" + (m === state.mode ? " on" : ""), "aria-selected": String(m === state.mode),
+      onclick: () => { state.mode = m; state.i = 0; render(); draw?.(trip, state); },
+    }, icon(m), el("span", {}, el("b", {}, minLabel(trip.modes[m].minutes)), el("small", {}, MODE_NAME[m])))));
+    const M = trip.modes[state.mode];
+    if (state.mode === "transit") {
+      body.replaceChildren(...M.options.map((o, i) => {
+        const on = i === state.i;
+        const card = el("button", { type: "button", class: "opt" + (on ? " on" : ""),
+          onclick: () => { state.i = i; render(); draw?.(trip, state); } },
+          el("div", { class: "row1" }, chain(o.legs), el("b", { class: "dur" }, minLabel(o.minutes[0]) + (o.minutes[1] > o.minutes[0] ? "+" : ""))),
+          el("div", { class: "row2" }, `${o.leave} – ${o.arrive || ""}`,
+            ` · ${o.transfers ? `${o.transfers} change${o.transfers > 1 ? "s" : ""}` : "no changes"}`,
+            o.walk_minutes ? ` · ${o.walk_minutes} min walk` : "",
+            ...(o.tags || []).map((t) => el("span", { class: "tag" }, t))));
+        return on ? el("div", { class: "optwrap" }, card, stepList(o.legs, trip)) : card;
+      }));
+    } else if (state.mode === "drive") {
+      const traffic = M.delay == null ? "" : M.delay >= 2 ? `${M.delay} min slower than usual from traffic` : "Light traffic";
+      body.replaceChildren(el("div", { class: "drive" },
+        el("div", { class: "big" }, el("b", {}, minLabel(M.minutes)), M.miles ? el("small", {}, ` · ${M.miles} mi`) : ""),
+        el("div", { class: "row2" }, M.live ? `${traffic} right now` : M.coords?.length ? "Traffic forecast for that time" : "Typical time"),
+        M.typical ? el("div", { class: "row2" }, `Usually ${minLabel(M.typical)} by taxi at this hour`) : "",
+        (M.taxi_fare || M.app_fare) ? el("div", { class: "fares" },
+          M.taxi_fare ? el("span", {}, "Yellow taxi ", el("b", {}, `$${Math.round(M.taxi_fare)}`)) : "",
+          M.app_fare ? el("span", {}, "Uber or Lyft ", el("b", {}, `$${Math.round(M.app_fare)}`)) : "",
+          el("small", {}, "typical, with tolls and fees, before tip")) : ""));
+    } else {
+      body.replaceChildren(el("div", { class: "drive" },
+        el("div", { class: "big" }, el("b", {}, minLabel(M.minutes)), el("small", {}, ` · ${M.km} km`)),
+        el("div", { class: "row2" }, state.mode === "bike" ? "On bike lanes and quieter streets where possible" : "Walking the whole way")));
+    }
+  };
+  render();
+  return box;
 }
 
 let uid = 0;
@@ -267,6 +370,8 @@ class TurnView {
     card.append(...renderText(d.text || "", { sources: numbered, places: d.places || [], onPlace }));
     const wx = this.layers.find((L) => L.type === "weather" && (L.daily || []).length >= 3);
     if (wx && !d.declined) card.append(forecast(wx.daily));
+    const trip = this.layers.filter((L) => L.type === "trip").pop();
+    if (trip && !d.declined && Object.keys(trip.modes || {}).length) card.append(tripPanel(trip, cue.trip));
     if (srcs.length && !d.declined) {
       const list = el("ol", { class: "srclist" }, srcs.map((x, i) => {
         const safe = safeUrl(x.url);

@@ -672,16 +672,37 @@ def _itinerary(it: dict, end: str, extra: tuple[str, int, int] | None = None) ->
         "steps": legs,
         "live": any(lg.get("realTime") for lg in it["legs"]),
         "lines": [
-            {
-                "mode": _MODE.get(lg["mode"], "walk" if lg["mode"] == "WALK" else "other"),
-                "name": lg.get("routeShortName")
-                if _MODE.get(lg["mode"]) in ("subway", "bus")
-                else _AGENCY.get(lg.get("agencyName") or "", lg.get("agencyName") or ""),
-                "color": "#" + lg["routeColor"] if lg.get("routeColor") else None,
-                "coords": _coords(lg),
-            }
+            _line(lg, end)
             for lg in it["legs"]
+            if round(lg.get("duration", 0) / 60) >= 1 or lg["mode"] != "WALK"
         ],
+    }
+
+
+def _line(lg: dict, end: str) -> dict:
+    """One leg as the page draws and lists it: mode, line name and colors, where it boards
+    and gets off, when, how long, how many stops, and its path."""
+    mode = _MODE.get(lg["mode"], "walk" if lg["mode"] == "WALK" else "other")
+    name = (
+        lg.get("routeShortName")
+        if mode in ("subway", "bus")
+        else _AGENCY.get(lg.get("agencyName") or "", lg.get("agencyName") or "")
+    )
+    to = end if lg["to"].get("name") == "END" else lg["to"].get("name")
+    start = lg["from"].get("name")
+    return {
+        "mode": mode,
+        "name": name or "",
+        "color": "#" + lg["routeColor"] if lg.get("routeColor") else None,
+        "text_color": "#" + lg["routeTextColor"] if lg.get("routeTextColor") else None,
+        "from": None if start == "START" else start,
+        "to": to,
+        "depart": _hm(lg["startTime"]) if lg.get("startTime") and mode != "walk" else None,
+        "minutes": max(1, round(lg.get("duration", 0) / 60)),
+        "stops": len(lg.get("intermediateStops") or []) + 1 if mode != "walk" else None,
+        "headsign": lg.get("headsign"),
+        "live": bool(lg.get("realTime")),
+        "coords": _coords(lg),
     }
 
 
@@ -721,10 +742,21 @@ def _add_airtrain(option: dict, key: str, to_airport: bool) -> None:
     coords = _airtrain_paths().get(key)
     if not coords:
         return
+    station = key.split(":", 1)[1].replace(" station", "")
+    if station == "station":
+        station = "Newark Airport station"
     line = {
         "mode": "train",
         "name": "AirTrain",
         "color": "#7b5cc4",
+        "text_color": "#ffffff",
+        "from": station if to_airport else "Terminals",
+        "to": "Terminals" if to_airport else station,
+        "depart": None,
+        "minutes": AIRTRAIN["minutes"][1] if key.startswith("jfk") else 11,
+        "stops": None,
+        "headsign": None,
+        "live": False,
         "coords": coords if to_airport else coords[::-1],
     }
     if to_airport:
@@ -954,12 +986,23 @@ def _path_options(a: dict, b: dict, when: datetime, arrive_by: bool) -> list[dic
                     "mode": "walk",
                     "name": "",
                     "color": None,
+                    "from": None,
+                    "to": so["name"],
+                    "minutes": walk1,
                     "coords": [[a["lon"], a["lat"]], [so["lon"], so["lat"]]],
                 },
                 {
                     "mode": "train",
                     "name": "PATH",
                     "color": color,
+                    "text_color": "#ffffff",
+                    "from": PATH["stations"][o][0],
+                    "to": PATH["stations"][d][0],
+                    "depart": board.strftime("%-I:%M %p") if wait_s is not None else None,
+                    "minutes": round(ride),
+                    "stops": n,
+                    "headsign": head,
+                    "live": wait_s is not None,
                     "coords": [[PATH["stations"][c][2], PATH["stations"][c][1]] for c in stops],
                 },
             ]
@@ -973,6 +1016,9 @@ def _path_options(a: dict, b: dict, when: datetime, arrive_by: bool) -> list[dic
                         "mode": "walk",
                         "name": "",
                         "color": None,
+                        "from": sd["name"],
+                        "to": b["name"],
+                        "minutes": walk2,
                         "coords": [[sd["lon"], sd["lat"]], [b["lon"], b["lat"]]],
                     }
                 )
@@ -1009,12 +1055,17 @@ def _path_options(a: dict, b: dict, when: datetime, arrive_by: bool) -> list[dic
 
 
 def bike(a: dict, b: dict) -> dict | None:
+    return direct(a, b, "BIKE")
+
+
+def direct(a: dict, b: dict, how: str) -> dict | None:
+    """A walk or a bike ride the whole way, on the planner's street network."""
     d = get_json(
         TRANSITOUS,
         {
             "fromPlace": f"{a['lat']:.5f},{a['lon']:.5f}",
             "toPlace": f"{b['lat']:.5f},{b['lon']:.5f}",
-            "directModes": "BIKE",
+            "directModes": how,
             "transitModes": "WALK",
             "maxDirectTime": 7200,
         },
@@ -1281,7 +1332,7 @@ def _hour(h: int) -> str:
 def trip_plan(
     origin: str,
     destination: str,
-    mode: str = "both",
+    mode: str = "all",
     when: str | None = None,
     arrive_by: bool = False,
 ) -> ToolResult:
@@ -1289,8 +1340,9 @@ def trip_plan(
     the agencies' schedules (with live times where published) and typical taxi or car times
     for that hour from recent trips."""
     mode = (mode or "both").strip().lower()
-    if mode not in ("both", "transit", "drive", "bike"):
-        return failed("mode must be transit, drive, bike or both")
+    mode = {"all": "both", "car": "drive", "walking": "walk"}.get(mode, mode)
+    if mode not in ("both", "transit", "drive", "bike", "walk"):
+        return failed("mode must be all, transit, drive, walk or bike")
     a, b = locate(origin), locate(destination)
     notes_placed: list[str] = []
     if not a or not b:
@@ -1354,14 +1406,6 @@ def trip_plan(
                     "url": "https://transitous.org",
                 }
             )
-            best = options[0]
-            layers.append(
-                {
-                    "type": "route",
-                    "label": f"Transit, {best['minutes'][1]} min",
-                    "legs": [x for x in best["lines"] if x["coords"]],
-                }
-            )
         elif not notes:
             lines.append("No transit itinerary was found for that time.")
         lines += notes
@@ -1395,39 +1439,31 @@ def trip_plan(
             sources.append(
                 {"kind": "official", "title": "AirTrain Newark (Port Authority)", "url": EWR_URL}
             )
-    if mode == "bike":
+    gap = _metres(a, b)
+    for how, limit, label in (("WALK", 5000, "walk"), ("BIKE", 16000, "bike")):
+        if not (mode == label or (mode == "both" and gap <= limit)):
+            continue
         try:
-            ride = bike(a, b)
+            r = direct(a, b, how)
         except Exception:  # noqa: BLE001
-            ride = None
-        data["bike"] = ride
-        if ride:
+            r = None
+        data[label] = r
+        if r:
             lines.append(
-                f"By bike: about {ride['minutes']} min for {ride['km']:.1f} km on the route "
-                f"a bike planner picks (bike lanes and quieter streets where it can), at an easy "
-                f"pace; {ride['streets']}."
+                f"{'Walking' if label == 'walk' else 'By bike'}: about {r['minutes']} min for "
+                f"{r['km']:.1f} km"
+                + (
+                    " on the route a bike planner picks (bike lanes and quieter streets where "
+                    f"it can), at an easy pace; {r['streets']}."
+                    if label == "bike"
+                    else "."
+                )
             )
-            sources.append(
-                {
-                    "kind": "live",
-                    "title": "Transitous bike routing",
-                    "url": "https://transitous.org",
-                }
-            )
-            layers.append(
-                {
-                    "type": "route",
-                    "label": f"Bike, {ride['minutes']} min",
-                    "legs": [
-                        {"mode": "bike", "name": "", "color": "#2fae2f", "coords": ride["coords"]}
-                    ],
-                }
-            )
-        else:
-            lines.append("No bike route was found between these places.")
+        elif mode == label:
+            lines.append(f"No {label} route was found between these places.")
     if mode in ("both", "drive"):
         car = car_route(a, b, t)
-        data["car"] = {k: v for k, v in (car or {}).items() if k != "coords"} or None
+        data["car"] = car
         if car:
             delay = (
                 f", about {car['delay_minutes']} min of it from traffic"
@@ -1443,13 +1479,6 @@ def trip_plan(
                     "kind": "live",
                     "title": "TomTom traffic and routing",
                     "url": "https://www.tomtom.com",
-                }
-            )
-            layers.append(
-                {
-                    "type": "drive",
-                    "label": f"Car, {car['minutes']} min",
-                    "coords": car["coords"],
                 }
             )
         try:
@@ -1503,17 +1532,63 @@ def trip_plan(
                 )
             else:
                 lines.append("No car trip time is available for this pair of places.")
-    layers.append(
-        {
-            "type": "points",
-            "label": "Trip",
-            "points": [
-                {"lat": a["lat"], "lon": a["lon"], "label": a["name"]},
-                {"lat": b["lat"], "lon": b["lon"], "label": b["name"]},
+    layers.append(_trip_layer(a, b, t, arrive_by, mode, data))
+    return ToolResult(summary="\n".join(lines), data=data, sources=sources, map=layers)
+
+
+def _trip_layer(a: dict, b: dict, t: datetime, arrive_by: bool, mode: str, data: dict) -> dict:
+    """Everything the page needs to show the trip the way map apps do: a switch between
+    transit, car, walking and bike with each one's time, route cards for transit, and every
+    path drawn from start to finish."""
+    modes: dict = {}
+    options = data.get("transit") or []
+    if options:
+        quick = min(options, key=lambda o: o["arrive_ts"])
+        easy = min(options, key=lambda o: (o["transfers"], o["arrive_ts"]))
+        modes["transit"] = {
+            "minutes": options[0]["minutes"][0],
+            "options": [
+                {
+                    "minutes": list(o["minutes"]),
+                    "leave": o["leave"],
+                    "arrive": o.get("arrive"),
+                    "transfers": o["transfers"],
+                    "walk_minutes": o["walk_minutes"],
+                    "live": o.get("live", False),
+                    "tags": [
+                        t for t, x in (("Quickest", quick), ("Fewest changes", easy)) if o is x
+                    ],
+                    "legs": [x for x in o["lines"] if x.get("coords")],
+                }
+                for o in options
             ],
         }
-    )
-    return ToolResult(summary="\n".join(lines), data=data, sources=sources, map=layers)
+    car, typical = data.get("car"), data.get("drive")
+    if car or typical:
+        modes["drive"] = {
+            "minutes": car["minutes"] if car else typical["minutes"][1],
+            "live": bool(car) and not car.get("forecast"),
+            "delay": car["delay_minutes"] if car else None,
+            "miles": round(car["miles"], 1) if car else None,
+            "coords": car["coords"] if car else [],
+            "typical": typical["minutes"][1] if typical else None,
+            "taxi_fare": typical.get("taxi_fare_usd") if typical else None,
+            "app_fare": typical.get("app_fare_usd") if typical else None,
+        }
+    for label in ("walk", "bike"):
+        r = data.get(label)
+        if r:
+            modes[label] = {"minutes": r["minutes"], "km": round(r["km"], 1), "coords": r["coords"]}
+    default = mode if mode in modes else next(iter(modes), None)
+    return {
+        "type": "trip",
+        "label": f"{a['name']} to {b['name']}",
+        "from": {"name": a["name"], "lat": a["lat"], "lon": a["lon"]},
+        "to": {"name": b["name"], "lat": b["lat"], "lon": b["lon"]},
+        "when": ("Arrive by " if arrive_by else "Leave ") + t.strftime("%a %-I:%M %p"),
+        "modes": modes,
+        "default": default,
+    }
 
 
 TOOLS = [
@@ -1532,7 +1607,12 @@ TOOLS = [
             "properties": {
                 "origin": {"type": "string", "description": "station, landmark, address or area"},
                 "destination": {"type": "string"},
-                "mode": {"type": "string", "enum": ["both", "transit", "drive", "bike"]},
+                "mode": {
+                    "type": "string",
+                    "enum": ["all", "transit", "drive", "walk", "bike"],
+                    "description": "all (default) gives every way at once, for the reader to "
+                    "switch between",
+                },
                 "when": {
                     "type": "string",
                     "description": "New York time like 2026-10-16T17:30, or now (default)",

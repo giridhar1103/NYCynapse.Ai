@@ -117,6 +117,13 @@ export class GuideMap {
     this._trip = false;
     this._tripKey = null;
     this._carKey = null;
+    for (const id of this.tripIds || []) {
+      if (this.map.getLayer(id)) this.map.removeLayer(id);
+      if (this.map.getSource(id)) this.map.removeSource(id);
+    }
+    (this.tripMarks || []).forEach((m) => m.remove());
+    this.tripIds = [];
+    this.tripMarks = [];
     for (const k of [...this.anims.keys()]) if (k !== "busy") this.anims.delete(k);
     this.legendEl.replaceChildren();
     this.chipbar.replaceChildren();
@@ -126,6 +133,88 @@ export class GuideMap {
       this.map.setPaintProperty("subway", "line-width", 1.4);
       this._routesLit = false;
     }
+  }
+
+  // A planned trip, styled the way map apps do it: the chosen route bold, with an outline so it
+  // stands out on a grey map, in each line's own color; walking as blue dots; other routes of
+  // the same mode thin and grey underneath; the start as a ring and the end as a pin. Drawing
+  // a trip replaces any trip drawn before it.
+  showTrip(trip, sel = {}) {
+    this._trip = true;
+    this.quietRoutes();
+    for (const id of this.tripIds || []) {
+      if (this.map.getLayer(id)) this.map.removeLayer(id);
+      if (this.map.getSource(id)) this.map.removeSource(id);
+      this.stopAnim(id);
+    }
+    (this.tripMarks || []).forEach((m) => m.remove());
+    this.tripIds = [];
+    this.tripMarks = [];
+    const mode = sel.mode || trip.default;
+    const M = trip.modes[mode];
+    if (!M) return;
+    const dark = theme() === "dark";
+    const halo = dark ? "#0b0b0b" : "#ffffff";
+    const BLUE = dark ? "#8ab4f8" : "#1a73e8";
+    const bounds = new maplibregl.LngLatBounds();
+    [trip.from, trip.to].forEach((p) => bounds.extend([p.lon, p.lat]));
+    let n = 0;
+    const add = (coords, paint, layout = {}, before) => {
+      const id = `trip-${n++}`;
+      this.map.addSource(id, { type: "geojson", data: { type: "Feature", properties: {},
+        geometry: { type: "LineString", coordinates: coords } } });
+      this.map.addLayer({ id, type: "line", source: id, layout: { "line-cap": "round", "line-join": "round", ...layout }, paint }, before);
+      this.tripIds.push(id);
+      coords.forEach((c) => bounds.extend(c));
+      return id;
+    };
+    const dots = (coords, color) => [add(coords, { "line-color": color, "line-width": 5, "line-dasharray": [0.01, 2] })];
+    const solid = (coords, color, w = 6) => [
+      add(coords, { "line-color": halo, "line-width": w + 4 }),
+      add(coords, { "line-color": color, "line-width": w }),
+    ];
+    const reveal = [];
+    if (mode === "transit") {
+      // Other options first, thin and grey, so the chosen one sits on top.
+      M.options.forEach((o, i) => {
+        if (i === (sel.i || 0)) return;
+        o.legs.filter((g) => g.mode !== "walk" && g.coords.length > 1)
+          .forEach((g) => add(g.coords, { "line-color": dark ? "#5f6368" : "#9aa0a6", "line-width": 3.5, "line-opacity": 0.8 }));
+      });
+      const o = M.options[sel.i || 0];
+      const stops = [];
+      o.legs.forEach((g) => {
+        if (g.coords.length < 2) return;
+        reveal.push(g.mode === "walk" ? dots(g.coords, BLUE) : solid(g.coords, g.color || BLUE));
+        if (g.mode !== "walk") stops.push(g.coords[0], g.coords[g.coords.length - 1]);
+      });
+      if (stops.length) {
+        const id = `trip-${n++}`;
+        this.map.addSource(id, { type: "geojson", data: { type: "FeatureCollection",
+          features: stops.map((c) => ({ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: c } })) } });
+        this.map.addLayer({ id, type: "circle", source: id, paint: { "circle-radius": 5, "circle-color": halo,
+          "circle-stroke-color": dark ? "#e8eaed" : "#202124", "circle-stroke-width": 2.5 } });
+        this.tripIds.push(id);
+      }
+    } else if ((M.coords || []).length > 1) {
+      reveal.push(mode === "walk" ? dots(M.coords, BLUE) : solid(M.coords, mode === "bike" ? "#188038" : BLUE, 6));
+    }
+    // The route draws itself leg by leg, each line with its outline.
+    reveal.flat().forEach((id) => this.map.setPaintProperty(id, "line-opacity", 0));
+    reveal.forEach((ids, k) => setTimeout(() => ids.forEach((id) => {
+      if (!this.map.getLayer(id)) return;
+      this.map.setPaintProperty(id, "line-opacity-transition", { duration: 380 });
+      this.map.setPaintProperty(id, "line-opacity", 1);
+    }), reduced() ? 0 : 160 + k * 240));
+    const ring = NY.el("div", { class: "trip-start", title: trip.from.name });
+    const pin = NY.el("div", { class: "trip-end", title: trip.to.name });
+    this.tripMarks.push(
+      new maplibregl.Marker({ element: ring }).setLngLat([trip.from.lon, trip.from.lat]).addTo(this.map),
+      new maplibregl.Marker({ element: pin, anchor: "bottom" }).setLngLat([trip.to.lon, trip.to.lat]).addTo(this.map));
+    this.map.fitBounds(bounds, { padding: this.pad(70), maxZoom: 15, duration: 900 });
+    const label = `${({ transit: "Transit", drive: "Car", walk: "Walk", bike: "Bike" })[mode]}, ${M.minutes} min`;
+    this.chipbar.querySelectorAll(".tripchip").forEach((c) => c.remove());
+    this.chip(label, "tripchip");
   }
 
   // Put the subway back to its resting look and drop lit-up lines, for when a trip takes over.
@@ -300,6 +389,10 @@ export class GuideMap {
         this.hover(id + "-work", tip);
         this.hover(id + "-dot", tip);
         this.key(L.label || "Road events", keyRows);
+      } else if (L.type === "trip" && L.modes && Object.keys(L.modes).length) {
+        this.showTrip(L, { mode: L.default, i: 0 });
+        focused = true; // showTrip frames the route itself
+        continue;
       } else if (L.type === "drive" && (L.coords || []).length > 1) {
         // The road a car would take, dashed and quieter than the transit route, drawn first so
         // the transit route sits on top.
