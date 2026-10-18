@@ -1391,7 +1391,7 @@ def trip_plan(
                 lo, hi = o["minutes"]
                 span = f"{lo} min" if lo == hi else f"{lo} to {hi} min"
                 tag = ", ".join(
-                    t for t, x in (("quickest", quick), ("fewest changes", easy)) if o is x
+                    t for t, x in (("arrives first", quick), ("fewest changes", easy)) if o is x
                 )
                 lines.append(
                     f"{i}.{f' [{tag}]' if tag else ''} {span} door to door, leave {o['leave']}, "
@@ -1556,7 +1556,7 @@ def _trip_layer(a: dict, b: dict, t: datetime, arrive_by: bool, mode: str, data:
                     "walk_minutes": o["walk_minutes"],
                     "live": o.get("live", False),
                     "tags": [
-                        t for t, x in (("Quickest", quick), ("Fewest changes", easy)) if o is x
+                        t for t, x in (("Arrives first", quick), ("Fewest changes", easy)) if o is x
                     ],
                     "legs": [x for x in o["lines"] if x.get("coords")],
                 }

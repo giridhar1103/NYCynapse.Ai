@@ -587,7 +587,10 @@ class Agent:
             layers = [x for x in layers if x.get("type") not in ("trip", "routes", "points")]
             layers.append(trips[-1])
         highlight = None
-        if places and not declined:
+        has_trip = any(
+            x.get("type") == "trip" for r in t.results if r["result"].ok for x in r["result"].map
+        )
+        if places and not declined and not has_trip:  # a trip draws its own start and end
             hints = [i for x in layers if x.get("type") == "highlight" for i in x.get("items", [])]
             try:
                 items = place_index.resolve(places, hints)
