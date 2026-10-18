@@ -847,3 +847,53 @@ def test_verified_draft_is_rewritten_with_the_problems(monkeypatch):
     out = agent.run("which zoo gate from the bus?", [], lambda e, d: None)
     assert out["answer"].startswith("Get off at Southern Blvd")
     assert "no source names a gate" in seen[3][1]
+
+
+def test_trip_layer_offers_every_mode_with_paths():
+    from datetime import datetime
+
+    from nycynapse.tools import trips
+
+    leg = {"mode": "subway", "name": "7", "coords": [[-73.98, 40.75], [-73.83, 40.76]]}
+    walk = {"mode": "walk", "name": "", "coords": []}
+    data = {
+        "transit": [
+            {
+                "minutes": (44, 44),
+                "arrive_ts": 2,
+                "leave": "9:58 PM",
+                "arrive": "10:42 PM",
+                "transfers": 0,
+                "walk_minutes": 9,
+                "lines": [walk, leg],
+            },
+            {
+                "minutes": (40, 40),
+                "arrive_ts": 3,
+                "leave": "10:10 PM",
+                "arrive": "10:50 PM",
+                "transfers": 1,
+                "walk_minutes": 5,
+                "lines": [leg, leg],
+            },
+        ],
+        "car": {
+            "minutes": 32,
+            "delay_minutes": 0,
+            "miles": 12.3,
+            "forecast": False,
+            "coords": [[-73.98, 40.75], [-73.83, 40.76]],
+        },
+        "drive": {"minutes": (30, 35, 40), "taxi_fare_usd": 61, "app_fare_usd": 74},
+    }
+    a = {"name": "Times Square", "lat": 40.758, "lon": -73.985}
+    b = {"name": "Flushing-Main St", "lat": 40.7596, "lon": -73.83}
+    L = trips._trip_layer(
+        a, b, datetime(2026, 10, 17, 21, 58, tzinfo=trips.NY), False, "both", data
+    )
+    assert L["type"] == "trip" and L["default"] == "transit"
+    first = L["modes"]["transit"]["options"][0]
+    assert first["tags"] == ["Arrives first", "Fewest changes"]
+    assert [g["mode"] for g in first["legs"]] == ["subway"]  # legs without a path are dropped
+    assert L["modes"]["drive"]["minutes"] == 32 and L["modes"]["drive"]["live"]
+    assert L["modes"]["drive"]["taxi_fare"] == 61

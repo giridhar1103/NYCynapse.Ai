@@ -241,16 +241,29 @@ function chain(legs) {
   return el("span", { class: "chain" }, out);
 }
 
+// Bus stops and destinations arrive in capitals ("7 AV/W 44 ST"): show them in normal case.
+function tidy(name) {
+  if (!name) return name;
+  const letters = name.replace(/[^A-Za-z]/g, "");
+  const caps = letters.replace(/[^A-Z]/g, "").length;
+  if (letters.length < 4 || caps / letters.length < 0.7) return name;
+  return name.toLowerCase().replace(/(^|[\s/(-])([a-z])/g, (m, a, b) => a + b.toUpperCase())
+    .replace(/\b(Av|St|Blvd|Pl|Rd|Pkwy|Ctr|Sq|Hts|Jct)\b/g, (m) => m)
+    .replace(/\b(Sbs|Lirr|Jfk|Nyc|Cuny|Ii|Iii)\b/g, (m) => m.toUpperCase())
+    .replace(/\b(\d+)(St|Nd|Rd|Th)\b/g, (m, d, x) => d + x.toLowerCase())
+    .replace(/\b(Via|And|Of|To|At)\b/g, (m) => m.toLowerCase());
+}
+
 function stepList(legs, trip) {
   return el("ol", { class: "steps" }, legs.map((g) => {
     if (g.mode === "walk") {
-      return el("li", { class: "walk" }, icon("walk", "ico sm"), el("span", {}, `Walk ${minLabel(g.minutes)}`, g.to ? ` to ${g.to}` : ` to ${trip.to.name}`));
+      return el("li", { class: "walk" }, icon("walk", "ico sm"), el("span", {}, `Walk ${minLabel(g.minutes)}`, ` to ${tidy(g.to || trip.to.name)}`));
     }
-    const bits = [g.depart ? `${g.depart} from ${g.from}` : g.from ? `from ${g.from}` : "",
+    const bits = [g.depart ? `${g.depart} from ${tidy(g.from)}` : g.from ? `from ${tidy(g.from)}` : "",
       g.stops ? `${g.stops} stop${g.stops > 1 ? "s" : ""}` : "", minLabel(g.minutes)].filter(Boolean).join(" · ");
     return el("li", { class: "ride" }, lineBadge(g),
-      el("span", {}, el("b", {}, g.headsign ? `toward ${g.headsign}` : `to ${g.to || ""}`), el("br"),
-        el("small", {}, bits, g.live ? el("i", { class: "livedot", title: "Live times" }) : "", g.headsign && g.to ? ` · get off at ${g.to}` : "")));
+      el("span", {}, el("b", {}, g.headsign ? `toward ${tidy(g.headsign)}` : `to ${tidy(g.to) || ""}`), el("br"),
+        el("small", {}, bits, g.live ? el("i", { class: "livedot", title: "Live times" }) : "", g.headsign && g.to ? ` · get off at ${tidy(g.to)}` : "")));
   }));
 }
 

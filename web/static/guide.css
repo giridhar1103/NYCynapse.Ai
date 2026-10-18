@@ -423,7 +423,7 @@ a.cite:hover { background: var(--ink); color: var(--bg); border-color: var(--ink
 .opt .row1 { display: flex; align-items: center; gap: 8px; }
 .opt .dur { margin-left: auto; font-size: 15px; font-weight: 750; white-space: nowrap; }
 .opt .row2, .drive .row2 { margin-top: 3px; font-size: 12.5px; color: var(--muted); }
-.opt .tag { margin-left: 6px; padding: 1px 7px; border-radius: 999px; font-size: 10.5px; font-weight: 650;
+.opt .tag { margin-left: 6px; padding: 1px 7px; white-space: nowrap; border-radius: 999px; font-size: 10.5px; font-weight: 650;
   background: color-mix(in srgb, #188038 14%, transparent); color: #188038; }
 .chain { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .chain .sep { color: var(--muted); font-size: 13px; }
