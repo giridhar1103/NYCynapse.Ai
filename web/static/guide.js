@@ -2,7 +2,7 @@
 // draws each tool call as it runs (with errors and recoveries), renders the answer and its
 // sources as plain text, and keeps the conversation to a question and three follow-ups.
 
-import { GuideMap, wxIcon } from "./map.js?v=7";
+import { GuideMap, wxIcon } from "./map.js?v=8";
 
 const { el, url } = NY;
 const TOOL = {
@@ -415,10 +415,11 @@ function cite(raw, sources) {
   if (!ns.length) return "";
   const first = sources[ns[0]];
   const safe = safeUrl(first.url);
-  const label = shortName(first);
+  // A small number per source, like a footnote; the source names are in the list below the
+  // answer and in the tooltip, so the text itself stays clean.
   const tip = ns.map((n) => `${n}. ${sources[n].title}${sources[n].updated_at ? " (" + stamp(sources[n].updated_at) + ")" : ""}`).join("\n");
-  const kids = [label, ns.length > 1 ? el("small", {}, ` +${ns.length - 1}`) : ""];
-  const attrs = { class: `cite ${first.kind || "live"}`, title: tip };
+  const kids = [ns.join(" ")];
+  const attrs = { class: `cite ${first.kind || "live"}`, title: tip, "aria-label": `Sources ${ns.join(", ")}: ${shortName(first)}` };
   return safe ? el("a", { ...attrs, href: safe, target: "_blank", rel: "noopener noreferrer nofollow" }, kids)
     : el("span", attrs, kids);
 }

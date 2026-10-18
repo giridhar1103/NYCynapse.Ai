@@ -114,6 +114,9 @@ export class GuideMap {
     this.markers = [];
     this.hl = [];
     this._road = null;
+    this._trip = false;
+    this._tripKey = null;
+    this._carKey = null;
     for (const k of [...this.anims.keys()]) if (k !== "busy") this.anims.delete(k);
     this.legendEl.replaceChildren();
     this.chipbar.replaceChildren();
@@ -123,6 +126,19 @@ export class GuideMap {
       this.map.setPaintProperty("subway", "line-width", 1.4);
       this._routesLit = false;
     }
+  }
+
+  // Put the subway back to its resting look and drop lit-up lines, for when a trip takes over.
+  quietRoutes() {
+    if (!this._routesLit) return;
+    this.map.setPaintProperty("subway", "line-opacity", SUBWAY_REST);
+    this.map.setPaintProperty("subway", "line-width", 1.4);
+    this._routesLit = false;
+    for (const id of this.layers) {
+      const l = this.map.getLayer(id);
+      if (l && l.source === "subway") { this.map.removeLayer(id); this.stopAnim(id); }
+    }
+    this.chipbar.querySelectorAll(".routes").forEach((c) => c.parentElement?.remove?.() || c.remove());
   }
 
   chip(text, cls) {
@@ -284,7 +300,31 @@ export class GuideMap {
         this.hover(id + "-work", tip);
         this.hover(id + "-dot", tip);
         this.key(L.label || "Road events", keyRows);
+      } else if (L.type === "drive" && (L.coords || []).length > 1) {
+        // The road a car would take, dashed and quieter than the transit route, drawn first so
+        // the transit route sits on top.
+        const car = theme() === "dark" ? "#9aa7b8" : "#56657a";
+        this.map.addSource(id, { type: "geojson", lineMetrics: true,
+          data: { type: "Feature", geometry: { type: "LineString", coordinates: L.coords }, properties: {} } });
+        const below = this.layers.find((x) => this.map.getLayer(x) && /-\d+(-case)?$/.test(x));
+        this.addLayer({ id, type: "line", source: id, layout: { "line-cap": "round", "line-join": "round" },
+          paint: { "line-width": 4, "line-dasharray": [1.2, 1.2], "line-color": car, "line-opacity": 0 } }, below);
+        const t0 = performance.now();
+        this.animate(id, () => {
+          const k = Math.min(1, this.elapsed(t0) / 600);
+          this.map.setPaintProperty(id, "line-opacity", 0.85 * k);
+          if (k >= 1) this.stopAnim(id);
+        });
+        L.coords.forEach((c) => bounds.extend(c));
+        this._carKey = [car, L.label || "Car"];
+        if (this._tripKey) this.key("This trip", [...this._tripKey, this._carKey]);
+        else this.key("This trip", [this._carKey]);
+        any = true;
+      } else if (L.type === "routes" && this._trip) {
+        continue; // a trip is on the map: other lines' delays would only distract
       } else if (L.type === "route" && (L.legs || []).length) {
+        this._trip = true;
+        this.quietRoutes();
         // A planned trip: each ride in its line's color and each walk dotted, drawn leg by leg
         // from start to finish, with a dot where the reader boards, transfers and gets off.
         const legs = L.legs.filter((l) => (l.coords || []).length > 1);
@@ -330,6 +370,16 @@ export class GuideMap {
           if (t >= legs.length * per + 300) this.stopAnim(id);
         });
         any = true;
+        // A key naming each part of the trip: the lines in their colors, the walks, the car.
+        const seen = new Set();
+        this._tripKey = legs.filter((l) => {
+          const k = l.mode === "walk" ? "walk" : l.name || l.mode;
+          if (seen.has(k)) return false;
+          seen.add(k);
+          return true;
+        }).map((l) => l.mode === "walk" ? ["#8a8f98", "Walk"]
+          : [l.color || "#3987e5", l.name ? (l.mode === "bus" ? `${l.name} bus` : l.mode === "subway" ? `${l.name} train` : l.name) : "Train"]);
+        this.key("This trip", [...this._tripKey, ...(this._carKey ? [this._carKey] : [])]);
         if (L.label) this.chip(L.label);
       } else if (L.type === "lines") {
         const lines = (L.lines || []).filter((l) => (l.coords || []).length > 1);

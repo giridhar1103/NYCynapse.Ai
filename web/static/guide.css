@@ -289,8 +289,9 @@ pre.code { background: #0f0f0e; color: #e8e7df; border-radius: 14px; padding: 18
 .answer-card p, .answer-card li { line-height: 1.6; }
 .answer-card li { margin-bottom: 3px; }
 .answer-card strong { font-weight: 750; }
-.cite { display: inline-flex; align-items: center; gap: 1px; vertical-align: 1px; margin-left: 4px; padding: 0 7px; height: 19px;
-  border-radius: 999px; background: var(--sunk); border: 1px solid var(--rule); color: var(--muted); font-size: 11.5px; font-weight: 600;
+.cite { display: inline-flex; align-items: center; justify-content: center; gap: 1px; vertical-align: 2px; margin-left: 3px;
+  padding: 0 4px; min-width: 15px; height: 15px; border-radius: 999px; background: var(--sunk); border: 1px solid var(--rule);
+  color: var(--muted); font-size: 9.5px; font-weight: 700; font-variant-numeric: tabular-nums;
   text-decoration: none; white-space: nowrap; line-height: 1; transition: background .15s, color .15s, border-color .15s; }
 .cite small { font-size: 10.5px; font-weight: 600; }
 a.cite:hover { background: var(--ink); color: var(--bg); border-color: var(--ink); }

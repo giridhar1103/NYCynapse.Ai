@@ -23,7 +23,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from . import Tool, ToolResult, failed
-from .http import get_json
+from .http import env, get_json
 
 NY = ZoneInfo("America/New_York")
 TRANSITOUS = "https://api.transitous.org/api/v5/plan"
@@ -334,6 +334,15 @@ _MODE = {
 }
 
 
+_AGENCY = {
+    "Long Island Rail Road": "LIRR",
+    "Metro-North Railroad": "Metro-North",
+    "NJ TRANSIT RAIL": "NJ Transit",
+    "NY Waterway": "NY Waterway",
+    "NYC Ferry": "NYC Ferry",
+}
+
+
 def _leg_text(leg: dict, end: str) -> str:
     mode = leg.get("mode", "")
     mins = round(leg.get("duration", 0) / 60)
@@ -427,11 +436,25 @@ def _metres(a: dict, b: dict) -> float:
     return math.hypot(dx, dy)
 
 
+def _coords(lg: dict) -> list[list[float]]:
+    """A leg's path: the planner's geometry when it has a real one, otherwise the stops it
+    passes in order (or a straight walk), so no leg is missing from the map."""
+    if "_coords" in lg:
+        return lg["_coords"]
+    g = lg.get("legGeometry")
+    line = _decode(g["points"], g.get("precision", 6)) if g and g.get("points") else []
+    stops = [lg.get("from") or {}, *(lg.get("intermediateStops") or []), lg.get("to") or {}]
+    by_stop = [[round(x["lon"], 5), round(x["lat"], 5)] for x in stops if "lat" in x]
+    return line if len(line) > len(by_stop) else by_stop
+
+
 def _tidy(legs: list[dict]) -> list[dict]:
     """A planner chasing the earliest arrival will ride a bus one stop to save a minute. A
-    person walks it, so short hops become walking, and walks next to each other are merged."""
+    person walks it, so short hops become walking, and walks next to each other are merged
+    (with their paths joined, so the map shows the whole walk)."""
     out: list[dict] = []
     for lg in legs:
+        lg = {**lg, "_coords": _coords(lg)}
         hop = (
             lg.get("mode") == "BUS"
             and not lg.get("intermediateStops")
@@ -440,7 +463,12 @@ def _tidy(legs: list[dict]) -> list[dict]:
         if hop:
             lg = {**lg, "mode": "WALK", "duration": _metres(lg["from"], lg["to"]) * 1.3 / 1.3}
         if lg.get("mode") == "WALK" and out and out[-1].get("mode") == "WALK":
-            out[-1] = {**out[-1], "to": lg["to"], "duration": out[-1]["duration"] + lg["duration"]}
+            out[-1] = {
+                **out[-1],
+                "to": lg["to"],
+                "duration": out[-1]["duration"] + lg["duration"],
+                "_coords": out[-1]["_coords"] + lg["_coords"],
+            }
             continue
         out.append(lg)
     return out
@@ -484,13 +512,11 @@ def _itinerary(it: dict, end: str, extra: tuple[str, int, int] | None = None) ->
         "lines": [
             {
                 "mode": _MODE.get(lg["mode"], "walk" if lg["mode"] == "WALK" else "other"),
-                "name": lg.get("routeShortName") or "",
+                "name": lg.get("routeShortName")
+                if _MODE.get(lg["mode"]) in ("subway", "bus")
+                else _AGENCY.get(lg.get("agencyName") or "", lg.get("agencyName") or ""),
                 "color": "#" + lg["routeColor"] if lg.get("routeColor") else None,
-                "coords": _decode(
-                    lg["legGeometry"]["points"], lg["legGeometry"].get("precision", 6)
-                )
-                if lg.get("legGeometry")
-                else [],
+                "coords": _coords(lg),
             }
             for lg in it["legs"]
         ],
@@ -523,6 +549,28 @@ def _airtrain_status(at: datetime) -> str | None:
     return None
 
 
+@lru_cache(maxsize=1)
+def _airtrain_paths() -> dict:
+    """AirTrain track from each rail station to the terminals, from OpenStreetMap."""
+    return json.loads((GEO / "airtrain.json").read_text())
+
+
+def _add_airtrain(option: dict, key: str, to_airport: bool) -> None:
+    coords = _airtrain_paths().get(key)
+    if not coords:
+        return
+    line = {
+        "mode": "train",
+        "name": "AirTrain",
+        "color": "#7b5cc4",
+        "coords": coords if to_airport else coords[::-1],
+    }
+    if to_airport:
+        option["lines"].append(line)
+    else:
+        option["lines"].insert(0, line)
+
+
 def _newark(a: dict, b: dict, when: datetime, arrive_by: bool) -> tuple[list[dict], list[str]]:
     """Trips to and from Newark Airport go by rail to the airport's train station, then the
     AirTrain. The planner has the trains; the AirTrain leg is from the Port Authority."""
@@ -541,6 +589,8 @@ def _newark(a: dict, b: dict, when: datetime, arrive_by: bool) -> tuple[list[dic
         for it in _plan(*pair, t0, arrive_by, n=4)
         if any(lg.get("mode") in ("REGIONAL_RAIL", "RAIL", "SUBURBAN") for lg in it["legs"])
     ][:3]
+    for o in options:
+        _add_airtrain(o, "ewr:station", to_airport)
     notes = [
         "The AirTrain leg is from the Port Authority. Its $8.75 fee is included in an NJ "
         "Transit or Amtrak ticket to the airport station; riders arriving another way pay it at "
@@ -573,7 +623,9 @@ def transit(a: dict, b: dict, when: datetime, arrive_by: bool) -> tuple[list[dic
                 f"to {AIRTRAIN['minutes'][1]} min, ${AIRTRAIN['fare_usd']:.2f}"
             )
             for it in _plan(*pair, t0, arrive_by, n=3)[:2]:
-                options.append(_itinerary(it, short, (leg, *AIRTRAIN["minutes"])))
+                o = _itinerary(it, short, (leg, *AIRTRAIN["minutes"]))
+                _add_airtrain(o, f"jfk:{short}", to_airport)
+                options.append(o)
         notes.append(
             "The AirTrain leg is from the Port Authority: any terminal in under 20 minutes "
             "from Jamaica or Howard Beach, trains every 5 to 15 minutes, $8.75 one way."
@@ -992,6 +1044,46 @@ def parse_when(text: str | None) -> datetime | None:
     return t
 
 
+def car_route(a: dict, b: dict, when: datetime) -> dict | None:
+    """Driving time with traffic from TomTom: live traffic for trips leaving now, TomTom's
+    traffic forecast for later ones, plus the road path for the map."""
+    key = env("TOMTOM_API_KEY")
+    if not key:
+        return None
+    params = {
+        "key": key,
+        "traffic": "true",
+        "travelMode": "car",
+        "routeRepresentation": "polyline",
+        "computeTravelTimeFor": "all",
+    }
+    later = (when - _now()).total_seconds() > 900
+    if later:
+        params["departAt"] = when.isoformat(timespec="seconds")
+    try:
+        d = get_json(
+            "https://api.tomtom.com/routing/1/calculateRoute/"
+            f"{a['lat']:.5f},{a['lon']:.5f}:{b['lat']:.5f},{b['lon']:.5f}/json",
+            params,
+            ttl_s=300,
+        )
+        r = d["routes"][0]
+    except Exception:  # noqa: BLE001
+        return None
+    sm = r["summary"]
+    pts = [p for lg in r["legs"] for p in lg.get("points") or []]
+    step = max(1, len(pts) // 400)  # enough points for a smooth line, not a heavy one
+    return {
+        "minutes": round(sm["travelTimeInSeconds"] / 60),
+        "delay_minutes": round((sm.get("trafficDelayInSeconds") or 0) / 60),
+        "free_minutes": round((sm.get("noTrafficTravelTimeInSeconds") or 0) / 60) or None,
+        "miles": sm["lengthInMeters"] / 1609.34,
+        "forecast": later,
+        "coords": [[round(p["longitude"], 5), round(p["latitude"], 5)] for p in pts[::step]]
+        + ([[round(pts[-1]["longitude"], 5), round(pts[-1]["latitude"], 5)]] if pts else []),
+    }
+
+
 def _free_flow(a: dict, b: dict) -> tuple[int, float] | None:
     """Driving minutes and miles with no traffic, for trips the lake has no record of."""
     try:
@@ -1162,6 +1254,32 @@ def trip_plan(
         else:
             lines.append("No bike route was found between these places.")
     if mode in ("both", "drive"):
+        car = car_route(a, b, t)
+        data["car"] = {k: v for k, v in (car or {}).items() if k != "coords"} or None
+        if car:
+            delay = (
+                f", about {car['delay_minutes']} min of it from traffic"
+                if car["delay_minutes"] >= 2
+                else ", traffic is light"
+            )
+            lines.append(
+                f"By car {'(traffic forecast for that time)' if car['forecast'] else 'right now'}"
+                f": about {car['minutes']} min for {car['miles']:.0f} miles{delay} (TomTom)."
+            )
+            sources.append(
+                {
+                    "kind": "live",
+                    "title": "TomTom traffic and routing",
+                    "url": "https://www.tomtom.com",
+                }
+            )
+            layers.append(
+                {
+                    "type": "drive",
+                    "label": f"Car, {car['minutes']} min",
+                    "coords": car["coords"],
+                }
+            )
         try:
             d = drive(a, b, t)
         except Exception:  # noqa: BLE001
@@ -1183,7 +1301,7 @@ def trip_plan(
                 f"from {d['trips']} taxi and app trips since {d['since']}. Typical paid before "
                 f"tip, with tolls and fees: {fares or 'not known'}. The slowest hour is around "
                 f"{_hour(d['slowest_hour'])} at about {d['slowest_minutes']} min. These are past "
-                "trips, not live traffic."
+                "trips; use them for fares and for what is normal at that hour."
             )
             sources.append(
                 {
@@ -1191,6 +1309,10 @@ def trip_plan(
                     "title": "NYC TLC trip records (typical trip times)",
                     "url": "https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page",
                 }
+            )
+        elif car:
+            lines.append(
+                "No record of past taxi trips covers this pair, so there is no typical fare."
             )
         else:
             free = _free_flow(a, b)
