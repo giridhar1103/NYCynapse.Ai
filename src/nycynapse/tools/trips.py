@@ -71,6 +71,15 @@ NAMED = {
     "oculus": ("World Trade Center Oculus", 40.7115, -74.0110),
     "hudson yards": ("Hudson Yards", 40.7538, -74.0021),
     "moynihan": ("Moynihan Train Hall", 40.7516, -73.9962),
+    # A bare cross street means Manhattan's: 42nd Street is Times Square to Grand Central.
+    "42nd street": ("42nd St, Midtown", 40.7553, -73.9844),
+    "42nd st": ("42nd St, Midtown", 40.7553, -73.9844),
+    "34th street": ("34th St-Herald Square", 40.7497, -73.9878),
+    "34th st": ("34th St-Herald Square", 40.7497, -73.9878),
+    "14th street": ("14th St-Union Square", 40.7347, -73.9904),
+    "14th st": ("14th St-Union Square", 40.7347, -73.9904),
+    "125th street": ("125th St, Harlem", 40.8075, -73.9454),
+    "125th st": ("125th St, Harlem", 40.8075, -73.9454),
     "midtown": ("Midtown Manhattan", 40.7549, -73.9840),
     "times square": ("Times Square", 40.7580, -73.9855),
     "penn station": ("Penn Station", 40.7506, -73.9935),
@@ -232,9 +241,13 @@ def _key_words(text: str) -> set[str]:
 def _stop(raw: str) -> dict | None:
     """A station or stop by the name the agencies use ("Flushing-Main St", "Flushing Main
     Street LIRR", "Jamaica"), from the trip planner's own list of stops."""
-    want = _key_words(raw)
+    name, _, area = raw.partition(",")
+    want = _key_words(name)
     if not want:
         return None
+    # The area after a comma ("Metropolitan Av, Williamsburg") picks between stops with the
+    # same name; it is not part of the name.
+    near = _neighborhood(_norm(area)) if area.strip() else None
     try:
         hits = get_json(
             GEOCODE,
@@ -259,15 +272,18 @@ def _stop(raw: str) -> dict | None:
         got = _key_words(h.get("name") or "")
         if not want <= got and not (len(want) >= 3 and len(want - got) <= 1):
             continue
+        if len(got - want) > 1:  # "42nd Street" is not "28 St/42 Rd"
+            continue
         modes = h.get("modes") or []
         rail = "SUBWAY" in modes or "REGIONAL_RAIL" in modes
-        score = (prefer in modes, rail, -len(got - want))
+        dist = -_metres(near, h) if near else 0
+        score = (prefer in modes, rail, dist, -len(got - want))
         if best is None or score > best[0]:
             best = (score, h)
     if not best:
         return None
     h = best[1]
-    lirr = "REGIONAL_RAIL" in (h.get("modes") or []) and "LIRR" not in h["name"]
+    lirr = "LIRR" in str(h.get("id") or "") and "LIRR" not in h["name"]
     return {"name": h["name"] + (" (LIRR)" if lirr else ""), "lat": h["lat"], "lon": h["lon"]}
 
 
@@ -359,6 +375,14 @@ def locate(text: str) -> dict | None:
     hood = _neighborhood(n)
     if hood:
         return hood
+    # A street named without a house number is usually its station ("Metropolitan Av" on the
+    # G), not one address somewhere along it.
+    if re.search(
+        r"\b(?:av|ave|avenue|st|street|blvd|boulevard|pkwy|parkway|rd|road)\b", n
+    ) and not (re.search(r"\d+\s*-?\d*\s+\w", raw.strip()[:6]) and raw.strip()[0].isdigit()):
+        stop = _stop(raw)
+        if stop:
+            return stop
     outside = re.search(
         r"\b(?:nj|new jersey|hoboken|jersey city|newark|weehawken|fort lee|union city|"
         r"secaucus|bayonne|yonkers|westchester|long island|nassau)\b",
