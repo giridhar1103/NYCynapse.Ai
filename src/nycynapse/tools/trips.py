@@ -1648,3 +1648,88 @@ TOOLS = [
         trip_plan,
     ),
 ]
+
+
+# Citi Bike right now -------------------------------------------------------------------------
+
+GBFS = "https://gbfs.lyft.com/gbfs/1.1/bkn/en"
+
+
+def citibike_now(near: str, n: int = 5) -> ToolResult:
+    """Bikes, e-bikes and open docks at the Citi Bike stations nearest a place, live from
+    Citi Bike's own feed."""
+    p = locate(near)
+    if not p:
+        return failed(f"could not place {near!r}; name a station, landmark, address or area")
+    try:
+        info = get_json(f"{GBFS}/station_information.json", ttl_s=3600)["data"]["stations"]
+        status = get_json(f"{GBFS}/station_status.json", ttl_s=60)
+    except Exception as e:  # noqa: BLE001
+        return failed(f"Citi Bike's live feed did not answer: {str(e)[:80]}")
+    live = {s["station_id"]: s for s in status["data"]["stations"]}
+    rows = []
+    for st in info:
+        s = live.get(st["station_id"])
+        if not s or not s.get("is_installed"):
+            continue
+        d = _metres(p, {"lat": st["lat"], "lon": st["lon"]})
+        if d > 1200:
+            continue
+        rows.append((d, st, s))
+    rows.sort(key=lambda r: r[0])
+    rows = rows[: max(1, min(int(n or 5), 8))]
+    if not rows:
+        return failed(f"no Citi Bike station within 1.2 km of {p['name']}")
+    asof = datetime.fromtimestamp(status.get("last_updated") or time.time(), NY)
+    lines = [f"Citi Bike right now near {p['name']} (live, {asof:%-I:%M %p}):"]
+    points = []
+    for d, st, s in rows:
+        bikes, ebikes = s.get("num_bikes_available", 0), s.get("num_ebikes_available", 0)
+        docks = s.get("num_docks_available", 0)
+        renting = "" if s.get("is_renting") else " (not renting right now)"
+        lines.append(
+            f"- {st['name']}, {round(d * 1.3 / 80)} min walk: {bikes} bikes ({ebikes} e-bikes), "
+            f"{docks} open docks{renting}"
+        )
+        points.append(
+            {
+                "lat": st["lat"],
+                "lon": st["lon"],
+                "label": st["name"],
+                "value": bikes,
+                "detail": f"{bikes} bikes, {ebikes} e-bikes, {docks} docks",
+            }
+        )
+    return ToolResult(
+        summary="\n".join(lines),
+        data=[{"name": st["name"], **s} for _, st, s in rows],
+        sources=[
+            {
+                "kind": "live",
+                "title": "Citi Bike live station status",
+                "url": "https://citibikenyc.com/system-data",
+                "updated_at": asof.isoformat(),
+            }
+        ],
+        map=[{"type": "points", "label": "Citi Bike now", "unit": "bikes", "points": points}],
+    )
+
+
+TOOLS.append(
+    Tool(
+        "citibike_now",
+        "live",
+        "Bikes, e-bikes and open docks at the Citi Bike stations nearest a place, live. Use "
+        "for any 'is there a bike' or 'can I dock' question about now; the lake's Citi Bike "
+        "data is history.",
+        {
+            "type": "object",
+            "properties": {
+                "near": {"type": "string", "description": "station, landmark, address or area"},
+                "n": {"type": "integer", "minimum": 1, "maximum": 8},
+            },
+            "required": ["near"],
+        },
+        citibike_now,
+    )
+)

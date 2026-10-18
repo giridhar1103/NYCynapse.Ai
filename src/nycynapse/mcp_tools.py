@@ -75,6 +75,12 @@ def trip_plan(
 
 
 @server.tool(annotations=LIVE)
+def citibike_now(near: str, n: int = 5) -> dict:
+    """Bikes, e-bikes and open docks at the Citi Bike stations nearest a place, live."""
+    return trips.citibike_now(near, n).as_dict()
+
+
+@server.tool(annotations=LIVE)
 def subway_alerts(line: str | None = None) -> dict:
     """MTA subway service alerts in effect now, optionally for one line."""
     return live.subway_alerts(line).as_dict()

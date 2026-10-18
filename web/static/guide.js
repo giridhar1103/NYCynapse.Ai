@@ -11,7 +11,7 @@ const TOOL = {
   road_events: ["R", "live", "511NY road events"], subway_alerts: ["S", "live", "Subway alerts"],
   find_place: ["P", "live", "Place search"], open_data: ["O", "live", "NYC Open Data"],
   area_stats: ["C", "live", "Census by neighborhood"],
-  trip_plan: ["T", "live", "Trip planner"], transit_changes: ["T", "live", "Train and bus changes"],
+  trip_plan: ["T", "live", "Trip planner"], citibike_now: ["B", "live", "Citi Bike now"], transit_changes: ["T", "live", "Train and bus changes"],
   web_search: ["G", "web", "Web search"], read_page: ["R", "web", "Reading a page"],
 };
 const MODEL_NAMES = { "claude-sonnet-5.5": "Claude Sonnet 5.5", "gemini-3.8-flash": "Gemini 3.8 Flash", "gemini-3.7-flash": "Gemini 3.7 Flash" };
