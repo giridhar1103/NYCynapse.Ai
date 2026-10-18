@@ -65,6 +65,12 @@ NAMED = {
     "lga": ("LaGuardia Airport", 40.7746, -73.8719),
     "laguardia": ("LaGuardia Airport", 40.7746, -73.8719),
     "la guardia": ("LaGuardia Airport", 40.7746, -73.8719),
+    "jamaica station": ("Jamaica station (LIRR, AirTrain)", 40.6996, -73.8085),
+    "atlantic terminal": ("Atlantic Terminal (LIRR)", 40.6840, -73.9776),
+    "fulton center": ("Fulton Center", 40.7102, -74.0079),
+    "oculus": ("World Trade Center Oculus", 40.7115, -74.0110),
+    "hudson yards": ("Hudson Yards", 40.7538, -74.0021),
+    "moynihan": ("Moynihan Train Hall", 40.7516, -73.9962),
     "midtown": ("Midtown Manhattan", 40.7549, -73.9840),
     "times square": ("Times Square", 40.7580, -73.9855),
     "penn station": ("Penn Station", 40.7506, -73.9935),
@@ -169,6 +175,152 @@ def _path_station(n: str) -> dict | None:
     return None
 
 
+# Stations and street corners -------------------------------------------------------------------
+
+GEOCODE = "https://api.transitous.org/api/v1/geocode"
+_STREET = {
+    "street": "st",
+    "avenue": "av",
+    "ave": "av",
+    "boulevard": "blvd",
+    "road": "rd",
+    "place": "pl",
+    "parkway": "pkwy",
+    "drive": "dr",
+    "expressway": "expy",
+}
+_HINT = re.compile(
+    r"\b(?:station|stop|subway|lirr|railroad|metro north|metro-north|train|terminal|"
+    r"[a-z0-9] line)\b",
+    re.I,
+)
+_DROP = {
+    "station",
+    "stop",
+    "subway",
+    "lirr",
+    "railroad",
+    "train",
+    "the",
+    "and",
+    "at",
+    "nyc",
+    "queens",
+    "brooklyn",
+    "manhattan",
+    "bronx",
+    "staten",
+    "island",
+    "new",
+    "york",
+    "ny",
+    "metro",
+    "north",
+    "line",
+    "terminal",
+    "of",
+}
+
+
+def _key_words(text: str) -> set[str]:
+    """Words that identify a stop or street, with street types spelled one way."""
+    t = re.sub(r"[^a-z0-9 ]+", " ", text.lower().replace("-", " ").replace("/", " "))
+    t = re.sub(r"\b(\d+)(?:st|nd|rd|th)\b", r"\1", t)
+    return {_STREET.get(w, w) for w in t.split()} - _DROP
+
+
+def _stop(raw: str) -> dict | None:
+    """A station or stop by the name the agencies use ("Flushing-Main St", "Flushing Main
+    Street LIRR", "Jamaica"), from the trip planner's own list of stops."""
+    want = _key_words(raw)
+    if not want:
+        return None
+    try:
+        hits = get_json(
+            GEOCODE,
+            {"text": " ".join(sorted(want)), "type": "STOP", "place": "40.73,-73.93"},
+            ttl_s=86400,
+        )
+    except Exception:  # noqa: BLE001
+        return None
+    low = raw.lower()
+    prefer = (
+        "REGIONAL_RAIL"
+        if re.search(r"lirr|railroad|metro.north|nj transit", low)
+        else "BUS"
+        if re.search(r"\bbus\b", low)
+        else "SUBWAY"
+    )
+    best = None
+    for h in hits or []:
+        lat, lon = h.get("lat"), h.get("lon")
+        if lat is None or not _inside(lat, lon):
+            continue
+        got = _key_words(h.get("name") or "")
+        if not want <= got and not (len(want) >= 3 and len(want - got) <= 1):
+            continue
+        modes = h.get("modes") or []
+        rail = "SUBWAY" in modes or "REGIONAL_RAIL" in modes
+        score = (prefer in modes, rail, -len(got - want))
+        if best is None or score > best[0]:
+            best = (score, h)
+    if not best:
+        return None
+    h = best[1]
+    lirr = "REGIONAL_RAIL" in (h.get("modes") or []) and "LIRR" not in h["name"]
+    return {"name": h["name"] + (" (LIRR)" if lirr else ""), "lat": h["lat"], "lon": h["lon"]}
+
+
+def _corner(raw: str) -> dict | None:
+    """Where two streets meet ("Main St and Roosevelt Ave, Flushing"): a bus stop named for
+    the corner, which the agencies place right at it."""
+    m = re.match(r"\s*(.+?)\s+(?:and|&|at|/)\s+(.+?)(?:,\s*(.+))?\s*$", raw, re.I)
+    if not m:
+        return None
+    a, b = _key_words(m.group(1)), _key_words(m.group(2))
+    if not a or not b or len(a) > 4 or len(b) > 4:
+        return None
+    try:
+        hits = get_json(
+            GEOCODE,
+            {"text": f"{' '.join(a)}/{' '.join(b)}", "type": "STOP", "place": "40.73,-73.93"},
+            ttl_s=86400,
+        )
+    except Exception:  # noqa: BLE001
+        hits = []
+    found = [
+        h
+        for h in hits or []
+        if a <= _key_words(h.get("name") or "")
+        and b <= _key_words(h.get("name") or "")
+        and _inside(h.get("lat", 0), h.get("lon", 0))
+    ]
+    if not found:
+        return None
+    # The same corner exists in several boroughs (5th Ave and 42nd St is in Manhattan and in
+    # Sunset Park): take the one in the area the reader named, or Manhattan.
+    area = m.group(3) or raw
+    boro = next(
+        (
+            b
+            for b in ("Brooklyn", "Queens", "Bronx", "Staten Island", "Manhattan")
+            if b.lower() in area.lower()
+        ),
+        None,
+    )
+    hood = _neighborhood(_norm(m.group(3))) if m.group(3) else None
+
+    def rank(h: dict) -> tuple:
+        z = zone_of(h["lat"], h["lon"])
+        zb = _zone_borough(z[0]) if z else None
+        near = _metres(hood, h) if hood else 0
+        return (zb != (boro or "Manhattan") if not hood else 0, near)
+
+    h = min(found, key=rank)
+    name = f"{m.group(1).strip()} and {m.group(2).strip()}"
+    return {"name": name, "lat": h["lat"], "lon": h["lon"]}
+
+
 def locate(text: str) -> dict | None:
     """A trip end from what the reader wrote: coordinates, a hub, an NYC address or landmark,
     or a place nearby (Hoboken, Newark Airport). None when it cannot be placed in the region."""
@@ -187,6 +339,9 @@ def locate(text: str) -> dict | None:
     station = _path_station(n)
     if station:
         return station
+    corner = _corner(raw)
+    if corner:
+        return corner
     # "Red Hook, Brooklyn" is Red Hook: a borough or city name after a place adds nothing.
     bare = re.sub(r"\b(?:brooklyn|queens|manhattan|bronx|staten island|new york|nyc)\b", " ", n)
     bare = " ".join(bare.split())
@@ -197,6 +352,10 @@ def locate(text: str) -> dict | None:
     for key, (name, lat, lon) in NAMED.items():
         if n == key or re.search(rf"\b{key}\b", n) and len(n.split()) <= len(key.split()) + 2:
             return {"name": name, "lat": lat, "lon": lon}
+    if _HINT.search(raw) or re.search(r"[A-Za-z]-[A-Z0-9]", raw):
+        stop = _stop(raw)
+        if stop:
+            return stop
     hood = _neighborhood(n)
     if hood:
         return hood
@@ -229,6 +388,9 @@ def locate(text: str) -> dict | None:
         # "63B Newark Avenue". A long address may differ by one word.
         if want and (want == got or len(want) >= 3 and len(want ^ got) <= 1):
             return {"name": label.split(",")[0], "lat": lat, "lon": lon}
+    stop = _stop(raw)
+    if stop:
+        return stop
     generic = {
         "town",
         "of",
@@ -902,6 +1064,16 @@ def _in_ring(lon: float, lat: float, ring: list) -> bool:
         if (y1 > lat) != (y2 > lat) and lon < (x2 - x1) * (lat - y1) / (y2 - y1) + x1:
             inside = not inside
     return inside
+
+
+@lru_cache(maxsize=1)
+def _boroughs() -> dict[int, str]:
+    feats = json.loads((GEO / "taxi_zones.json").read_text())["features"]
+    return {f["properties"]["id"]: f["properties"]["borough"] for f in feats}
+
+
+def _zone_borough(zone_id: int) -> str | None:
+    return _boroughs().get(zone_id)
 
 
 def zone_of(lat: float, lon: float) -> tuple[int, str] | None:
