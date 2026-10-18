@@ -897,3 +897,16 @@ def test_trip_layer_offers_every_mode_with_paths():
     assert [g["mode"] for g in first["legs"]] == ["subway"]  # legs without a path are dropped
     assert L["modes"]["drive"]["minutes"] == 32 and L["modes"]["drive"]["live"]
     assert L["modes"]["drive"]["taxi_fare"] == 61
+
+
+def test_tool_calls_written_as_the_answer_are_run_not_shown(monkeypatch):
+    leaked = '```json\n{"status": "Checking", "calls": [{"tool": "weather", "args": {}}]}\n```'
+    agent, seen = _agent(
+        monkeypatch,
+        [_step(answer=leaked), _step(answer="Dry all evening [1].")],
+        [_tool("weather", text="Dry")],
+    )
+    out = agent.run("will it rain tonight in queens?", [], lambda e, d: None)
+    assert out["answer"] == "Dry all evening[1]."
+    assert core._embedded_calls("Take the 7 train.") is None
+    assert core._embedded_calls('{"status": "x", "calls": [') == []

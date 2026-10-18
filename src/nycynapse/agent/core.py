@@ -134,6 +134,30 @@ _DRAFT_SMELLS = [
 MAX_WORDS = 150
 
 
+def _embedded_calls(answer: str) -> list[dict] | None:
+    """Tool calls written as JSON into the answer text ('{"status": ..., "calls": [...]}',
+    maybe in a code fence). None when the answer is ordinary prose."""
+    text = (answer or "").strip()
+    if not text.startswith(("{", "```")):
+        return None
+    text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text).strip()
+    try:
+        obj = json.loads(text)
+    except ValueError:
+        # Cut off mid-way: still JSON, never an answer.
+        return [] if '"calls"' in text or '"status"' in text else None
+    if not isinstance(obj, dict) or "calls" not in obj:
+        return [] if isinstance(obj, dict) and "status" in obj else None
+    out = []
+    for c in obj.get("calls") or []:
+        if isinstance(c, dict) and c.get("tool"):
+            args = c.get("args") or {}
+            out.append(
+                {"tool": c["tool"], "args": args if isinstance(args, str) else json.dumps(args)}
+            )
+    return out
+
+
 def _draft_issues(answer: str) -> list[str]:
     text = _uncite(answer)
     issues = [why for pattern, why in _DRAFT_SMELLS if pattern.search(text)]
@@ -165,6 +189,7 @@ class Turn:
     fell_back: bool = False
     retried: bool = False
     unchecked: bool = False
+    embedded_ok: bool = False
     redraft: str | None = None
 
 
@@ -251,8 +276,18 @@ class Agent:
             status = (step.get("status") or "").strip()[:120]
             if status:
                 emit("status", {"text": status})
-            calls = [] if force else self._valid_calls(t, step.get("calls") or [])
             answer = (step.get("answer") or "").strip()
+            embedded = _embedded_calls(answer)
+            if embedded is not None:
+                # The model wrote its tool calls into the answer instead of the calls list. Run
+                # them as calls (once, even when told to answer) and never show that text.
+                answer = ""
+                if not step.get("calls"):
+                    step["calls"] = embedded
+                    if force and not t.embedded_ok and self._calls(t) < MAX_CALLS:
+                        force = False
+                        t.embedded_ok = True
+            calls = [] if force else self._valid_calls(t, step.get("calls") or [])
             if (
                 answer
                 and not calls
@@ -578,6 +613,11 @@ class Agent:
         error: str | None = None,
         places: list[dict] | None = None,
     ) -> dict:
+        if answer and _embedded_calls(answer) is not None:
+            answer = (
+                "I couldn't finish checking that in time. Please ask again, or ask about one "
+                "part at a time."
+            )
         answer, sources = _cite(answer or "", t.results, declined) if answer else (answer, [])
         layers = [layer for r in t.results if r["result"].ok for layer in r["result"].map]
         trips = [x for x in layers if x.get("type") == "trip"]
