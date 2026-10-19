@@ -21,7 +21,7 @@ body.locked { overflow: hidden; }
 /* ---------- hero ---------- */
 .hero-night { background: var(--night); color: var(--night-ink); position: relative; overflow: hidden; }
 .hero-grid { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 32px;
-  align-items: center; min-height: calc(100vh - 70px); padding: 40px 0 56px; }
+  align-items: center; min-height: calc(100vh - 70px); padding-block: 40px 56px; }
 .eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; letter-spacing: .08em;
   text-transform: uppercase; color: var(--night-muted); margin-bottom: 18px; }
 .live-dot { width: 8px; height: 8px; border-radius: 50%; background: #2fd18d; box-shadow: 0 0 0 0 rgba(47, 209, 141, .6);
@@ -221,6 +221,8 @@ pre.code { background: #0f0f0e; color: #e8e7df; border-radius: 14px; padding: 18
 .g-input button { border: 0; background: var(--ink); color: var(--bg); border-radius: 12px; padding: 0 16px; font-weight: 700; cursor: pointer; }
 .g-input button:disabled { opacity: .45; cursor: default; }
 .g-input .hint { font-size: 12px; color: var(--muted); margin-top: 7px; display: flex; justify-content: space-between; gap: 10px; }
+.g-input .hint .beta { text-align: right; }
+@media (max-width: 560px) { .g-input .hint { flex-direction: column; gap: 2px; } .g-input .hint .beta { text-align: left; } }
 .ts-box { margin-top: 8px; }
 .ts-box:empty { display: none; }
 
@@ -246,7 +248,7 @@ pre.code { background: #0f0f0e; color: #e8e7df; border-radius: 14px; padding: 18
 
 /* ---------- small screens ---------- */
 @media (max-width: 900px) {
-  .hero-grid { grid-template-columns: 1fr; min-height: auto; padding: 28px 0 40px; }
+  .hero-grid { grid-template-columns: 1fr; min-height: auto; padding-block: 28px 40px; }
   .hero-map { max-width: 460px; justify-self: center; margin-top: 8px; }
   .route { grid-template-columns: 1fr 1fr; row-gap: 28px; }
   .route::before, .route .train-dot { display: none; }

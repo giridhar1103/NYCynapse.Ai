@@ -337,6 +337,24 @@ def _corner(raw: str) -> dict | None:
     return {"name": name, "lat": h["lat"], "lon": h["lon"]}
 
 
+@lru_cache(maxsize=1)
+def _landmarks() -> dict[str, dict]:
+    """Well-known places with coordinates checked against OpenStreetMap, so the names people
+    use most ("Union Square", "MSG", "the Met") never land somewhere else."""
+    raw = json.loads((GEO / "landmarks.json").read_text())
+    return {_norm(k): v for k, v in raw.items()}
+
+
+def _landmark(n: str) -> dict | None:
+    marks = _landmarks()
+    if n in marks:
+        return dict(marks[n])
+    for key, v in sorted(marks.items(), key=lambda kv: -len(kv[0])):
+        if re.search(rf"\b{re.escape(key)}\b", n) and len(n.split()) <= len(key.split()) + 2:
+            return dict(v)
+    return None
+
+
 def locate(text: str) -> dict | None:
     """A trip end from what the reader wrote: coordinates, a hub, an NYC address or landmark,
     or a place nearby (Hoboken, Newark Airport). None when it cannot be placed in the region."""
@@ -368,6 +386,9 @@ def locate(text: str) -> dict | None:
     for key, (name, lat, lon) in NAMED.items():
         if n == key or re.search(rf"\b{key}\b", n) and len(n.split()) <= len(key.split()) + 2:
             return {"name": name, "lat": lat, "lon": lon}
+    mark = _landmark(n)
+    if mark:
+        return mark
     if _HINT.search(raw) or re.search(r"[A-Za-z]-[A-Z0-9]", raw):
         stop = _stop(raw)
         if stop:

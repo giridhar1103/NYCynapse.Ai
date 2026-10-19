@@ -47,6 +47,7 @@ body { font: 16px/1.5 var(--sans); -webkit-font-smoothing: antialiased; }
 a { color: inherit; }
 button, input { font: inherit; color: inherit; }
 .wrap { max-width: 1120px; margin: 0 auto; padding: 0 20px; }
+@media (max-width: 560px) { .wrap { padding: 0 16px; } }
 
 /* sign band */
 .band { background: var(--band); color: var(--band-ink); border-bottom: 6px solid var(--band); }

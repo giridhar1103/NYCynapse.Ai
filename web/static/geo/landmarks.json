@@ -1,0 +1,292 @@
+{
+"30 rock": {
+"name": "Rockefeller Center",
+"lat": 40.75926,
+"lon": -73.97996
+},
+"amnh": {
+"name": "American Museum of Natural History",
+"lat": 40.7811,
+"lon": -73.97424
+},
+"astoria park": {
+"name": "Astoria Park",
+"lat": 40.77883,
+"lon": -73.92266
+},
+"barclays center": {
+"name": "Barclays Center",
+"lat": 40.68251,
+"lon": -73.97525
+},
+"battery park": {
+"name": "The Battery Woodland",
+"lat": 40.70294,
+"lon": -74.01555
+},
+"bronx zoo": {
+"name": "Bronx Zoo",
+"lat": 40.8493,
+"lon": -73.87714
+},
+"brooklyn botanic garden": {
+"name": "Brooklyn Botanic Garden",
+"lat": 40.66766,
+"lon": -73.96363
+},
+"brooklyn bridge": {
+"name": "Brooklyn Bridge",
+"lat": 40.70575,
+"lon": -73.99628
+},
+"brooklyn museum": {
+"name": "Brooklyn Museum",
+"lat": 40.67095,
+"lon": -73.96329
+},
+"bryant park": {
+"name": "Bryant Park",
+"lat": 40.75375,
+"lon": -73.98354
+},
+"carnegie hall": {
+"name": "Carnegie Hall",
+"lat": 40.76503,
+"lon": -73.97989
+},
+"central park": {
+"name": "Central Park",
+"lat": 40.78277,
+"lon": -73.96536
+},
+"chelsea market": {
+"name": "Chelsea Market",
+"lat": 40.74205,
+"lon": -74.0049
+},
+"citi field": {
+"name": "Citi Field",
+"lat": 40.75703,
+"lon": -73.84576
+},
+"columbus circle": {
+"name": "Columbus Circle",
+"lat": 40.76841,
+"lon": -73.98198
+},
+"coney island boardwalk": {
+"name": "Riegelmann Boardwalk (Coney Island)",
+"lat": 40.57271,
+"lon": -73.98383
+},
+"domino park": {
+"name": "Domino Park",
+"lat": 40.71411,
+"lon": -73.96827
+},
+"empire state": {
+"name": "Empire State Building",
+"lat": 40.74844,
+"lon": -73.98566
+},
+"empire state building": {
+"name": "Empire State Building",
+"lat": 40.74844,
+"lon": -73.98566
+},
+"flushing meadows": {
+"name": "Flushing Meadows-Corona Park",
+"lat": 40.74057,
+"lon": -73.84283
+},
+"grand central": {
+"name": "Grand Central Terminal",
+"lat": 40.75269,
+"lon": -73.97725
+},
+"guggenheim": {
+"name": "Guggenheim Museum",
+"lat": 40.78299,
+"lon": -73.95892
+},
+"high line": {
+"name": "High Line",
+"lat": 40.7401,
+"lon": -74.00822
+},
+"javits center": {
+"name": "Jacob K. Javits Convention Center",
+"lat": 40.75836,
+"lon": -74.00221
+},
+"lincoln center": {
+"name": "Lincoln Center for the Performing Arts",
+"lat": 40.77252,
+"lon": -73.98422
+},
+"madison square garden": {
+"name": "Madison Square Garden",
+"lat": 40.75051,
+"lon": -73.99352
+},
+"madison square park": {
+"name": "Madison Square Park",
+"lat": 40.7422,
+"lon": -73.98797
+},
+"met museum": {
+"name": "The Metropolitan Museum of Art",
+"lat": 40.77944,
+"lon": -73.96338
+},
+"metropolitan museum": {
+"name": "The Metropolitan Museum of Art",
+"lat": 40.77944,
+"lon": -73.96338
+},
+"metropolitan museum of art": {
+"name": "The Metropolitan Museum of Art",
+"lat": 40.77944,
+"lon": -73.96338
+},
+"moma": {
+"name": "MoMA",
+"lat": 40.76161,
+"lon": -73.9775
+},
+"msg": {
+"name": "Madison Square Garden",
+"lat": 40.75051,
+"lon": -73.99352
+},
+"museum of natural history": {
+"name": "American Museum of Natural History",
+"lat": 40.7811,
+"lon": -73.97424
+},
+"natural history museum": {
+"name": "American Museum of Natural History",
+"lat": 40.7811,
+"lon": -73.97424
+},
+"new york botanical garden": {
+"name": "New York Botanical Garden",
+"lat": 40.86224,
+"lon": -73.87715
+},
+"nyse": {
+"name": "New York Stock Exchange",
+"lat": 40.70707,
+"lon": -74.01118
+},
+"one world trade center": {
+"name": "One World Trade Center",
+"lat": 40.713,
+"lon": -74.01319
+},
+"penn station": {
+"name": "New York Penn Station",
+"lat": 40.75024,
+"lon": -73.99281
+},
+"port authority": {
+"name": "Port Authority Bus Terminal",
+"lat": 40.75683,
+"lon": -73.99145
+},
+"prospect park": {
+"name": "Prospect Park",
+"lat": 40.66177,
+"lon": -73.97109
+},
+"queens museum": {
+"name": "Queens Museum",
+"lat": 40.74587,
+"lon": -73.84674
+},
+"radio city": {
+"name": "Radio City Music Hall",
+"lat": 40.75981,
+"lon": -73.97928
+},
+"rockefeller center": {
+"name": "Rockefeller Center",
+"lat": 40.75926,
+"lon": -73.97996
+},
+"rockefeller plaza": {
+"name": "Rockefeller Center",
+"lat": 40.75926,
+"lon": -73.97996
+},
+"roosevelt island tram": {
+"name": "Roosevelt Island Tramway",
+"lat": 40.75922,
+"lon": -73.9592
+},
+"south street seaport": {
+"name": "South Street Seaport",
+"lat": 40.70575,
+"lon": -74.00291
+},
+"staten island ferry": {
+"name": "Staten Island Ferry Whitehall Terminal",
+"lat": 40.70096,
+"lon": -74.01306
+},
+"statue of liberty": {
+"name": "Statue of Liberty",
+"lat": 40.68925,
+"lon": -74.04455
+},
+"the apollo": {
+"name": "Apollo Theater",
+"lat": 40.81009,
+"lon": -73.94999
+},
+"the battery": {
+"name": "The Battery Woodland",
+"lat": 40.70294,
+"lon": -74.01555
+},
+"the high line": {
+"name": "High Line",
+"lat": 40.7401,
+"lon": -74.00822
+},
+"the met": {
+"name": "The Metropolitan Museum of Art",
+"lat": 40.77944,
+"lon": -73.96338
+},
+"times square": {
+"name": "Times Square",
+"lat": 40.75701,
+"lon": -73.98597
+},
+"union square": {
+"name": "Union Square Park",
+"lat": 40.73604,
+"lon": -73.99032
+},
+"wall street": {
+"name": "New York Stock Exchange",
+"lat": 40.70707,
+"lon": -74.01118
+},
+"washington square park": {
+"name": "Washington Square Park",
+"lat": 40.7309,
+"lon": -73.9976
+},
+"world trade center": {
+"name": "One World Trade Center",
+"lat": 40.713,
+"lon": -74.01319
+},
+"yankee stadium": {
+"name": "Yankee Stadium",
+"lat": 40.82958,
+"lon": -73.92652
+}
+}

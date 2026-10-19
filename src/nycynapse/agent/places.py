@@ -112,6 +112,11 @@ def _match_area(name: str) -> dict | None:
 
 
 def _lookup(name: str) -> dict | None:
+    from ..tools import trips  # verified well-known places first ("Union Square", "MSG")
+
+    mark = trips._landmark(trips._norm(name))
+    if mark:
+        return {"level": "point", "lat": mark["lat"], "lon": mark["lon"]}
     try:
         r = live.find_place(name)
     except Exception:  # noqa: BLE001 - a place that cannot be found is simply not drawn

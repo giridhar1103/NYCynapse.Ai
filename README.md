@@ -4,6 +4,15 @@ A guide to New York City you can ask anything. It answers from the city's own da
 
 **Live:** [giriworks.com/nycynapse](https://giriworks.com/nycynapse/)
 
+**In short**
+
+| | |
+|---|---|
+| What it is | An agent that answers questions about New York City from live city feeds, a data lake of city history, and the web as a last resort, with every fact cited and every place shown on a map |
+| What it does well | Getting around (transit, PATH and the AirTrains, live-traffic driving, walking, Citi Bike, shown like a map app), whether a line or road is running, weather for plans, rent and neighborhood figures, city history through text-to-SQL |
+| The hard parts | A governed text-to-SQL pipeline over a billion rows; tools served over MCP; checks that send back any answer with a figure no tool gave or a claim the tool results do not support; an evaluation loop where a different model family writes realistic questions and judges the answers with web search |
+| Where it stands | A working beta. A strict independent judge still finds a serious error in about one turn in ten, mostly around dates and exact local details, so check times before you travel |
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/img/guide-dark.png">
   <img alt="The guide answering which parts of the city have the cheapest rent, with a cited source and a map shading ZIP code areas by median rent and numbering the six cheapest neighborhoods" src="docs/img/guide-light.png">
