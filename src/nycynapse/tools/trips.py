@@ -379,6 +379,11 @@ def locate(text: str) -> dict | None:
     # "Red Hook, Brooklyn" is Red Hook: a borough or city name after a place adds nothing.
     bare = re.sub(r"\b(?:brooklyn|queens|manhattan|bronx|staten island|new york|nyc)\b", " ", n)
     bare = " ".join(bare.split())
+    # Well-known places before neighborhoods: Union Square is the park, not the middle of the
+    # "Midtown South-Flatiron-Union Square" neighborhood.
+    mark = _landmark(n) or (_landmark(bare) if bare else None)
+    if mark:
+        return mark
     if bare and bare != n:
         hood = _neighborhood(bare)
         if hood:
@@ -386,9 +391,6 @@ def locate(text: str) -> dict | None:
     for key, (name, lat, lon) in NAMED.items():
         if n == key or re.search(rf"\b{key}\b", n) and len(n.split()) <= len(key.split()) + 2:
             return {"name": name, "lat": lat, "lon": lon}
-    mark = _landmark(n)
-    if mark:
-        return mark
     if _HINT.search(raw) or re.search(r"[A-Za-z]-[A-Z0-9]", raw):
         stop = _stop(raw)
         if stop:
@@ -668,7 +670,7 @@ def _tidy(legs: list[dict]) -> list[dict]:
             and lg.get("duration", 0) <= 300
         )
         if hop:
-            lg = {**lg, "mode": "WALK", "duration": _metres(lg["from"], lg["to"]) * 1.3 / 1.3}
+            lg = {**lg, "mode": "WALK", "duration": _metres(lg["from"], lg["to"]) * 1.25 / 1.35}
         if lg.get("mode") == "WALK" and out and out[-1].get("mode") == "WALK":
             out[-1] = {
                 **out[-1],

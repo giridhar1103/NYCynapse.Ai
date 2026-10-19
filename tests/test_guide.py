@@ -910,3 +910,13 @@ def test_tool_calls_written_as_the_answer_are_run_not_shown(monkeypatch):
     assert out["answer"] == "Dry all evening[1]."
     assert core._embedded_calls("Take the 7 train.") is None
     assert core._embedded_calls('{"status": "x", "calls": [') == []
+
+
+def test_well_known_places_land_where_people_mean():
+    from nycynapse.tools import trips
+
+    for text in ("Union Square", "Union Square, Manhattan"):
+        p = trips.locate(text)
+        assert abs(p["lat"] - 40.736) < 0.002 and abs(p["lon"] + 73.990) < 0.002  # the park
+    assert trips.locate("MSG")["name"] == "Madison Square Garden"
+    assert trips.locate("the Met")["name"] == "The Metropolitan Museum of Art"
