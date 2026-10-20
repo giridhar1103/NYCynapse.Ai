@@ -1225,14 +1225,20 @@ DATASETS = {
     ),
     "collisions": (
         "h9gi-nx95",
-        "Motor vehicle crashes reported by NYPD",
-        "crash_date, crash_time, borough, zip_code, on_street_name, "
-        "number_of_persons_injured, number_of_persons_killed, "
-        "contributing_factor_vehicle_1, vehicle_type_code1, latitude, longitude",
+        "Motor vehicle crashes reported by NYPD. Near a place: where within_circle(location, "
+        "LAT, LON, METERS). A crash involves a bike when cyclists were hurt or killed or any of "
+        "vehicle_type_code1 to vehicle_type_code5 is a bike or e-bike (upper(...) like '%BIKE%' "
+        "or '%BICYCLE%'); count with select count(*), never by counting listed rows",
+        "crash_date, crash_time, borough, zip_code, on_street_name, location, "
+        "number_of_persons_injured, number_of_persons_killed, number_of_pedestrians_injured, "
+        "number_of_cyclist_injured, number_of_cyclist_killed, number_of_motorist_injured, "
+        "contributing_factor_vehicle_1, vehicle_type_code1, vehicle_type_code2, "
+        "vehicle_type_code_3, vehicle_type_code_4, vehicle_type_code_5, latitude, longitude",
     ),
     "events": (
         "tvpp-9vvx",
-        "Permitted events: street fairs, parades, races, block parties",
+        "Permitted events: street fairs, parades, races, block parties. Events on a day D: "
+        "start_date_time < 'D+1' and end_date_time >= 'D', so multi-day events are included",
         "event_name, start_date_time, end_date_time, event_type, event_borough, "
         "event_location, street_closure_type",
     ),
@@ -1281,7 +1287,8 @@ def open_data(
     for clause in (select, where, group, order):
         if len(clause) > 400 or _SOQL_BAD.search(clause):
             return failed("query clause not allowed")
-    ds, title, _ = DATASETS[dataset]
+    ds, about, _ = DATASETS[dataset]
+    title = re.split(r"\. |; ", about)[0]  # the rest is advice for writing the query
     params = {"$limit": max(1, min(int(limit), 50))}
     for k, v in (("$select", select), ("$where", where), ("$group", group), ("$order", order)):
         if v.strip():
@@ -1302,8 +1309,17 @@ def open_data(
         " | ".join(f"{k}={str(v)[:60]}" for k, v in r.items() if k not in ("location",))
         for r in rows[:20]
     )
+    counted = bool(group.strip()) or "count(" in select.lower()
+    more = ""
+    if len(rows) >= params["$limit"] and not counted:
+        more = (
+            f" (only the first {len(rows)}; there may be more. For a total use "
+            "select=count(*), or group by a field)"
+        )
+    elif len(rows) > 20:
+        more = " (the first 20 are shown)"
     return ToolResult(
-        summary=f"{title}: {len(rows)} rows\n{preview}",
+        summary=f"{title}: {len(rows)} rows{more}\n{preview}",
         data=rows,
         sources=[
             {
