@@ -997,3 +997,18 @@ def test_regional_rail_stops_by_name(monkeypatch):
     monkeypatch.setattr(trips, "get_json", lambda *a, **k: hits)
     assert trips._rail_stop("Ronkonkoma station")["name"] == "Ronkonkoma LIRR"
     assert trips._rail_stop("Roma Street") is None  # Brisbane is not in the region
+
+
+def test_last_round_draft_is_answered_not_busy(monkeypatch):
+    monkeypatch.setattr(core, "MAX_ROUNDS", 2)
+    agent, _ = _agent(
+        monkeypatch,
+        [
+            _step(calls=[("trip_plan", {"a": 1})]),
+            _step(calls=[("trip_plan", {"a": 2})]),
+            _step(answer="No closure listed on the LIRR tomorrow [1]."),
+        ],
+        [_tool("trip_plan", text="LIRR Ronkonkoma Branch")],
+    )
+    out = agent.run("is the lirr to ronkonkoma ok tomorrow?", [], lambda e, d: None)
+    assert out.get("error") is None and out["answer"].startswith("No closure")

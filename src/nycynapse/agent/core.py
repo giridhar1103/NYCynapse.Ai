@@ -273,6 +273,7 @@ class Agent:
             f"What the lake covers (first to latest data):\n{self._coverage_text()}"
         )
         force = False
+        last: tuple[str, dict] | None = None  # the latest draft, in case the rounds run out
         for round_no in range(MAX_ROUNDS + 1):
             elapsed = time.monotonic() - t.started
             if round_no == MAX_ROUNDS or elapsed > TURN_SECONDS - 30 or self._calls(t) >= MAX_CALLS:
@@ -349,7 +350,9 @@ class Agent:
                     self._calls(t) >= MAX_CALLS or round_no >= MAX_ROUNDS - 1
                 ):
                     issues = []  # no room left to look: a rewrite alone would not finish it
-            if answer and not calls and issues and t.redraft is None:
+            if answer and not calls:
+                last = (answer, step)
+            if answer and not calls and issues and t.redraft is None and round_no < MAX_ROUNDS:
                 # Made-up figures may need a tool (trip_plan for a travel time), so that rewrite
                 # may still call one; a rewrite for wording alone answers straight away.
                 can_look = (
@@ -403,6 +406,12 @@ class Agent:
                 continue
             t.steps.append({"status": status, "calls": [c["tool"] for c in calls]})
             self._run_calls(t, calls)
+        if last:  # out of rounds with a draft in hand: that draft, not an error
+            answer, step = last
+            return self._finish(
+                t, answer, step.get("follow_ups") or [], declined=False,
+                places=step.get("places") or [],
+            )
         return self._finish(t, None, [], declined=False, error=BUSY)
 
     def _calls(self, t: Turn) -> int:
