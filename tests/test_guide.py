@@ -797,6 +797,39 @@ def test_travel_times_in_plain_words(monkeypatch):
     assert trips.parse_when("whenever") is None
 
 
+def test_calendar_dates_are_not_read_as_clock_times(monkeypatch):
+    from datetime import datetime
+
+    from nycynapse.tools import trips
+
+    now = datetime(2026, 10, 20, 15, 30, tzinfo=trips.NY)  # a Tuesday afternoon
+    monkeypatch.setattr(trips, "_now", lambda: now)
+    sat = datetime(2026, 10, 24, 5, 30, tzinfo=trips.NY)
+    for w in ("Saturday October 24 5:30 AM", "2026-10-24 5:30 AM", "Oct 24th 5:30am", "10/24 5:30 AM"):
+        assert trips.parse_when(w) == sat, w
+    assert trips.parse_when("Jan 3 9am") == datetime(2027, 1, 3, 9, tzinfo=trips.NY)
+    assert trips.parse_when("October 20 at 1pm").hour == 13  # a named date is never rolled
+
+
+def test_airtrain_leg_counts_in_leave_and_arrive():
+    from nycynapse.tools import trips
+
+    def it(start, end):
+        return {
+            "startTime": start, "endTime": end,
+            "legs": [{"mode": "SUBWAY", "routeShortName": "E", "duration": 1800,
+                      "startTime": start, "endTime": end, "intermediateStops": [{}],
+                      "from": {"name": "A", "lat": 40.7, "lon": -73.9},
+                      "to": {"name": "END", "lat": 40.7, "lon": -73.8}}],
+        }
+
+    to = trips._itinerary(it("2026-10-21T10:00:00Z", "2026-10-21T10:30:00Z"), "Jamaica", ("AirTrain", 8, 20))
+    assert to["minutes"] == (38, 50)
+    assert to["arrive"].startswith("6:38 to 6:50 AM at the terminals")
+    back = trips._itinerary(it("2026-10-21T10:00:00Z", "2026-10-21T10:30:00Z"), "Home", ("AirTrain", 8, 20), before=True)
+    assert back["leave"] == "5:40 AM from the terminals" and back["steps"][0] == "AirTrain"
+
+
 def test_path_lines_run_by_day_and_hour():
     from datetime import datetime
 

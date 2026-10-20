@@ -17,7 +17,7 @@ import json
 import math
 import re
 import time
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from functools import lru_cache
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -683,7 +683,12 @@ def _tidy(legs: list[dict]) -> list[dict]:
     return out
 
 
-def _itinerary(it: dict, end: str, extra: tuple[str, int, int] | None = None) -> dict:
+def _itinerary(
+    it: dict, end: str, extra: tuple[str, int, int] | None = None, before: bool = False
+) -> dict:
+    """One planner itinerary as the guide reads it. `extra` is a leg the planner does not carry
+    (the AirTrain): its text and its shortest and longest minutes, ridden after the planned trip,
+    or before it when `before`. Leave, arrive and the door to door minutes all include it."""
     it = {**it, "legs": _tidy(it["legs"])}
     it["transfers"] = max(0, sum(lg["mode"] != "WALK" for lg in it["legs"]) - 1)
     legs = [x for x in (_leg_text(lg, end) for lg in it["legs"]) if x]
@@ -705,15 +710,28 @@ def _itinerary(it: dict, end: str, extra: tuple[str, int, int] | None = None) ->
     else:
         leave_ts, end_ts = ts(it["startTime"]), ts(it["endTime"])
     lo = hi = round((end_ts - leave_ts) / 60)
+    arrive = datetime.fromtimestamp(end_ts, NY).strftime("%-I:%M %p")
     if extra:
-        legs.append(extra[0])
         lo, hi = lo + extra[1], hi + extra[2]
+        if before:  # from the terminals: leave early enough for the slow end of the AirTrain
+            legs.insert(0, extra[0])
+            leave_ts -= 60 * extra[2]
+        else:  # to the terminals: arrival is a window
+            legs.append(extra[0])
+            a, b = (datetime.fromtimestamp(end_ts + 60 * m, NY) for m in extra[1:])
+            arrive = (
+                f"{a.strftime('%-I:%M')} to {b.strftime('%-I:%M %p')} at the terminals "
+                f"(train station {arrive})"
+            )
+            end_ts += 60 * extra[2]
     walk = round(sum(lg["duration"] for lg in it["legs"] if lg["mode"] == "WALK") / 60)
     return {
         "minutes": (lo, hi),
-        "arrive_ts": end_ts + 60 * (hi - lo) + 60 * (extra[1] if extra else 0),
-        "leave": datetime.fromtimestamp(leave_ts, NY).strftime("%-I:%M %p"),
-        "arrive": datetime.fromtimestamp(end_ts, NY).strftime("%-I:%M %p"),
+        "arrive_ts": end_ts,
+        "leave_ts": leave_ts,
+        "leave": datetime.fromtimestamp(leave_ts, NY).strftime("%-I:%M %p")
+        + (" from the terminals" if extra and before else ""),
+        "arrive": arrive,
         "transfers": it.get("transfers", 0),
         "walk_minutes": walk,
         "steps": legs,
@@ -812,6 +830,14 @@ def _add_airtrain(option: dict, key: str, to_airport: bool) -> None:
         option["lines"].insert(0, line)
 
 
+def _for_deadline(options: list[dict], when: datetime, arrive_by: bool) -> list[dict]:
+    """Arriving by a time: drop options that get in after it, latest leave first."""
+    if not arrive_by:
+        return options
+    ok = [o for o in options if o["arrive_ts"] <= when.timestamp() + 60]
+    return sorted(ok, key=lambda o: -o["leave_ts"]) if ok else options
+
+
 def _newark(a: dict, b: dict, when: datetime, arrive_by: bool) -> tuple[list[dict], list[str]]:
     """Trips to and from Newark Airport go by rail to the airport's train station, then the
     AirTrain. The planner has the trains; the AirTrain leg is from the Port Authority."""
@@ -820,13 +846,15 @@ def _newark(a: dict, b: dict, when: datetime, arrive_by: bool) -> tuple[list[dic
     name, lat, lon = EWR["station"]
     st = {"name": name, "lat": lat, "lon": lon}
     pair = (city, st) if to_airport else (st, city)
-    t0 = when if to_airport else when + timedelta(minutes=12)
+    air = timedelta(minutes=20)
+    t0 = when - air if to_airport and arrive_by else when
+    t0 = when + air if not to_airport and not arrive_by else t0
     leg = (
         "AirTrain between the train station and the terminals: about 7 min to Terminal C, "
         "11 min to Terminal B; Terminal A is about 20 min (AirTrain then a walk or shuttle)"
     )
     options = [
-        _itinerary(it, name, (leg, 7, 20))
+        _itinerary(it, name if to_airport else city["name"], (leg, 7, 20), before=not to_airport)
         for it in _plan(*pair, t0, arrive_by, n=4)
         if any(lg.get("mode") in ("REGIONAL_RAIL", "RAIL", "SUBURBAN") for lg in it["legs"])
     ][:3]
@@ -839,7 +867,7 @@ def _newark(a: dict, b: dict, when: datetime, arrive_by: bool) -> tuple[list[dic
     ]
     if not options:
         notes.append("No rail itinerary to the airport station was found for that time.")
-    return options, notes
+    return _for_deadline(options, when, arrive_by), notes
 
 
 def transit(a: dict, b: dict, when: datetime, arrive_by: bool) -> tuple[list[dict], list[str]]:
@@ -853,7 +881,11 @@ def transit(a: dict, b: dict, when: datetime, arrive_by: bool) -> tuple[list[dic
         for name, lat, lon in JFK["stations"]:
             st = {"name": name, "lat": lat, "lon": lon}
             pair = (city, st) if to_airport else (st, city)
-            t0 = when if to_airport else when + timedelta(minutes=AIRTRAIN["minutes"][1])
+            # Plan the rail part against the slow end of the AirTrain: arriving by a time means
+            # reaching the station that much earlier, leaving the terminals that much later.
+            air = timedelta(minutes=AIRTRAIN["minutes"][1])
+            t0 = when - air if to_airport and arrive_by else when
+            t0 = when + air if not to_airport and not arrive_by else t0
             short = name.split(" (")[0]
             leg = (
                 f"free shuttle bus replacing the AirTrain between {short} and the terminals "
@@ -864,7 +896,8 @@ def transit(a: dict, b: dict, when: datetime, arrive_by: bool) -> tuple[list[dic
                 f"to {AIRTRAIN['minutes'][1]} min, ${AIRTRAIN['fare_usd']:.2f}"
             )
             for it in _plan(*pair, t0, arrive_by, n=3)[:2]:
-                o = _itinerary(it, short, (leg, *AIRTRAIN["minutes"]))
+                end = short if to_airport else city["name"]
+                o = _itinerary(it, end, (leg, *AIRTRAIN["minutes"]), before=not to_airport)
                 _add_airtrain(o, f"jfk:{short}", to_airport)
                 options.append(o)
         notes.append(
@@ -874,7 +907,7 @@ def transit(a: dict, b: dict, when: datetime, arrive_by: bool) -> tuple[list[dic
         if status:
             notes.append(f"AirTrain alert: {status}.")
         options.sort(key=lambda o: o["minutes"][1])
-        return options[:4], notes
+        return _for_deadline(options, when, arrive_by)[:4], notes
     if a.get("airport") == "ewr" or b.get("airport") == "ewr":
         return _newark(a, b, when, arrive_by)
     options = [_itinerary(it, b["name"]) for it in _plan(a, b, when, arrive_by)[:4]]
@@ -896,7 +929,7 @@ def transit(a: dict, b: dict, when: datetime, arrive_by: bool) -> tuple[list[dic
     options.sort(key=lambda o: o["arrive_ts"] + 300 * o["transfers"])
     by_path.sort(key=lambda o: o["arrive_ts"] + 300 * o["transfers"])
     merged = sorted(options[:3] + by_path, key=lambda o: o["arrive_ts"] + 300 * o["transfers"])
-    return merged[:4], notes
+    return _for_deadline(merged, when, arrive_by)[:4], notes
 
 
 # PATH ------------------------------------------------------------------------------------------
@@ -1083,6 +1116,7 @@ def _path_options(a: dict, b: dict, when: datetime, arrive_by: bool) -> list[dic
                 {
                     "minutes": (mins, mins + spare),
                     "arrive_ts": end.timestamp() + spare * 60,
+                    "leave_ts": when.timestamp(),
                     "leave": when.strftime("%-I:%M %p"),
                     "arrive": end.strftime("%-I:%M %p"),
                     "transfers": sum(x["mode"] != "walk" for x in lines) - 1,
@@ -1253,6 +1287,36 @@ def drive(a: dict, b: dict, when: datetime) -> dict | None:
 _DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 
 
+_MONTHS = ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
+
+
+def _take_date(raw: str, today) -> tuple[str, object]:
+    """Pull a calendar date ("2026-10-24", "October 24", "Oct 24th, 2026", "10/24") out of the
+    text, so its digits are not read as the clock time. Returns the rest and the date, or None.
+    A date without a year that has already passed this year means next year."""
+    pats = [
+        (r"\b(\d{4})-(\d{1,2})-(\d{1,2})\b", lambda g: (int(g[0]), int(g[1]), int(g[2]))),
+        (r"\b(" + "|".join(_MONTHS) + r")[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?\b(?:,?\s+(\d{4}))?",
+         lambda g: (int(g[2]) if g[2] else None, _MONTHS.index(g[0]) + 1, int(g[1]))),
+        (r"\b(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?\b",
+         lambda g: ((int(g[2]) + 2000 if len(g[2]) == 2 else int(g[2])) if g[2] else None,
+                    int(g[0]), int(g[1]))),
+    ]
+    for pat, parts in pats:
+        m = re.search(pat, raw)
+        if not m:
+            continue
+        y, mo, d = parts(m.groups())
+        try:
+            dt = date(y or today.year, mo, d)
+            if y is None and dt < today - timedelta(days=1):
+                dt = date(today.year + 1, mo, d)
+        except ValueError:
+            continue
+        return raw[: m.start()] + " " + raw[m.end():], dt
+    return raw, None
+
+
 def parse_when(text: str | None) -> datetime | None:
     """A travel time from an ISO string or plain words: "now", "at 10", "tonight 11:30pm",
     "Saturday 10 PM", "tomorrow morning". The next such time from now, in New York."""
@@ -1272,13 +1336,17 @@ def parse_when(text: str | None) -> datetime | None:
     except ValueError:
         pass
     day, named = now.date(), False
-    for i, name in enumerate(_DAYS):
-        if re.search(rf"\b{name[:3]}\w*\b", raw):
-            day, named = day + timedelta(days=(i - now.weekday()) % 7), True
-            break
+    raw, dated = _take_date(raw, now.date())
+    if dated:
+        day = dated
     else:
-        if "tomorrow" in raw:
-            day = day + timedelta(days=1)
+        for i, name in enumerate(_DAYS):
+            if re.search(rf"\b{name[:3]}\w*\b", raw):
+                day, named = day + timedelta(days=(i - now.weekday()) % 7), True
+                break
+        else:
+            if "tomorrow" in raw:
+                day = day + timedelta(days=1)
     words = {
         "noon": (12, 0),
         "midnight": (0, 0),
@@ -1303,6 +1371,8 @@ def parse_when(text: str | None) -> datetime | None:
         h, mi = words[key]
         ap = "x"
     t = datetime(day.year, day.month, day.day, h % 24, mi, tzinfo=NY)
+    if dated:  # a date the reader named is kept, never rolled to another day
+        return t
     if t < now - timedelta(minutes=10):
         if not m or m.group(3) or h >= 12:
             if day == now.date():  # "at 9 PM" said at 10 PM means tomorrow, or next week
