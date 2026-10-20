@@ -124,7 +124,7 @@ _DRAFT_SMELLS = [
             re.I,
         ),
         "it talks about the data or what was checked; describe the city itself "
-        '("open tonight", not "no closure listed")',
+        '("no closures are posted tonight", not "no closure listed")',
     ),
     (
         re.compile(
