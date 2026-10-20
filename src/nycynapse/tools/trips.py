@@ -375,8 +375,17 @@ def _landmark(n: str) -> dict | None:
         return dict(marks[n])
     for key, v in sorted(marks.items(), key=lambda kv: -len(kv[0])):
         if re.search(rf"\b{re.escape(key)}\b", n) and len(n.split()) <= len(key.split()) + 2:
+            # "Brooklyn Bridge Park" is not the Brooklyn Bridge: a place word after the name
+            # makes it a different place.
+            if set(n.split()) - set(key.split()) & _PLACE_WORDS:
+                continue
             return dict(v)
     return None
+
+
+_PLACE_WORDS = {"park", "pier", "plaza", "station", "garden", "gardens", "museum", "hotel",
+                "school", "hospital", "market", "mall", "beach", "playground", "library",
+                "church", "terminal", "tower", "college", "university", "field"}
 
 
 def locate(text: str) -> dict | None:
@@ -398,21 +407,46 @@ def locate(text: str) -> dict | None:
             return hit
         raw = m.group(1) + m.group(3)
     found = _locate(raw)
-    if found or "," not in raw:
+    if found:
         return found
-    parts = [p.strip() for p in raw.split(",") if p.strip()]
+    # "The Met on Fifth Avenue", "Washington Square in Larchmont": the part after on or in
+    # says which one, like a comma would.
+    parts = [p.strip() for p in re.split(r",|\s+(?:on|in)\s+(?=[A-Z0-9])", raw) if p.strip()]
+    if len(parts) < 2:
+        return None
+    boroughs = {"brooklyn", "queens", "manhattan", "bronx", "staten island", "new york", "nj",
+                "new jersey"}
+    streetish = re.compile(r"\b(?:st|street|ave?|avenue|blvd|boulevard|rd|road|pl|place)\b", re.I)
+    last = parts[-1]
+    # A town given with the name (not a street, not a borough) must agree with what is found.
+    town = (
+        _locate(last)
+        if not streetish.search(last) and _norm(last) not in boroughs
+        else None
+    )
+
+    def checked(found: dict, p: str) -> dict:
+        if town and p != last and _metres(found, town) > 3000:
+            # Another place of that name (Washington Square in Manhattan, not in Larchmont):
+            # the town is all that is known.
+            return {**town, "name": f"near {town['name']}"}
+        if p is not parts[0] and parts[0] not in exact:
+            return {**found, "name": f"{parts[0]} ({found['name']})"}
+        return found
+
     # An address or corner part is the most exact; a borough or town adds nothing on its own.
     exact = [p for p in parts if re.search(r"^\d+\s+\w|\band\b|&|\bat\b", p, re.I)]
+    if " in " in raw and "," not in raw:
+        found = _locate(", ".join(parts))
+        if found:
+            return checked(found, parts[0])
     for p in exact + [p for p in parts if p not in exact]:
-        if _norm(p) in {"brooklyn", "queens", "manhattan", "bronx", "staten island", "new york",
-                        "nj", "new jersey"}:
-            continue
+        if _norm(p) in boroughs or (streetish.search(p) and p not in exact):
+            continue  # a bare street ("Fifth Avenue") says nothing about where on it
         found = _locate(p)
         if found:
-            if p is not parts[0] and parts[0] not in exact:
-                found = {**found, "name": f"{parts[0]} ({found['name']})"}
-            return found
-    return None
+            return checked(found, p)
+    return town and {**town, "name": f"near {town['name']}"}
 
 
 def _line_station(name: str, lines: set[str], area: str = "") -> dict | None:
@@ -628,7 +662,7 @@ def _rail_stop(raw: str) -> dict | None:
             h
             for h in fits
             if set(h.get("modes") or []) & _RAIL_MODES
-            or re.search(r"lirr|amtrak|\brail", h["name"], re.I)
+            or re.search(r"lirr|amtrak|\brail|(?<!bus )\bstation\b", h["name"], re.I)
         ]
         if rail:
             h = rail[0]

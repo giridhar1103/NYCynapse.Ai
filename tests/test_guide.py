@@ -1049,3 +1049,10 @@ def test_station_named_with_its_line(monkeypatch):
     monkeypatch.setattr(access, "_stations", lambda: rows)
     assert trips.locate("Church Avenue station on the 2 and 5")["lon"] == -73.949
     assert trips.locate("7th Avenue station on the B and Q in Brooklyn")["name"] == "7 Av (B Q)"
+
+
+def test_place_word_after_a_landmark_is_another_place():
+    from nycynapse.tools import trips
+
+    assert trips._landmark(trips._norm("Brooklyn Bridge Park")) is None
+    assert trips._landmark(trips._norm("the Brooklyn Bridge"))["name"] == "Brooklyn Bridge"
