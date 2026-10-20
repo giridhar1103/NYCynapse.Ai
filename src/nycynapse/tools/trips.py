@@ -1443,6 +1443,32 @@ def _hour(h: int) -> str:
     return datetime(2000, 1, 1, h).strftime("%-I %p")
 
 
+def _step_free_first(options: list[dict]) -> list[dict]:
+    """Check every subway station an option boards or leaves at, and put the options with no
+    stairs (and no elevator out) first."""
+    from . import access
+
+    def check(o: dict) -> int:
+        seen, texts, bad = set(), [], 0
+        for lg in o.get("lines") or []:
+            if lg.get("mode") != "subway" or not lg.get("coords"):
+                continue
+            for lon, lat in (lg["coords"][0], lg["coords"][-1]):
+                try:
+                    rec = access.station("", lat, lon, lg.get("name"))
+                except Exception:  # noqa: BLE001
+                    rec = None
+                if not rec or rec["name"] in seen:
+                    continue
+                seen.add(rec["name"])
+                texts.append(access.describe(rec))
+                bad += rec["step_free"] != "yes" or bool(rec["out"])
+        o["access"] = "; ".join(texts) if texts else "no subway stations on this option"
+        return bad
+
+    return sorted(options, key=lambda o: (check(o) > 0, options.index(o)))
+
+
 # The tool --------------------------------------------------------------------------------------
 
 
@@ -1452,6 +1478,7 @@ def trip_plan(
     mode: str = "all",
     when: str | None = None,
     arrive_by: bool = False,
+    step_free: bool = False,
 ) -> ToolResult:
     """Real routes and times between two places in and around NYC: transit itineraries from
     the agencies' schedules (with live times where published) and typical taxi or car times
@@ -1497,6 +1524,8 @@ def trip_plan(
             options, notes = transit(a, b, t, arrive_by)
         except Exception as e:  # noqa: BLE001 - the drive half can still answer
             options, notes = [], [f"Transit planner unavailable: {str(e)[:80]}"]
+        if options and step_free:
+            options = _step_free_first(options)
         data["transit"] = options
         if options:
             lines.append("Transit options (best first):")
@@ -1515,6 +1544,21 @@ def trip_plan(
                     f"arrive {o.get('arrive', '?')}, {o['transfers']} transfer"
                     f"{'s' if o['transfers'] != 1 else ''}, {o['walk_minutes']} min walking: "
                     + "; ".join(o["steps"])
+                )
+                if step_free and o.get("access") is not None:
+                    lines.append("   Step-free check: " + o["access"])
+            if step_free:
+                lines.append(
+                    "Step-free checks use the MTA's list of accessible subway stations and its "
+                    "live elevator outages. Every MTA bus kneels or has a ramp. LIRR, Metro-North, "
+                    "NJ Transit and PATH stations are not checked here."
+                )
+                sources.append(
+                    {
+                        "kind": "live",
+                        "title": "MTA accessible stations and elevator status",
+                        "url": "https://new.mta.info/elevator-escalator-status",
+                    }
                 )
             sources.append(
                 {
@@ -1735,6 +1779,11 @@ TOOLS = [
                     "description": "New York time like 2026-10-16T17:30, or now (default)",
                 },
                 "arrive_by": {"type": "boolean"},
+                "step_free": {
+                    "type": "boolean",
+                    "description": "the reader cannot use stairs (wheelchair, stroller, heavy "
+                    "luggage): checks each subway station and elevator outages",
+                },
             },
             "required": ["origin", "destination"],
         },
