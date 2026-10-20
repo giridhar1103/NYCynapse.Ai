@@ -287,19 +287,35 @@ def _stop(raw: str) -> dict | None:
     return {"name": h["name"] + (" (LIRR)" if lirr else ""), "lat": h["lat"], "lon": h["lon"]}
 
 
+# What people call an avenue, as the agencies name it on stops.
+_NICK = {"lex": "lexington"}
+
+
+def _said(words: set[str]) -> str:
+    """Key words back in the order a street name is said: numbers and names, then the type."""
+    kinds = set(_STREET.values())
+    return " ".join(sorted(words, key=lambda w: (w in kinds, not w.isdigit(), w)))
+
+
 def _corner(raw: str) -> dict | None:
     """Where two streets meet ("Main St and Roosevelt Ave, Flushing"): a bus stop named for
     the corner, which the agencies place right at it."""
-    m = re.match(r"\s*(.+?)\s+(?:and|&|at|/)\s+(.+?)(?:,\s*(.+))?\s*$", raw, re.I)
+    m = re.match(r"\s*(.+?)\s+(?:and|&|at|/)\s+(.+?)(?:(?:,|\s+in)\s+(.+))?\s*$", raw, re.I)
     if not m:
         return None
     a, b = _key_words(m.group(1)), _key_words(m.group(2))
+    a, b = ({_NICK.get(w, w) for w in x} for x in (a, b))
+    # "14th and 8th": in Manhattan the small number is the avenue and the other the street.
+    if len(a) == len(b) == 1 and all(w.isdigit() for w in a | b):
+        x, y = int(next(iter(a))), int(next(iter(b)))
+        if (x <= 12) != (y <= 12):
+            a, b = ({str(n), "av" if n <= 12 else "st"} for n in (x, y))
     if not a or not b or len(a) > 4 or len(b) > 4:
         return None
     try:
         hits = get_json(
             GEOCODE,
-            {"text": f"{' '.join(a)}/{' '.join(b)}", "type": "STOP", "place": "40.73,-73.93"},
+            {"text": f"{_said(a)}/{_said(b)}", "type": "STOP", "place": "40.73,-73.93"},
             ttl_s=86400,
         )
     except Exception:  # noqa: BLE001

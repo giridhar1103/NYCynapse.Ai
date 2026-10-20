@@ -1012,3 +1012,10 @@ def test_last_round_draft_is_answered_not_busy(monkeypatch):
     )
     out = agent.run("is the lirr to ronkonkoma ok tomorrow?", [], lambda e, d: None)
     assert out.get("error") is None and out["answer"].startswith("No closure")
+
+
+def test_corner_words_keep_spoken_order():
+    from nycynapse.tools import trips
+
+    assert trips._said({"av", "8"}) == "8 av"
+    assert trips._said({"st", "lexington", "w"}) == "lexington w st"
