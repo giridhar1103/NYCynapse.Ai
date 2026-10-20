@@ -630,8 +630,10 @@ def _plan(a: dict, b: dict, when: datetime, arrive_by: bool, n: int = 5) -> list
         ttl_s=120,
     )
     its = list(d.get("itineraries") or [])
-    if its and all(it.get("transfers", 0) >= 2 for it in its):
-        # Every option has two or more changes: ask for the simplest ones too.
+    # When every option changes trains, ask for the simplest ones too: one seat all the way (a
+    # reader with bags or a stroller takes the direct F over a faster change), or one change.
+    fewest = min((it.get("transfers", 0) for it in its), default=0)
+    for cap in ([0] if fewest >= 1 else []) + ([1] if fewest >= 2 else []):
         try:
             d2 = get_json(
                 TRANSITOUS,
@@ -641,7 +643,7 @@ def _plan(a: dict, b: dict, when: datetime, arrive_by: bool, n: int = 5) -> list
                     "time": when.astimezone(NY).isoformat(timespec="minutes"),
                     "arriveBy": "true" if arrive_by else "false",
                     "numItineraries": n,
-                    "maxTransfers": 1,
+                    "maxTransfers": cap,
                 },
                 ttl_s=120,
             )
