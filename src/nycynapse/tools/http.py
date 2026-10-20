@@ -134,8 +134,9 @@ def check_url(url: str) -> tuple[str, str, int]:
     return host, public_address(host, port), port
 
 
-def safe_get(url: str) -> tuple[str, str, str]:
-    """Fetch an untrusted URL. Returns (final url, content type, text)."""
+def safe_get(url: str, pdf: bool = False) -> tuple[str, str, str | bytes]:
+    """Fetch an untrusted URL. Returns (final url, content type, text), or the raw bytes of a
+    PDF when `pdf` allows one (timetables and fare sheets are often PDFs)."""
     for _ in range(MAX_REDIRECTS + 1):
         host, ip, port = check_url(url)
         parts = urlsplit(url)
@@ -155,13 +156,18 @@ def safe_get(url: str) -> tuple[str, str, str]:
             if r.status_code >= 400:
                 raise BlockedURL(f"the page returned HTTP {r.status_code}")
             ctype = r.headers.get("content-type", "").split(";")[0].strip().lower()
-            if ctype and not ctype.startswith(TEXT_TYPES):
+            is_pdf = pdf and ctype == "application/pdf"
+            if ctype and not ctype.startswith(TEXT_TYPES) and not is_pdf:
                 raise BlockedURL(f"not a text page ({ctype})")
             body = bytearray()
             for chunk in r.iter_bytes():
                 body.extend(chunk)
-                if len(body) > MAX_BYTES:
+                if len(body) > MAX_BYTES * (4 if is_pdf else 1):
+                    if is_pdf:
+                        raise BlockedURL("that PDF is too large to read")
                     break
+            if is_pdf:
+                return url, ctype, bytes(body)
             text = bytes(body[:MAX_BYTES]).decode(r.encoding or "utf-8", errors="replace")
             return url, ctype, text
     raise BlockedURL("too many redirects")

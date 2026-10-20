@@ -122,9 +122,10 @@ def web_search(query: str, n: int = 5) -> dict:
 
 
 @server.tool(annotations=LIVE)
-def read_page(url: str) -> dict:
-    """Read the main text of a public web page. Private network addresses are refused."""
-    return web.read_page(url).as_dict()
+def read_page(url: str, find: str | None = None) -> dict:
+    """Read the main text of a public web page or PDF; with find, the parts around that
+    phrase. Private network addresses are refused."""
+    return web.read_page(url, find).as_dict()
 
 
 def main() -> None:

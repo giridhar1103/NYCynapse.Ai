@@ -974,3 +974,13 @@ def test_well_known_places_land_where_people_mean():
         assert abs(p["lat"] - 40.736) < 0.002 and abs(p["lon"] + 73.990) < 0.002  # the park
     assert trips.locate("MSG")["name"] == "Madison Square Garden"
     assert trips.locate("the Met")["name"] == "The Metropolitan Museum of Art"
+
+
+def test_read_page_reaches_a_phrase_deep_in_a_page():
+    from nycynapse.tools import web
+
+    page = "intro " * 3000 + "Saturday service: first train 5:34 AM. " + "tail " * 3000
+    part = web._around(page, "Saturday")
+    assert "first train 5:34 AM" in part and len(part) < 2000
+    assert web._around(page, "Saturday schedule") is not None  # falls back to its words
+    assert web._around(page, "Thanksgiving") is None
