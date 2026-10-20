@@ -1019,3 +1019,33 @@ def test_corner_words_keep_spoken_order():
 
     assert trips._said({"av", "8"}) == "8 av"
     assert trips._said({"st", "lexington", "w"}) == "lexington w st"
+
+
+def test_path_changes_lines_when_no_train_runs_through():
+    from datetime import datetime
+
+    from nycynapse.tools import trips
+
+    sun_night = datetime(2026, 10, 25, 1, 30, tzinfo=trips.NY)
+    total, rides, _ = trips._path_rides("HOB", "WTC", sun_night, {}, 1)
+    assert [r[1:3] for r in rides] == [("HOB", "GRV"), ("GRV", "WTC")]
+    wed = datetime(2026, 10, 21, 9, tzinfo=trips.NY)
+    assert len(trips._path_rides("HOB", "WTC", wed, {}, 1)[1]) == 1  # direct by day
+
+
+def test_station_named_with_its_line(monkeypatch):
+    from nycynapse.tools import access, trips
+
+    rows = [
+        {"stop_name": "Church Av", "daytime_routes": "F G", "borough": "Bk",
+         "gtfs_latitude": "40.644", "gtfs_longitude": "-73.979"},
+        {"stop_name": "Church Av", "daytime_routes": "2 5", "borough": "Bk",
+         "gtfs_latitude": "40.650", "gtfs_longitude": "-73.949"},
+        {"stop_name": "57 St-7 Av", "daytime_routes": "N Q R W", "borough": "M",
+         "gtfs_latitude": "40.764", "gtfs_longitude": "-73.980"},
+        {"stop_name": "7 Av", "daytime_routes": "B Q", "borough": "Bk",
+         "gtfs_latitude": "40.677", "gtfs_longitude": "-73.972"},
+    ]
+    monkeypatch.setattr(access, "_stations", lambda: rows)
+    assert trips.locate("Church Avenue station on the 2 and 5")["lon"] == -73.949
+    assert trips.locate("7th Avenue station on the B and Q in Brooklyn")["name"] == "7 Av (B Q)"
