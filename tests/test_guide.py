@@ -882,6 +882,27 @@ def test_verified_draft_is_rewritten_with_the_problems(monkeypatch):
     assert "no source names a gate" in seen[3][1]
 
 
+def test_unfinished_draft_goes_back_to_look(monkeypatch):
+    agent, seen = _agent(
+        monkeypatch,
+        [
+            _step(calls=[("web_search", {"query": "museum hours"})]),
+            _step(answer="Check the museum's site for Tuesday hours [1]."),
+            {"problems": [], "unfinished": ["open the museum's hours page"]},
+            _step(calls=[("read_page", {"url": "https://museum.example/hours"})]),
+            _step(answer="It is closed on Tuesdays [2]."),
+        ],
+        [
+            _tool("web_search", text="Museum hours https://museum.example/hours"),
+            _tool("read_page", text="Closed Tuesdays"),
+        ],
+    )
+    agent.verify_answers = True
+    out = agent.run("is the museum open tomorrow, tuesday?", [], lambda e, d: None)
+    assert out["answer"].startswith("It is closed")
+    assert "open the museum's hours page" in seen[3][1]
+
+
 def test_trip_layer_offers_every_mode_with_paths():
     from datetime import datetime
 

@@ -32,9 +32,10 @@ from .host import MCPHost
 from .lake import Lake, now_as_of
 from .lake import tools as lake_tools
 
-MAX_ROUNDS = 4
-MAX_CALLS = 7
-MAX_PER_TOOL = {"web_search": 2, "read_page": 2, "ask_lake": 3}
+UNFINISHED = "the draft leaves part of the question unanswered"
+MAX_ROUNDS = 5
+MAX_CALLS = 9
+MAX_PER_TOOL = {"web_search": 3, "read_page": 3, "ask_lake": 3}
 TURN_SECONDS = 150
 REST_S = 20 * 60  # how long a main model that hit its limit is left alone
 
@@ -85,9 +86,14 @@ VERIFY_SCHEMA = {
                 "required": ["quote", "why"],
                 "additionalProperties": False,
             },
-        }
+        },
+        "unfinished": {
+            "type": "array",
+            "maxItems": 2,
+            "items": {"type": "string"},
+        },
     },
-    "required": ["problems"],
+    "required": ["problems", "unfinished"],
     "additionalProperties": False,
 }
 
@@ -189,6 +195,7 @@ class Turn:
     fell_back: bool = False
     retried: bool = False
     unchecked: bool = False
+    look: list[str] = field(default_factory=list)  # checks the verifier says are still missing
     embedded_ok: bool = False
     redraft: str | None = None
 
@@ -338,10 +345,19 @@ class Agent:
                 and time.monotonic() - t.started < TURN_SECONDS - 60
             ):
                 issues = self._verify(t, answer)
+                if issues == [UNFINISHED] and (
+                    self._calls(t) >= MAX_CALLS or round_no >= MAX_ROUNDS - 1
+                ):
+                    issues = []  # no room left to look: a rewrite alone would not finish it
             if answer and not calls and issues and t.redraft is None:
                 # Made-up figures may need a tool (trip_plan for a travel time), so that rewrite
                 # may still call one; a rewrite for wording alone answers straight away.
-                can_look = bool(loose) and self._calls(t) < MAX_CALLS and round_no < MAX_ROUNDS - 1
+                can_look = (
+                    bool(loose or t.look)
+                    and self._calls(t) < MAX_CALLS
+                    and round_no < MAX_ROUNDS - 1
+                    and time.monotonic() - t.started < TURN_SECONDS - 60
+                )
                 t.redraft = (
                     f"Your draft answer was:\n{answer}\n\nRewrite it once more as the final "
                     "answer, with the same facts, citations and places, because "
@@ -351,6 +367,13 @@ class Agent:
                         " If a tool can supply what is missing (trip_plan for routes and travel "
                         "times), call it first."
                         if can_look
+                        else ""
+                    )
+                    + (
+                        " Still unanswered: " + "; ".join(t.look) + ". Make those checks now "
+                        "(read_page on an official page you already found counts) instead of "
+                        "telling the reader to check."
+                        if can_look and t.look
                         else ""
                     )
                 )
@@ -412,6 +435,7 @@ class Agent:
                 retries=0,
             )
             found = r.json().get("problems") or []
+            t.look = [str(x)[:200] for x in (r.json().get("unfinished") or [])[:2]]
             t.cost_usd += r.cost_usd or 0
             t.model_calls += 1
         except Exception:  # noqa: BLE001 - the check is a safety net, not a gate
@@ -420,6 +444,9 @@ class Agent:
         if out:
             t.steps.append({"note": "verify: " + " | ".join(out)[:600]})
             return ["a check against the tool results found problems: " + "; ".join(out)]
+        if t.look:
+            t.steps.append({"note": "verify, unfinished: " + " | ".join(t.look)})
+            return [UNFINISHED]
         return []
 
     def _untraced(self, t: Turn, answer: str) -> list[str]:

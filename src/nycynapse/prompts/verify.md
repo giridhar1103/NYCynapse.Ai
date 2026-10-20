@@ -15,3 +15,9 @@ List only real problems, at most four, each with the exact words from the draft 
 Do not list style, length or tone. Do not list stable general knowledge about the city that is
 correct. Do not ask for hedges: a plain statement the tools support is right. If the draft is
 sound, return an empty list.
+
+Separately, under unfinished, name at most two parts of the reader's request that the draft
+leaves unanswered or hands back to them ("check the timetable", "confirm with the museum")
+when a tool could settle it: opening an official page already found, planning the trip, a
+fare or hours lookup. Say each as the check to make, in a few words. Leave it empty when the
+draft answers everything the reader asked, or when no tool could do better.
