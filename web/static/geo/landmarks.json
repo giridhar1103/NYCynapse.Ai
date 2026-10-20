@@ -7,7 +7,7 @@
 "amnh": {
 "name": "American Museum of Natural History",
 "lat": 40.7811,
-"lon": -73.97424
+"lon": -73.97234
 },
 "astoria park": {
 "name": "Astoria Park",
@@ -41,8 +41,8 @@
 },
 "brooklyn museum": {
 "name": "Brooklyn Museum",
-"lat": 40.67095,
-"lon": -73.96329
+"lat": 40.67152,
+"lon": -73.96404
 },
 "bryant park": {
 "name": "Bryant Park",
@@ -122,11 +122,11 @@
 "lincoln center": {
 "name": "Lincoln Center for the Performing Arts",
 "lat": 40.77252,
-"lon": -73.98422
+"lon": -73.98232
 },
 "madison square garden": {
 "name": "Madison Square Garden",
-"lat": 40.75051,
+"lat": 40.75195,
 "lon": -73.99352
 },
 "madison square park": {
@@ -156,18 +156,18 @@
 },
 "msg": {
 "name": "Madison Square Garden",
-"lat": 40.75051,
+"lat": 40.75195,
 "lon": -73.99352
 },
 "museum of natural history": {
 "name": "American Museum of Natural History",
 "lat": 40.7811,
-"lon": -73.97424
+"lon": -73.97234
 },
 "natural history museum": {
 "name": "American Museum of Natural History",
 "lat": 40.7811,
-"lon": -73.97424
+"lon": -73.97234
 },
 "new york botanical garden": {
 "name": "New York Botanical Garden",
@@ -181,13 +181,13 @@
 },
 "one world trade center": {
 "name": "One World Trade Center",
-"lat": 40.713,
-"lon": -74.01319
+"lat": 40.71243,
+"lon": -74.01244
 },
 "penn station": {
 "name": "New York Penn Station",
 "lat": 40.75024,
-"lon": -73.99281
+"lon": -73.99091
 },
 "port authority": {
 "name": "Port Authority Bus Terminal",
@@ -281,12 +281,12 @@
 },
 "world trade center": {
 "name": "One World Trade Center",
-"lat": 40.713,
-"lon": -74.01319
+"lat": 40.71243,
+"lon": -74.01244
 },
 "yankee stadium": {
 "name": "Yankee Stadium",
-"lat": 40.82958,
-"lon": -73.92652
+"lat": 40.82901,
+"lon": -73.92576
 }
 }
