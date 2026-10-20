@@ -984,3 +984,16 @@ def test_read_page_reaches_a_phrase_deep_in_a_page():
     assert "first train 5:34 AM" in part and len(part) < 2000
     assert web._around(page, "Saturday schedule") is not None  # falls back to its words
     assert web._around(page, "Thanksgiving") is None
+
+
+def test_regional_rail_stops_by_name(monkeypatch):
+    from nycynapse.tools import trips
+
+    hits = [
+        {"name": "Roma Street station", "type": "STOP", "lat": -27.47, "lon": 153.02},
+        {"name": "Ronkonkoma", "type": "STOP", "lat": 40.81, "lon": -73.106},
+        {"name": "Ronkonkoma LIRR", "type": "STOP", "lat": 40.808, "lon": -73.107},
+    ]
+    monkeypatch.setattr(trips, "get_json", lambda *a, **k: hits)
+    assert trips._rail_stop("Ronkonkoma station")["name"] == "Ronkonkoma LIRR"
+    assert trips._rail_stop("Roma Street") is None  # Brisbane is not in the region

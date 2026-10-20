@@ -493,10 +493,47 @@ def locate(text: str) -> dict | None:
         # Huntington", not "Juniors Barber Shop" for "Juniors". Outside the city, the name found
         # may be part of what was asked ("Hoboken" for "Washington St, Hoboken").
         extra = got - want - generic
-        fits = (want <= got or bool(outside)) and not extra
+        streetish = {"street", "avenue", "road", "boulevard"} & (got - want)
+        fits = (want <= got or bool(outside)) and not extra and not streetish
         if _inside(lat, lon) and fits:
             name = h.get("name") or q
             return {"name": f"near {name}" if k else name, "lat": lat, "lon": lon}
+    return _rail_stop(raw)
+
+
+# Commuter rail reaches well past the city: Montauk, New Haven, Poughkeepsie, Trenton.
+RAIL_BOX = (-75.0, 40.1, -71.8, 41.75)
+_RAIL_WORDS = {"lirr", "station", "stop", "train", "rail", "railroad", "metro", "north", "mnr",
+               "njt", "nj", "transit", "amtrak", "ny", "the"}
+
+
+def _rail_stop(raw: str) -> dict | None:
+    """A train or bus stop in the wider region by name ("Ronkonkoma", "Hicksville LIRR",
+    "Princeton Junction"), from the trip planner's own stop search. A station is preferred
+    over a bus stop of the same name."""
+    want = _words(_norm(raw.split(",")[0])) - _RAIL_WORDS
+    for text in dict.fromkeys([raw, " ".join(sorted(want, key=_norm(raw).find))]):
+        if not want:
+            continue
+        try:
+            hits = get_json(
+                TRANSITOUS.replace("/api/v5/plan", "/api/v1/geocode"), {"text": text}, ttl_s=86400
+            )
+        except Exception:  # noqa: BLE001
+            return None
+        fits = [
+            h
+            for h in (hits or [])[:8]
+            if (h.get("type") == "STOP" or re.search(r"\bstation\b", h.get("name") or "", re.I))
+            and h.get("lat") is not None
+            and RAIL_BOX[0] <= h["lon"] <= RAIL_BOX[2]
+            and RAIL_BOX[1] <= h["lat"] <= RAIL_BOX[3]
+            and want <= _words(_norm(h.get("name") or ""))
+        ]
+        rail = [h for h in fits if re.search(r"lirr|station|amtrak|rail|metro", h["name"], re.I)]
+        if fits:
+            h = (rail or fits)[0]
+            return {"name": h["name"], "lat": h["lat"], "lon": h["lon"]}
     return None
 
 
