@@ -417,7 +417,11 @@ class Agent:
             f"Now: {now_as_of()} (New York).\n\nReader's question: {t.question}\n\n"
             + (
                 "Earlier in the conversation:\n"
-                + "\n".join(f"Q: {h['q']}\nA: {_uncite(h['answer'])}" for h in t.history)
+                + "\n".join(
+                    f"Q: {h['q']}\nA: {_uncite(h['answer'])}"
+                    + (f"\nFacts found then: {h['facts']}" if h.get("facts") else "")
+                    for h in t.history
+                )
                 + "\n\n"
                 if t.history
                 else ""
@@ -670,13 +674,14 @@ class Agent:
         kinds = {x.name: x.kind for x in self.tools()}
         # What the next turn remembers: facts from city data only. Web text is untrusted and
         # could carry instructions into later turns, so only page titles are kept from it.
+        # Trip plans keep more, so a follow-up still has the departures it was given.
         facts = "; ".join(
-            _short(r["result"].summary, 300)
+            _short(r["result"].summary, 1200 if r["tool"] == "trip_plan" else 400)
             if kinds.get(r["tool"]) != "web"
             else "web: " + ", ".join(s.get("title", "") for s in r["result"].sources[:3])
             for r in t.results
             if r["result"].ok
-        )[:1800]
+        )[:3000]
         untraced = self._untraced(t, answer or "") if answer and not declined else []
         if untraced and t.redraft is not None:
             # Rewritten once and still carrying figures nothing supports: drop the sentences
