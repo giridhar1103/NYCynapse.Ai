@@ -1777,6 +1777,11 @@ def trip_plan(
     if not a or not b:
         missing = origin if not a else destination
         return failed(f"could not place {missing!r}; name a station, landmark, address or area")
+    if _metres(a, b) < 150:
+        return failed(
+            f"both ends were placed at {a['name']}; name the destination more exactly "
+            "(its address or a nearby station)"
+        )
     t = parse_when(when)
     if t is None:
         return failed("when must be a New York time like 2026-10-16T17:30, 'Saturday 10 PM' or now")
@@ -1950,12 +1955,20 @@ def trip_plan(
         except Exception:  # noqa: BLE001
             d = None
         data["drive"] = d
+        if arrive_by and (car or d):
+            # A deadline needs a time to leave, from the slow end of a normal trip.
+            slow = max(([car["minutes"]] if car else []) + ([d["minutes"][2]] if d else []))
+            leave = t - timedelta(minutes=slow + 10)
+            lines.append(
+                f"By car, to arrive by {t:%-I:%M %p}: leave by about {leave:%-I:%M %p} (the slow "
+                "end of a normal trip at that hour, plus 10 minutes)."
+            )
         if d:
             p25, med, p75 = d["minutes"]
             fares = "; ".join(
                 f"{label} about ${d[k]:.0f}"
                 for label, k in (
-                    ("yellow or green taxi", "taxi_fare_usd"),
+                    ("taxi", "taxi_fare_usd"),
                     ("Uber or Lyft", "app_fare_usd"),
                 )
                 if d.get(k)
@@ -1979,6 +1992,7 @@ def trip_plan(
             lines.append(
                 "No record of past taxi trips covers this pair, so there is no typical fare."
             )
+
         else:
             free = _free_flow(a, b)
             if free:

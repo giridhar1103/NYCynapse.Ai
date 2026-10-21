@@ -26,8 +26,8 @@
 },
 "bronx zoo": {
 "name": "Bronx Zoo",
-"lat": 40.8493,
-"lon": -73.87714
+"lat": 40.85108,
+"lon": -73.88153
 },
 "brooklyn botanic garden": {
 "name": "Brooklyn Botanic Garden",
@@ -171,8 +171,8 @@
 },
 "new york botanical garden": {
 "name": "New York Botanical Garden",
-"lat": 40.86224,
-"lon": -73.87715
+"lat": 40.8664,
+"lon": -73.8808
 },
 "nyse": {
 "name": "New York Stock Exchange",
@@ -288,5 +288,25 @@
 "name": "Yankee Stadium",
 "lat": 40.82901,
 "lon": -73.92576
+},
+"the met cloisters": {
+"name": "The Met Cloisters",
+"lat": 40.86487,
+"lon": -73.93192
+},
+"met cloisters": {
+"name": "The Met Cloisters",
+"lat": 40.86487,
+"lon": -73.93192
+},
+"the cloisters": {
+"name": "The Met Cloisters",
+"lat": 40.86487,
+"lon": -73.93192
+},
+"cloisters": {
+"name": "The Met Cloisters",
+"lat": 40.86487,
+"lon": -73.93192
 }
 }
