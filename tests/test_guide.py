@@ -1056,3 +1056,18 @@ def test_place_word_after_a_landmark_is_another_place():
 
     assert trips._landmark(trips._norm("Brooklyn Bridge Park")) is None
     assert trips._landmark(trips._norm("the Brooklyn Bridge"))["name"] == "Brooklyn Bridge"
+
+
+def test_line_letter_before_station_and_borough_named(monkeypatch):
+    from nycynapse.tools import access, trips
+
+    rows = [
+        {"stop_name": "Nostrand Av", "daytime_routes": "A C", "borough": "Bk",
+         "gtfs_latitude": "40.680", "gtfs_longitude": "-73.950"},
+        {"stop_name": "Norwood Av", "daytime_routes": "J Z", "borough": "Bk",
+         "gtfs_latitude": "40.681", "gtfs_longitude": "-73.880"},
+    ]
+    monkeypatch.setattr(access, "_stations", lambda: rows)
+    assert trips.locate("Nostrand Av C station, Brooklyn")["name"] == "Nostrand Av (A C)"
+    assert trips._line_station("Avenue", {"J"}) is None  # "Avenue J" is not Norwood Av
+    assert trips._borough_named("59 St, 4th Ave, Sunset Park") == "brooklyn"

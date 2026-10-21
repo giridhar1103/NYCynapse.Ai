@@ -1032,6 +1032,17 @@ def find_place(text: str) -> ToolResult:
             }
         )
     if not out:
+        # Corners, stations by line and places just outside the city: the trip planner's own
+        # place finding knows them ("5th Ave and 59th St, Brooklyn", "Nostrand Av C station").
+        from .trips import locate, zone_of, _zone_borough
+
+        hit = locate(text)
+        if hit:
+            z = zone_of(hit["lat"], hit["lon"])
+            out = [{"label": hit["name"], "borough": _zone_borough(z[0]) if z else None,
+                    "neighborhood": z[1] if z else None, "lat": hit["lat"], "lon": hit["lon"],
+                    "kind": "place"}]
+    if not out:
         return failed(f"no place in New York City matched {text!r}")
     top = out[0]
     return ToolResult(

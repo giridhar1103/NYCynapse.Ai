@@ -255,11 +255,17 @@ def _stop(raw: str) -> dict | None:
         return None
     # The area after a comma ("Metropolitan Av, Williamsburg") picks between stops with the
     # same name; it is not part of the name.
-    near = _neighborhood(_norm(area)) if area.strip() else None
+    near = None
+    for part in [p for p in area.split(",") if p.strip()]:
+        near = near or _neighborhood(_norm(part))
+    boro = _borough_named(area)
+    if not near and boro:
+        lat, lon = _BORO_CENTER[boro]
+        near = {"lat": lat, "lon": lon}
     try:
         hits = get_json(
             GEOCODE,
-            {"text": " ".join(sorted(want)), "type": "STOP", "place": "40.73,-73.93"},
+            {"text": " ".join(sorted(want)), "type": "STOP", "place": _bias(raw)},
             ttl_s=86400,
         )
     except Exception:  # noqa: BLE001
@@ -299,6 +305,34 @@ def _stop(raw: str) -> dict | None:
 _NICK = {"lex": "lexington"}
 
 
+_BORO_CENTER = {
+    "brooklyn": (40.65, -73.95),
+    "queens": (40.72, -73.82),
+    "bronx": (40.84, -73.88),
+    "staten island": (40.58, -74.14),
+    "manhattan": (40.77, -73.97),
+}
+# Neighborhoods people name instead of the borough.
+_BORO_OF = {"sunset park": "brooklyn", "bay ridge": "brooklyn", "park slope": "brooklyn",
+            "williamsburg": "brooklyn", "bushwick": "brooklyn", "flatbush": "brooklyn",
+            "astoria": "queens", "flushing": "queens", "jamaica": "queens",
+            "harlem": "manhattan", "riverdale": "bronx"}
+
+
+def _borough_named(text: str) -> str | None:
+    low = text.lower()
+    for b in _BORO_CENTER:
+        if re.search(rf"\b{b}\b", low):
+            return b
+    return next((b for k, b in _BORO_OF.items() if re.search(rf"\b{k}\b", low)), None)
+
+
+def _bias(text: str) -> str:
+    """Where the stop search should look first: the borough the reader named, or the city."""
+    lat, lon = _BORO_CENTER.get(_borough_named(text) or "", (40.73, -73.93))
+    return f"{lat},{lon}"
+
+
 def _said(words: set[str]) -> str:
     """Key words back in the order a street name is said: numbers and names, then the type."""
     kinds = set(_STREET.values())
@@ -320,45 +354,57 @@ def _corner(raw: str) -> dict | None:
             a, b = ({str(n), "av" if n <= 12 else "st"} for n in (x, y))
     if not a or not b or len(a) > 4 or len(b) > 4:
         return None
-    try:
-        hits = get_json(
-            GEOCODE,
-            {"text": f"{_said(a)}/{_said(b)}", "type": "STOP", "place": "40.73,-73.93"},
-            ttl_s=86400,
-        )
-    except Exception:  # noqa: BLE001
-        hits = []
-    found = [
-        h
-        for h in hits or []
-        if a <= _key_words(h.get("name") or "")
-        and b <= _key_words(h.get("name") or "")
-        and _inside(h.get("lat", 0), h.get("lon", 0))
-    ]
-    if not found:
-        return None
+    def search(a: set[str], b: set[str]) -> list[dict]:
+        try:
+            hits = get_json(
+                GEOCODE,
+                {"text": f"{_said(a)}/{_said(b)}", "type": "STOP", "place": _bias(raw)},
+                ttl_s=86400,
+            )
+        except Exception:  # noqa: BLE001
+            hits = []
+        return [
+            h
+            for h in hits or []
+            if a <= _key_words(h.get("name") or "")
+            and b <= _key_words(h.get("name") or "")
+            and _inside(h.get("lat", 0), h.get("lon", 0))
+        ]
+
     # The same corner exists in several boroughs (5th Ave and 42nd St is in Manhattan and in
     # Sunset Park): take the one in the area the reader named, or Manhattan.
     area = m.group(3) or raw
-    boro = next(
-        (
-            b
-            for b in ("Brooklyn", "Queens", "Bronx", "Staten Island", "Manhattan")
-            if b.lower() in area.lower()
-        ),
-        None,
-    )
+    boro = (_borough_named(area) or "").title() or None
     hood = _neighborhood(_norm(m.group(3))) if m.group(3) else None
 
-    def rank(h: dict) -> tuple:
+    def borough(h: dict) -> str | None:
         z = zone_of(h["lat"], h["lon"])
-        zb = _zone_borough(z[0]) if z else None
+        return _zone_borough(z[0]) if z else None
+
+    found, near_by = search(a, b), False
+    if boro and not any(borough(h) == boro for h in found):
+        # No stop at that very corner in the borough named: a block or two along the
+        # numbered street is close enough, and the name says so.
+        num = next((x for x in (b, a) if any(w.isdigit() for w in x)), None)
+        if num is not None:
+            n = int(next(w for w in num if w.isdigit()))
+            other = a if num is b else b
+            for k in (1, -1, 2, -2):
+                moved = {w for w in num if not w.isdigit()} | {str(n + k)}
+                more = [h for h in search(other, moved) if borough(h) == boro]
+                if more:
+                    found, near_by = more, True
+                    break
+    if not found:
+        return None
+
+    def rank(h: dict) -> tuple:
         near = _metres(hood, h) if hood else 0
-        return (zb != (boro or "Manhattan") if not hood else 0, near)
+        return (borough(h) != (boro or "Manhattan") if not hood else 0, near)
 
     h = min(found, key=rank)
     name = f"{m.group(1).strip()} and {m.group(2).strip()}"
-    return {"name": name, "lat": h["lat"], "lon": h["lon"]}
+    return {"name": f"near {name}" if near_by else name, "lat": h["lat"], "lon": h["lon"]}
 
 
 @lru_cache(maxsize=1)
@@ -400,12 +446,22 @@ def locate(text: str) -> dict | None:
         raw,
         re.I,
     )
-    if m:
-        lines = set(re.findall(r"\b[A-Z0-9]\b", m.group(2).upper()))
-        hit = _line_station(m.group(1), lines, m.group(3))
+    # "Nostrand Av C station", "Court Sq (G)": the line written next to the name. The letter
+    # must be a capital as written, and a station of that name must serve that line, so
+    # "Avenue J" or "Pier 6" stays what it is.
+    m2 = None if m else re.match(
+        r"(.+?)\s+(?:\(\s*)?([A-Z0-9](?:\s*(?:/|,|and|&)\s*[A-Z0-9])*)(?:\s*\))?"
+        r"(?:\s+(?:station|stop|train|line)s?\b|\s*$|(?=\s*,))(.*)$",
+        raw,
+    )
+    if m or m2:
+        mm = m or m2
+        lines = set(re.findall(r"\b[A-Z0-9]\b", mm.group(2).upper()))
+        hit = _line_station(mm.group(1), lines, mm.group(3))
         if hit:
             return hit
-        raw = m.group(1) + m.group(3)
+        if m:
+            raw = m.group(1) + m.group(3)
     found = _locate(raw)
     if found:
         return found
@@ -454,6 +510,7 @@ def _line_station(name: str, lines: set[str], area: str = "") -> dict | None:
     from . import access
 
     want = _key_words(name)
+    core = want - set(_STREET.values())  # "Avenue" alone names no station
     try:
         rows = access._stations()
     except Exception:  # noqa: BLE001
@@ -467,7 +524,7 @@ def _line_station(name: str, lines: set[str], area: str = "") -> dict | None:
     for r in rows:
         got = _key_words(r.get("stop_name") or "")
         routes = set((r.get("daytime_routes") or "").split())
-        if want and (want <= got or got <= want) and lines & routes:
+        if core and core <= got and len(got - want) <= 2 and lines & routes:
             fits.append(((boro is not None and r.get("borough") != boro), len(got ^ want), r))
     if not fits:
         return None
