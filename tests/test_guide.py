@@ -1099,3 +1099,21 @@ def test_step_free_trips_get_more_time_to_change():
         assert trips._slack()["transferTimeFactor"] == 2
     finally:
         trips._STEP_FREE.reset(tok)
+
+
+def test_named_entrance_of_a_big_place(monkeypatch):
+    from nycynapse.tools import trips
+
+    spots = {
+        "Central Park": {"name": "Central Park", "lat": 40.7829, "lon": -73.9654},
+        "Conservatory Garden": {"name": "Conservatory Garden", "lat": 40.7937, "lon": -73.9526},
+        # the city's address search puts this one at the park's middle
+        "Conservatory Garden, Central Park": {"name": "CP CONSERVATORY GARDEN",
+                                              "lat": 40.7825, "lon": -73.9655},
+        "New York Botanical Garden": {"name": "NYBG", "lat": 40.8664, "lon": -73.8808},
+        "Mosholu": {"name": "Mosholu Pkwy", "lat": 40.8797, "lon": -73.8847},
+    }
+    monkeypatch.setattr(trips, "_locate", lambda t: spots.get(t))
+    got = trips.locate("Central Park, Conservatory Garden entrance")
+    assert got["lat"] == 40.7937 and "entrance" in got["name"]
+    assert trips.locate("New York Botanical Garden, Mosholu entrance")["lat"] == 40.8664

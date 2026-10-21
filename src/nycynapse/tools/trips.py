@@ -463,6 +463,34 @@ def locate(text: str) -> dict | None:
             return hit
         if m:
             raw = m.group(1) + m.group(3)
+    # "Prospect Park, Grand Army Plaza entrance", "Bronx Zoo, Southern Blvd gate": a big
+    # place's named entrance is where the trip ends, so try that first.
+    gate = re.match(r"(.+?),\s*(.+?)\s+(?:entrance|gate|entry)\s*$", raw, re.I)
+    if gate:
+        whole = _locate(gate.group(1))
+        tries = [f"{gate.group(2)}, {gate.group(1)}"]
+        if not re.search(
+            r"\b(?:st|street|ave?|avenue|blvd|boulevard|rd|road|pkwy|parkway)\b",
+            gate.group(2),
+            re.I,
+        ):
+            tries.append(gate.group(2))  # a bare street names no point on it
+        # The gate's name alone may match a road of that name instead (Mosholu Parkway for
+        # the garden's Mosholu gate): a street the reader did not say is not the gate.
+        road = re.compile(r"\b(?:st|street|ave?|avenue|blvd|boulevard|rd|road|pkwy|parkway)\b", re.I)
+        doors = [
+            d
+            for d in map(_locate, tries)
+            if d
+            and (not whole or _metres(d, whole) < 2500)
+            and not (road.search(d["name"]) and not road.search(gate.group(2)))
+        ]
+        if doors:
+            # Entrances are at the edge: the city's address search puts every place inside a
+            # big park at the park's middle, so the candidate farthest from it is the gate.
+            door = max(doors, key=lambda d: _metres(d, whole) if whole else 0)
+            if not whole or _metres(door, whole) > 50:  # else no gate was found, only the place
+                return {**door, "name": f"{gate.group(1)} ({gate.group(2)} entrance)"}
     found = _locate(raw)
     if found:
         return found
