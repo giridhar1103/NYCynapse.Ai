@@ -1809,6 +1809,24 @@ def trip_plan(
             options, notes = transit(a, b, t, arrive_by)
         except Exception as e:  # noqa: BLE001 - the drive half can still answer
             options, notes = [], [f"Transit planner unavailable: {str(e)[:80]}"]
+        # Never offer a plan that should already have left. For a deadline that nothing
+        # leaving now can make, say so and give the soonest arrival instead.
+        gone = _now().timestamp() - 120
+        if options and any(o.get("leave_ts", gone + 1) < gone for o in options):
+            still = [o for o in options if o.get("leave_ts", gone + 1) >= gone]
+            if still:
+                options = still
+            elif arrive_by:
+                try:
+                    soon, more = transit(a, b, _now(), False)
+                except Exception:  # noqa: BLE001
+                    soon, more = [], []
+                notes = [
+                    f"Leaving now, no transit option arrives by {t:%-I:%M %p}: every one "
+                    "would have had to leave already. The options below leave now and arrive "
+                    "as soon as possible."
+                ] + more
+                options = soon
         if options and step_free:
             options = _step_free_first(options)
         data["transit"] = options
