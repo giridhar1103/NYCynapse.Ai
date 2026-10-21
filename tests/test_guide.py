@@ -1071,3 +1071,31 @@ def test_line_letter_before_station_and_borough_named(monkeypatch):
     assert trips.locate("Nostrand Av C station, Brooklyn")["name"] == "Nostrand Av (A C)"
     assert trips._line_station("Avenue", {"J"}) is None  # "Avenue J" is not Norwood Av
     assert trips._borough_named("59 St, 4th Ave, Sunset Park") == "brooklyn"
+
+
+def test_deadline_keeps_trains_near_the_last_one_that_makes_it():
+    from datetime import datetime
+
+    from nycynapse.tools import trips
+
+    when = datetime(2026, 10, 22, 8, 30, tzinfo=trips.NY)
+    at = lambda h, m: datetime(2026, 10, 22, h, m, tzinfo=trips.NY).timestamp()  # noqa: E731
+    opts = [
+        {"leave_ts": at(7, 21), "arrive_ts": at(8, 17)},
+        {"leave_ts": at(6, 55), "arrive_ts": at(7, 44)},
+        {"leave_ts": at(1, 44), "arrive_ts": at(3, 3)},
+        {"leave_ts": at(7, 40), "arrive_ts": at(8, 45)},  # too late
+    ]
+    got = trips._for_deadline(opts, when, True)
+    assert [o["leave_ts"] for o in got] == [at(7, 21), at(6, 55)]
+
+
+def test_step_free_trips_get_more_time_to_change():
+    from nycynapse.tools import trips
+
+    assert trips._slack() == {"minTransferTime": 3}
+    tok = trips._STEP_FREE.set(True)
+    try:
+        assert trips._slack()["transferTimeFactor"] == 2
+    finally:
+        trips._STEP_FREE.reset(tok)

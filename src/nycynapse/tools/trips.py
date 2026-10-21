@@ -18,6 +18,7 @@ import math
 import re
 import time
 from datetime import date, datetime, timedelta
+from contextvars import ContextVar
 from functools import lru_cache
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -807,6 +808,18 @@ def _leg_text(leg: dict, end: str) -> str:
     )
 
 
+# A trip for someone who cannot rush or use stairs gets more time at every change.
+_STEP_FREE: ContextVar[bool] = ContextVar("step_free", default=False)
+
+
+def _slack() -> dict:
+    """Time allowed to change trains: the planner's own minimum is a sprint between
+    platforms, so at least 3 minutes, and 5 at double pace for a step-free trip."""
+    if _STEP_FREE.get():
+        return {"minTransferTime": 5, "transferTimeFactor": 2}
+    return {"minTransferTime": 3}
+
+
 def _plan(a: dict, b: dict, when: datetime, arrive_by: bool, n: int = 5) -> list[dict]:
     d = get_json(
         TRANSITOUS,
@@ -816,6 +829,7 @@ def _plan(a: dict, b: dict, when: datetime, arrive_by: bool, n: int = 5) -> list
             "time": when.astimezone(NY).isoformat(timespec="minutes"),
             "arriveBy": "true" if arrive_by else "false",
             "numItineraries": n * 2,
+            **_slack(),
         },
         ttl_s=120,
     )
@@ -834,6 +848,7 @@ def _plan(a: dict, b: dict, when: datetime, arrive_by: bool, n: int = 5) -> list
                     "arriveBy": "true" if arrive_by else "false",
                     "numItineraries": n,
                     "maxTransfers": cap,
+                    **_slack(),
                 },
                 ttl_s=120,
             )
@@ -1064,7 +1079,11 @@ def _for_deadline(options: list[dict], when: datetime, arrive_by: bool) -> list[
     if not arrive_by:
         return options
     ok = [o for o in options if o["arrive_ts"] <= when.timestamp() + 60]
-    return sorted(ok, key=lambda o: -o["leave_ts"]) if ok else options
+    if not ok:
+        return options
+    ok.sort(key=lambda o: -o["leave_ts"])
+    # A train hours before the one that still makes it is no plan (1:44 AM for 8:30 AM).
+    return [o for o in ok if o["leave_ts"] >= ok[0]["leave_ts"] - 45 * 60]
 
 
 def _newark(a: dict, b: dict, when: datetime, arrive_by: bool) -> tuple[list[dict], list[str]]:
@@ -1139,7 +1158,7 @@ def transit(a: dict, b: dict, when: datetime, arrive_by: bool) -> tuple[list[dic
         return _for_deadline(options, when, arrive_by)[:4], notes
     if a.get("airport") == "ewr" or b.get("airport") == "ewr":
         return _newark(a, b, when, arrive_by)
-    options = [_itinerary(it, b["name"]) for it in _plan(a, b, when, arrive_by)[:4]]
+    options = [_itinerary(it, b["name"]) for it in _plan(a, b, when, arrive_by)[:8]]
     try:
         by_path = _path_options(a, b, when, arrive_by)
     except Exception:  # noqa: BLE001 - the planner's own options still stand
@@ -1158,7 +1177,16 @@ def transit(a: dict, b: dict, when: datetime, arrive_by: bool) -> tuple[list[dic
     options.sort(key=lambda o: o["arrive_ts"] + 300 * o["transfers"])
     by_path.sort(key=lambda o: o["arrive_ts"] + 300 * o["transfers"])
     merged = sorted(options[:3] + by_path, key=lambda o: o["arrive_ts"] + 300 * o["transfers"])
-    return _for_deadline(merged, when, arrive_by)[:4], notes
+    out = _for_deadline(merged, when, arrive_by)[:4]
+    # The simplest ride always makes the list (the direct B, not only faster changes), unless
+    # it is far slower than the best.
+    pool = _for_deadline(options + by_path, when, arrive_by)
+    if out and pool:
+        easy = min(pool, key=lambda o: (o["transfers"], o["arrive_ts"]))
+        slowest_ok = out[0]["minutes"][1] + 20
+        if easy["transfers"] < min(o["transfers"] for o in out) and easy["minutes"][0] <= slowest_ok:
+            out = out[:3] + [easy]
+    return out, notes
 
 
 # PATH ------------------------------------------------------------------------------------------
@@ -1728,6 +1756,37 @@ def _hour(h: int) -> str:
     return datetime(2000, 1, 1, h).strftime("%-I %p")
 
 
+def _line_changes(option: dict, at: datetime) -> list[str]:
+    """MTA service changes on the subway lines an option rides that are in effect at the time
+    of the trip (planned work the schedules may not show)."""
+    from .live import MTA_ALERTS, _plain
+
+    routes = {lg.get("name") for lg in option.get("lines") or [] if lg.get("mode") == "subway"}
+    routes.discard(None)
+    if not routes:
+        return []
+    try:
+        d = get_json(MTA_ALERTS, ttl_s=120)
+    except Exception:  # noqa: BLE001
+        return []
+    t, out = at.timestamp(), []
+    for ent in d.get("entity", []):
+        al = ent.get("alert", {})
+        hit = {x.get("route_id") for x in al.get("informed_entity") or []} & routes
+        # An alert with no end is about now (delays): it says nothing about a trip hours away.
+        soon = t - time.time() < 90 * 60
+        during = any(
+            int(p.get("start") or 0) <= t and (t < int(p["end"]) if p.get("end") else soon)
+            for p in al.get("active_period") or [{}]
+        )
+        if hit and during:
+            head = _plain(al.get("header_text", {}).get("translation"))[:220]
+            line = f"Service change on the {'/'.join(sorted(hit))} at that time: {head}"
+            if head and line not in out:
+                out.append(line)
+    return out[:3]
+
+
 def _step_free_first(options: list[dict]) -> list[dict]:
     """Check every subway station an option boards or leaves at, and put the options with no
     stairs (and no elevator out) first."""
@@ -1751,7 +1810,10 @@ def _step_free_first(options: list[dict]) -> list[dict]:
         o["access"] = "; ".join(texts) if texts else "no subway stations on this option"
         return bad
 
-    return sorted(options, key=lambda o: (check(o) > 0, options.index(o)))
+    bad = {id(o): check(o) for o in options}
+    good = [o for o in options if not bad[id(o)]]
+    # Options with stairs are left out when a step-free one exists.
+    return good or sorted(options, key=lambda o: bad[id(o)])
 
 
 # The tool --------------------------------------------------------------------------------------
@@ -1810,10 +1872,13 @@ def trip_plan(
     sources: list[dict] = []
     layers: list[dict] = []
     if mode in ("both", "transit"):
+        token = _STEP_FREE.set(step_free)
         try:
             options, notes = transit(a, b, t, arrive_by)
         except Exception as e:  # noqa: BLE001 - the drive half can still answer
             options, notes = [], [f"Transit planner unavailable: {str(e)[:80]}"]
+        finally:
+            _STEP_FREE.reset(token)
         # Never offer a plan that should already have left. For a deadline that nothing
         # leaving now can make, say so and give the soonest arrival instead.
         gone = _now().timestamp() - 120
@@ -1839,13 +1904,19 @@ def trip_plan(
             lines.append("Transit options (best first):")
             # Name the quickest and the simplest, so a reader who wants fewer changes (luggage,
             # a stroller, stairs) is not handed the bus-bus-train option because it saves a minute.
-            quick = min(options, key=lambda o: o["arrive_ts"])
+            # With a deadline the useful one is the latest to leave, not the first to arrive.
+            quick = (
+                max(options, key=lambda o: o.get("leave_ts", 0))
+                if arrive_by
+                else min(options, key=lambda o: o["arrive_ts"])
+            )
+            first = "leaves latest" if arrive_by else "arrives first"
             easy = min(options, key=lambda o: (o["transfers"], o["arrive_ts"]))
             for i, o in enumerate(options, 1):
                 lo, hi = o["minutes"]
                 span = f"{lo} min" if lo == hi else f"{lo} to {hi} min"
                 tag = ", ".join(
-                    t for t, x in (("arrives first", quick), ("fewest changes", easy)) if o is x
+                    t for t, x in ((first, quick), ("fewest changes", easy)) if o is x
                 )
                 lines.append(
                     f"{i}.{f' [{tag}]' if tag else ''} {span} door to door, leave {o['leave']}, "
@@ -1855,6 +1926,8 @@ def trip_plan(
                 )
                 if step_free and o.get("access") is not None:
                     lines.append("   Step-free check: " + o["access"])
+                for warn in _line_changes(o, t):
+                    lines.append("   " + warn)
             if step_free:
                 lines.append(
                     "Step-free checks use the MTA's list of accessible subway stations and its "
