@@ -122,8 +122,8 @@ def web_search(query: str, n: int = 5) -> ToolResult:
             errors.append(f"{name}: no results")
             continue
         text = "\n".join(
-            f"[{i + 1}] {r['title']} ({r['url']}){' ' + r['date'] if r.get('date') else ''}\n"
-            f"    {(r.get('snippet') or '').strip()[:300]}"
+            f"[{i + 1}] {r['title']} ({r['url']}){' ' + r['date'] if r.get('date') else ''}"
+            f"{_dated(r)}\n    {(r.get('snippet') or '').strip()[:300]}"
             for i, r in enumerate(results)
         )
         return ToolResult(
@@ -184,6 +184,17 @@ def _around(text: str, find: str, width: int = 1200) -> str | None:
         else:
             spans.append([lo, hi])
     return "\n...\n".join(text[lo:hi] for lo, hi in spans)
+
+
+def _dated(r: dict) -> str:
+    """Flag a result whose newest year is before this one: its figures are history, not now
+    ("71 percent of pre-pandemic levels in February 2024")."""
+    from datetime import date
+
+    years = [int(y) for y in re.findall(r"\b(20[0-3]\d)\b", f"{r.get('date', '')} {r.get('snippet', '')}")]
+    if years and max(years) < date.today().year:
+        return f" (dated {max(years)}: history, not current)"
+    return ""
 
 
 def read_page(url: str, find: str | None = None) -> ToolResult:

@@ -1117,3 +1117,13 @@ def test_named_entrance_of_a_big_place(monkeypatch):
     got = trips.locate("Central Park, Conservatory Garden entrance")
     assert got["lat"] == 40.7937 and "entrance" in got["name"]
     assert trips.locate("New York Botanical Garden, Mosholu entrance")["lat"] == 40.8664
+
+
+def test_old_web_figures_are_marked_dated():
+    from datetime import date
+
+    from nycynapse.tools import web
+
+    old = {"snippet": "Ridership reached 71 percent of pre-pandemic levels in February 2024."}
+    assert "dated 2024" in web._dated(old)
+    assert web._dated({"snippet": f"Updated {date.today().year}"}) == ""
