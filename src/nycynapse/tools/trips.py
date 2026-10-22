@@ -72,6 +72,11 @@ NAMED = {
     "oculus": ("World Trade Center Oculus", 40.7115, -74.0110),
     "hudson yards": ("Hudson Yards", 40.7538, -74.0021),
     "moynihan": ("Moynihan Train Hall", 40.7516, -73.9962),
+    "jamaica center": ("Jamaica Center-Parsons/Archer", 40.7022, -73.8010),
+    "bed stuy": ("Bedford-Stuyvesant", 40.6872, -73.9418),
+    "bedstuy": ("Bedford-Stuyvesant", 40.6872, -73.9418),
+    # Said alone, Grand Army Plaza is Brooklyn's, at the top of Prospect Park.
+    "grand army plaza": ("Grand Army Plaza, Brooklyn", 40.6744, -73.9701),
     # A bare cross street means Manhattan's: 42nd Street is Times Square to Grand Central.
     "42nd street": ("42nd St, Midtown", 40.7553, -73.9844),
     "42nd st": ("42nd St, Midtown", 40.7553, -73.9844),
@@ -114,6 +119,7 @@ _ABBR = {
     "sq": "square",
     "e": "east",
     "w": "west",
+    "centre": "center",
 }
 
 
@@ -658,8 +664,12 @@ def _locate(text: str) -> dict | None:
         hood = _neighborhood(bare)
         if hood:
             return hood
+    said = _borough_named(raw)
     for key, (name, lat, lon) in NAMED.items():
         if n == key or re.search(rf"\b{key}\b", n) and len(n.split()) <= len(key.split()) + 2:
+            z = zone_of(lat, lon)
+            if said and z and (_zone_borough(z[0]) or "").lower() != said:
+                continue  # "Grand Army Plaza, Manhattan" is not Brooklyn's
             return {"name": name, "lat": lat, "lon": lon}
     if _HINT.search(raw) or re.search(r"[A-Za-z]-[A-Z0-9]", raw):
         stop = _stop(raw)
@@ -682,19 +692,21 @@ def _locate(text: str) -> dict | None:
         n,
     )
     f = None
-    try:
-        d = (
-            {}
-            if outside
-            else get_json(
-                "https://geosearch.planninglabs.nyc/v2/search",
-                {"text": raw, "size": 1},
+    # A bare street address ("1 Centre St") is found more often with the city named.
+    texts = [raw] + ([f"{raw}, New York"] if re.match(r"\d", raw) and "," not in raw else [])
+    for text in [] if outside else texts:
+        try:
+            d = get_json(
+                "https://geosearch.planninglabs.nyc/v2/search", {"text": text, "size": 1},
                 ttl_s=86400,
             )
-        )
-        f = (d.get("features") or [None])[0]
-    except Exception:  # noqa: BLE001 - fall through to the regional search
-        f = None
+            f = (d.get("features") or [None])[0]
+        except Exception:  # noqa: BLE001 - fall through to the regional search
+            f = None
+        if f and _words(n) <= _words(_norm(f["properties"].get("label", "").split(",")[0])) | {
+            "new", "york"
+        }:
+            break
     if f:
         label = f["properties"].get("label") or ""
         lon, lat = f["geometry"]["coordinates"]
