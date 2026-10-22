@@ -1127,3 +1127,17 @@ def test_old_web_figures_are_marked_dated():
     old = {"snippet": "Ridership reached 71 percent of pre-pandemic levels in February 2024."}
     assert "dated 2024" in web._dated(old)
     assert web._dated({"snippet": f"Updated {date.today().year}"}) == ""
+
+
+def test_stop_names_keep_numbers_and_towns(monkeypatch):
+    from nycynapse.tools import trips
+
+    hits = [{"name": "Beach 105 St", "lat": 40.583, "lon": -73.827, "modes": ["SUBWAY"]},
+            {"name": "UPPER MONTCLAIR", "lat": 40.842, "lon": -74.209, "modes": ["REGIONAL_RAIL"]},
+            {"name": "Rockaway", "lat": 40.584, "lon": -73.832, "modes": ["FERRY"]},
+            {"name": "Rockaway Av", "lat": 40.663, "lon": -73.909, "modes": ["SUBWAY"]}]
+    monkeypatch.setattr(trips, "get_json", lambda *a, **k: hits)
+    assert trips._stop("Beach 108th Street station") is None
+    assert trips._stop("Montclair") is None
+    assert trips._stop("Bloomfield Ave, Montclair") is None  # a town outside the city
+    assert trips._ferry_stop("Rockaway")["name"] == "Rockaway ferry landing"

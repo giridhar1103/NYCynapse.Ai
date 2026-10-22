@@ -260,6 +260,8 @@ def _stop(raw: str) -> dict | None:
     for part in [p for p in area.split(",") if p.strip()]:
         near = near or _neighborhood(_norm(part))
     boro = _borough_named(area)
+    if area.strip() and not near and not boro:
+        return None  # a town outside the city ("Bloomfield Ave, Montclair"): not a city stop
     if not near and boro:
         lat, lon = _BORO_CENTER[boro]
         near = {"lat": lat, "lon": lon}
@@ -287,7 +289,11 @@ def _stop(raw: str) -> dict | None:
         got = _key_words(h.get("name") or "")
         if not want <= got and not (len(want) >= 3 and len(want - got) <= 1):
             continue
+        if {w for w in want if w.isdigit()} - got:  # Beach 108 St is not Beach 105 St
+            continue
         if len(got - want) > 1:  # "42nd Street" is not "28 St/42 Rd"
+            continue
+        if len(want) == 1 and got - want - _DROP:  # "Montclair" is not "Upper Montclair"
             continue
         modes = h.get("modes") or []
         rail = "SUBWAY" in modes or "REGIONAL_RAIL" in modes
@@ -463,6 +469,16 @@ def locate(text: str) -> dict | None:
             return hit
         if m:
             raw = m.group(1) + m.group(3)
+    # "Hempstead Turnpike entrance to UBS Arena" is the arena's Hempstead Turnpike entrance.
+    to = re.match(r"(.+?)\s+(?:entrance|gate|entry)\s+(?:to|of|for)\s+(?:the\s+)?(.+)$", raw, re.I)
+    if to:
+        raw = f"{to.group(2)}, {to.group(1)} entrance"
+    # "Rockaway ferry landing at Beach 108th St", "St. George Ferry Terminal": a ferry stop.
+    ferry = re.match(r"(?:the\s+)?(.+?)\s+ferry\b", raw, re.I)
+    if ferry:
+        hit = _ferry_stop(ferry.group(1))
+        if hit:
+            return hit
     # "Prospect Park, Grand Army Plaza entrance", "Bronx Zoo, Southern Blvd gate": a big
     # place's named entrance is where the trip ends, so try that first.
     gate = re.match(r"(.+?),\s*(.+?)\s+(?:entrance|gate|entry)\s*$", raw, re.I)
@@ -519,6 +535,16 @@ def locate(text: str) -> dict | None:
             return {**found, "name": f"{parts[0]} ({found['name']})"}
         return found
 
+    # "Brooklyn Bridge Park, Pier 6": a numbered pier, gate or hall inside a place, found
+    # with the place's name and kept only if it is there.
+    inner = [p for p in parts[1:] if re.search(r"\b(?:pier|gate|building|hall|terminal)\s+\w+", p, re.I)]
+    if inner:
+        whole = _locate(parts[0])
+        hit = _osm(f"{inner[0]}, {parts[0]}")
+        if whole and hit and _words(_norm(inner[0])) <= _words(_norm(hit["name"])) and (
+            _metres(hit, whole) < 2500
+        ):
+            return {**hit, "name": f"{parts[0]}, {hit['name']}"}
     # An address or corner part is the most exact; a borough or town adds nothing on its own.
     exact = [p for p in parts if re.search(r"^\d+\s+\w|\band\b|&|\bat\b", p, re.I)]
     if " in " in raw and "," not in raw:
@@ -532,6 +558,41 @@ def locate(text: str) -> dict | None:
         if found:
             return checked(found, p)
     return town and {**town, "name": f"near {town['name']}"}
+
+
+def _osm(q: str) -> dict | None:
+    """The first OpenStreetMap match for a query, inside the region."""
+    try:
+        hits = get_json(
+            "https://nominatim.openstreetmap.org/search",
+            {"q": q, "format": "jsonv2", "limit": 1,
+             "viewbox": ",".join(str(x) for x in BOX), "bounded": 1},
+            ttl_s=86400,
+        )
+    except Exception:  # noqa: BLE001
+        return None
+    if not hits:
+        return None
+    h = hits[0]
+    return {"name": h.get("name") or q, "lat": float(h["lat"]), "lon": float(h["lon"])}
+
+
+def _ferry_stop(name: str) -> dict | None:
+    """A ferry landing by the name of the place it serves, from the trip planner's stops."""
+    want = _key_words(name) - {"ferry", "landing", "terminal", "dock", "pier"}
+    if not want:
+        return None
+    try:
+        hits = get_json(
+            GEOCODE, {"text": _said(want), "type": "STOP", "place": _bias(name)}, ttl_s=86400
+        )
+    except Exception:  # noqa: BLE001
+        return None
+    for h in hits or []:
+        if "FERRY" in (h.get("modes") or []) and want <= _key_words(h.get("name") or ""):
+            if _inside(h["lat"], h["lon"]):
+                return {"name": f"{h['name']} ferry landing", "lat": h["lat"], "lon": h["lon"]}
+    return None
 
 
 def _line_station(name: str, lines: set[str], area: str = "") -> dict | None:
@@ -641,8 +702,11 @@ def _locate(text: str) -> dict | None:
         if not any(w[0].isdigit() for w in want):  # "Grove St" may come back as "2 Grove St"
             got = {w for w in got if not w[0].isdigit()}
         # The same name both ways: "Journal Square" is not "Todd Square", and "Newark" is not
-        # "63B Newark Avenue". A long address may differ by one word.
-        if want and (want == got or len(want) >= 3 and len(want ^ got) <= 1):
+        # "63B Newark Avenue". A long address may differ by one word, but not by the town
+        # ("Bloomfield Ave, Montclair" is not 73 Bloomfield Avenue on Staten Island).
+        town = raw.partition(",")[2].strip()
+        foreign = town and not _borough_named(town) and not _neighborhood(_norm(town))
+        if want and not foreign and (want == got or len(want) >= 3 and len(want ^ got) <= 1):
             return {"name": label.split(",")[0], "lat": lat, "lon": lon}
     stop = _stop(raw)
     if stop:
@@ -741,6 +805,8 @@ def _rail_stop(raw: str) -> dict | None:
             and RAIL_BOX[0] <= h["lon"] <= RAIL_BOX[2]
             and RAIL_BOX[1] <= h["lat"] <= RAIL_BOX[3]
             and want <= _words(_norm(h.get("name") or ""))
+            # "Upper Montclair" is another station than "Montclair"
+            and not (_words(_norm(h.get("name") or "")) - want - _RAIL_WORDS - {"union", "junction"})
         ]
         # A train station only: a bus stop called "NYU Langone Hospital" out on Long Island is
         # not the hospital the reader means.
