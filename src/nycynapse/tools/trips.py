@@ -1190,6 +1190,7 @@ def _line(lg: dict, end: str) -> dict:
         "headsign": lg.get("headsign"),
         "live": bool(lg.get("realTime")),
         "coords": _coords(lg),
+        "via": [x.get("name") for x in lg.get("intermediateStops") or [] if x.get("name")],
     }
 
 
@@ -1956,15 +1957,26 @@ def _hour(h: int) -> str:
     return datetime(2000, 1, 1, h).strftime("%-I %p")
 
 
+def _station_key(name: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", (name or "").lower().replace("street", "st"))
+
+
 def _line_changes(option: dict, at: datetime) -> list[str]:
     """MTA service changes on the subway lines an option rides that are in effect at the time
-    of the trip (planned work the schedules may not show)."""
+    of the trip (planned work the schedules may not show). One that names a station this ride
+    uses ("no 7 at Flushing-Main St") is marked as affecting it, and the option is flagged."""
     from .live import MTA_ALERTS, _plain
 
-    routes = {lg.get("name") for lg in option.get("lines") or [] if lg.get("mode") == "subway"}
-    routes.discard(None)
+    legs = [lg for lg in option.get("lines") or [] if lg.get("mode") == "subway"]
+    routes = {lg.get("name") for lg in legs} - {None}
     if not routes:
         return []
+    stations = {
+        _station_key(n)
+        for lg in legs
+        for n in [lg.get("from"), lg.get("to"), *(lg.get("via") or [])]
+        if n
+    } - {""}
     try:
         d = get_json(MTA_ALERTS, ttl_s=120)
     except Exception:  # noqa: BLE001
@@ -1982,10 +1994,18 @@ def _line_changes(option: dict, at: datetime) -> list[str]:
         head = _plain(al.get("header_text", {}).get("translation"))[:220]
         if "AirTrain" in head:
             continue  # the AirTrain's own alerts are read against its leg, not the subway line
-        if hit and during:
-            line = f"Service change on the {'/'.join(sorted(hit))} at that time: {head}"
-            if head and line not in out:
+        if hit and during and head:
+            text = re.sub(r"[^a-z0-9]", "", head.lower().replace("street", "st"))
+            touches = any(len(k) >= 4 and k in text for k in stations)
+            line = (
+                f"{'Affects this ride' if touches else 'Service change'} on the "
+                f"{'/'.join(sorted(hit))} at that time: {head}"
+            )
+            if touches:
+                option["affected"] = True
+            if line not in out:
                 out.append(line)
+    out.sort(key=lambda x: not x.startswith("Affects"))
     return out[:3]
 
 
@@ -2106,6 +2126,9 @@ def trip_plan(
                 options = soon
         if options and step_free:
             options = _step_free_first(options)
+        changes = {id(o): _line_changes(o, t) for o in options}
+        # A ride a service change runs into goes after the ones it does not.
+        options.sort(key=lambda o: bool(o.get("affected")))
         data["transit"] = options
         if options:
             lines.append("Transit options (best first):")
@@ -2133,7 +2156,7 @@ def trip_plan(
                 )
                 if step_free and o.get("access") is not None:
                     lines.append("   Step-free check: " + o["access"])
-                for warn in _line_changes(o, t):
+                for warn in changes[id(o)]:
                     lines.append("   " + warn)
             if step_free:
                 lines.append(

@@ -1235,3 +1235,21 @@ def test_tonight_small_hours_and_airtrain_shuttle_by_station(monkeypatch):
               (True, "AirTrain between Jamaica and Federal Circle is replaced by free shuttle")]
     assert trips._shuttle_at(alerts, "Jamaica station")
     assert not trips._shuttle_at(alerts, "Howard Beach-JFK Airport")
+
+
+def test_service_change_naming_a_station_of_the_ride(monkeypatch):
+    import time as _time
+    from datetime import datetime
+
+    from nycynapse.tools import trips
+
+    feed = {"entity": [{"alert": {
+        "header_text": {"translation": [{"language": "en", "text": "In Queens, no [7] at Flushing-Main St"}]},
+        "informed_entity": [{"route_id": "7"}],
+        "active_period": [{"start": int(_time.time()) - 60, "end": int(_time.time()) + 86400}],
+    }}]}
+    monkeypatch.setattr(trips, "get_json", lambda *a, **k: feed)
+    opt = {"lines": [{"mode": "subway", "name": "7", "from": "Times Sq-42 St",
+                      "to": "Flushing-Main St", "via": ["Queensboro Plaza"]}]}
+    got = trips._line_changes(opt, datetime.now(trips.NY))
+    assert got[0].startswith("Affects this ride on the 7") and opt["affected"]
