@@ -1033,6 +1033,17 @@ def _plan(a: dict, b: dict, when: datetime, arrive_by: bool, n: int = 5) -> list
             its += d2.get("itineraries") or []
         except Exception:  # noqa: BLE001
             pass
+    # The planner carries live cancellations: a ride whose boarding or drop-off stop is
+    # cancelled is not a plan.
+    def cancelled(it: dict) -> bool:
+        return any(
+            lg.get("cancelled")
+            or (lg.get("mode") != "WALK"
+                and ((lg.get("from") or {}).get("cancelled") or (lg.get("to") or {}).get("cancelled")))
+            for lg in it.get("legs") or []
+        )
+
+    its = [it for it in its if not cancelled(it)] or its
     out, seen = [], set()
 
     # Best first, where each transfer counts as five extra minutes: people prefer one seat.

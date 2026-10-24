@@ -1253,3 +1253,22 @@ def test_service_change_naming_a_station_of_the_ride(monkeypatch):
                       "to": "Flushing-Main St", "via": ["Queensboro Plaza"]}]}
     got = trips._line_changes(opt, datetime.now(trips.NY))
     assert got[0].startswith("Affects this ride on the 7") and opt["affected"]
+
+
+def test_rides_with_cancelled_stops_are_dropped(monkeypatch):
+    from datetime import datetime
+
+    from nycynapse.tools import trips
+
+    def it(start, cancel):
+        return {"startTime": start, "endTime": start, "transfers": 0, "legs": [
+            {"mode": "BUS", "routeShortName": "126", "duration": 600, "startTime": start,
+             "endTime": start, "intermediateStops": [{}],
+             "from": {"name": "A", "lat": 40.7, "lon": -74.0},
+             "to": {"name": "B", "lat": 40.75, "lon": -73.99, "cancelled": cancel}}]}
+
+    plans = {"itineraries": [it("2026-10-24T18:05:00Z", True), it("2026-10-24T18:20:00Z", False)]}
+    monkeypatch.setattr(trips, "get_json", lambda *a, **k: plans)
+    got = trips._plan({"lat": 40.7, "lon": -74.0}, {"lat": 40.75, "lon": -73.99},
+                      datetime(2026, 10, 24, 14, tzinfo=trips.NY), False)
+    assert [x["startTime"] for x in got] == ["2026-10-24T18:20:00Z"]
