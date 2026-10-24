@@ -1141,3 +1141,36 @@ def test_stop_names_keep_numbers_and_towns(monkeypatch):
     assert trips._stop("Montclair") is None
     assert trips._stop("Bloomfield Ave, Montclair") is None  # a town outside the city
     assert trips._ferry_stop("Rockaway")["name"] == "Rockaway ferry landing"
+
+
+def test_today_is_kept_and_a_past_time_is_said(monkeypatch):
+    from datetime import datetime
+
+    from nycynapse.tools import trips
+
+    now = datetime(2026, 10, 23, 16, 0, tzinfo=trips.NY)
+    monkeypatch.setattr(trips, "_now", lambda: now)
+    assert trips.parse_when("today 3pm").day == 23  # not rolled to tomorrow
+    assert trips.parse_when("at 3pm").day == 24
+    monkeypatch.setattr(trips, "locate", lambda t: {"name": t, "lat": 40.7 + len(t) / 1000,
+                                                     "lon": -73.9})
+    out = trips.trip_plan("Harlem-125 St", "125 St on the A", "transit", "today 3pm", True)
+    assert not out.ok and "already passed" in out.error
+
+
+def test_path_station_only_when_nothing_else_is_named():
+    from nycynapse.tools import trips
+
+    assert trips._path_station(trips._norm("Grove Street PATH station, Jersey City"))
+    assert trips._path_station(trips._norm("Red Bull Arena, Harrison, NJ")) is None
+
+
+def test_ferry_terminal_over_the_landing_next_to_it(monkeypatch):
+    from nycynapse.tools import trips
+
+    hits = [{"name": "St. George", "lat": 40.6461, "lon": -74.0742, "modes": ["FERRY"]},
+            {"name": "St. George Ferry Terminal", "lat": 40.6442, "lon": -74.0722,
+             "modes": ["FERRY"]}]
+    monkeypatch.setattr(trips, "get_json", lambda *a, **k: hits)
+    got = trips._ferry_stop("St. George", "St. George Ferry Terminal")
+    assert got["name"] == "St. George Ferry Terminal"
