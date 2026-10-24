@@ -2,7 +2,7 @@
 // draws each tool call as it runs (with errors and recoveries), renders the answer and its
 // sources as plain text, and keeps the conversation to a question and three follow-ups.
 
-import { GuideMap, wxIcon } from "./map.js?v=9";
+import { GuideMap, wxIcon } from "./map.js?v=10";
 
 const { el, url } = NY;
 const TOOL = {
