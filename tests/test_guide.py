@@ -1221,3 +1221,17 @@ def test_weather_near_a_place_comes_first(monkeypatch):
                                                      "lon": -74.17})
     out = live.weather(6, 0, "Newark Airport")
     assert out.summary.splitlines()[1].startswith("Newark Airport: 49F (feels like 42F)")
+
+
+def test_tonight_small_hours_and_airtrain_shuttle_by_station(monkeypatch):
+    from datetime import datetime
+
+    from nycynapse.tools import trips
+
+    monkeypatch.setattr(trips, "_now", lambda: datetime(2026, 10, 22, 20, tzinfo=trips.NY))
+    got = trips.parse_when("tonight 12:30am, after midnight into Friday")
+    assert (got.day, got.hour, got.minute) == (23, 0, 30)
+    alerts = [(False, "AirTrain between Howard Beach and all terminals is replaced by shuttle"),
+              (True, "AirTrain between Jamaica and Federal Circle is replaced by free shuttle")]
+    assert trips._shuttle_at(alerts, "Jamaica station")
+    assert not trips._shuttle_at(alerts, "Howard Beach-JFK Airport")

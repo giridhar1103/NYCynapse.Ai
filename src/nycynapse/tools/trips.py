@@ -1177,15 +1177,16 @@ def _line(lg: dict, end: str) -> dict:
     }
 
 
-def _airtrain_status(at: datetime) -> str | None:
-    """The AirTrain's own MTA alert, if it applies at the time of the trip."""
+def _airtrain_status(at: datetime) -> list[tuple[bool, str]]:
+    """The AirTrain's own MTA alerts, each with whether it applies at the time of the trip."""
     from .live import MTA_ALERTS, _alert_hours, _plain
 
     try:
         d = get_json(MTA_ALERTS, ttl_s=120)
     except Exception:  # noqa: BLE001
-        return None
+        return []
     now, t = time.time(), at.timestamp()
+    out = []
     for ent in d.get("entity", []):
         a = ent.get("alert", {})
         head = _plain(a.get("header_text", {}).get("translation"))
@@ -1197,10 +1198,14 @@ def _airtrain_status(at: datetime) -> str | None:
             int(p.get("start") or 0) <= t + 3600 and (not p.get("end") or t < int(p["end"]))
             for p in periods
         )
-        if during:
-            return f"{head}, at the time of this trip ({hours})"
-        return f"Not in effect at the time of this trip: {head} ({hours})"
-    return None
+        out.append((during, f"{head} ({hours})"))
+    return out
+
+
+def _shuttle_at(alerts: list[tuple[bool, str]], station: str) -> bool:
+    """Whether a shuttle bus replaces the AirTrain from this station at the trip time."""
+    key = "howard beach" if "howard" in station.lower() else "jamaica"
+    return any(on and key in head.lower() and "shuttle" in head.lower() for on, head in alerts)
 
 
 @lru_cache(maxsize=1)
@@ -1286,7 +1291,6 @@ def transit(a: dict, b: dict, when: datetime, arrive_by: bool) -> tuple[list[dic
         to_airport = b.get("airport") == "jfk"
         city = a if to_airport else b
         status = _airtrain_status(when)
-        shuttle = bool(status and status.endswith(")") and "at the time of this trip" in status)
         options = []
         for name, lat, lon in JFK["stations"]:
             st = {"name": name, "lat": lat, "lon": lon}
@@ -1301,7 +1305,7 @@ def transit(a: dict, b: dict, when: datetime, arrive_by: bool) -> tuple[list[dic
                 f"free shuttle bus replacing the AirTrain between {short} and the terminals "
                 "(AirTrain suspended at this time; the bus takes longer than the AirTrain's "
                 f"{AIRTRAIN['minutes'][0]} to {AIRTRAIN['minutes'][1]} min)"
-                if shuttle
+                if _shuttle_at(status, short)
                 else f"AirTrain between {short} and the terminals, {AIRTRAIN['minutes'][0]} "
                 f"to {AIRTRAIN['minutes'][1]} min, ${AIRTRAIN['fare_usd']:.2f}"
             )
@@ -1314,8 +1318,11 @@ def transit(a: dict, b: dict, when: datetime, arrive_by: bool) -> tuple[list[dic
             "The AirTrain leg is from the Port Authority: any terminal in under 20 minutes "
             "from Jamaica or Howard Beach, trains every 5 to 15 minutes, $8.75 one way."
         )
-        if status:
-            notes.append(f"AirTrain alert: {status}.")
+        for on, head in status:
+            notes.append(
+                f"AirTrain alert, {'in effect at the time of this trip' if on else 'not in effect then'}"
+                f": {head}."
+            )
         options.sort(key=lambda o: o["minutes"][1])
         return _for_deadline(options, when, arrive_by)[:4], notes
     if a.get("airport") == "ewr" or b.get("airport") == "ewr":
@@ -1819,6 +1826,10 @@ def parse_when(text: str | None) -> datetime | None:
         pass
     day, named = now.date(), False
     raw, dated = _take_date(raw, now.date())
+    small = re.search(r"\b([0-4])(?::\d\d)?\s*a\.?m\b|\bmidnight\b", raw)
+    if not dated and small and re.search(r"\btonight\b|after midnight", raw) and now.hour >= 5:
+        # "tonight 12:30 AM", "after midnight into Friday": the small hours after this evening
+        dated = now.date() + timedelta(days=1)
     if dated:
         day = dated
     else:
@@ -1948,8 +1959,10 @@ def _line_changes(option: dict, at: datetime) -> list[str]:
             int(p.get("start") or 0) <= t and (t < int(p["end"]) if p.get("end") else soon)
             for p in al.get("active_period") or [{}]
         )
+        head = _plain(al.get("header_text", {}).get("translation"))[:220]
+        if "AirTrain" in head:
+            continue  # the AirTrain's own alerts are read against its leg, not the subway line
         if hit and during:
-            head = _plain(al.get("header_text", {}).get("translation"))[:220]
             line = f"Service change on the {'/'.join(sorted(hit))} at that time: {head}"
             if head and line not in out:
                 out.append(line)
