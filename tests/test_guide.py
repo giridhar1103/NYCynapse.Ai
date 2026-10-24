@@ -1201,3 +1201,23 @@ def test_fact_check_runs_even_when_the_wording_needs_work(monkeypatch):
     assert out["answer"].startswith("Take the 3")
     assert "the plan uses the 3" in seen[3][1] and "talks about the data" in seen[3][1]
     assert len(seen) == 5  # the rewrite was checked again
+
+
+def test_weather_near_a_place_comes_first(monkeypatch):
+    from nycynapse.tools import live, trips
+
+    def fake(url, params, *a, **k):
+        n = len(params["latitude"].split(","))
+        one = {"current": {"time": "2026-10-23T21:00", "temperature_2m": 49,
+                           "apparent_temperature": 42, "precipitation": 0, "weather_code": 3,
+                           "wind_speed_10m": 6, "is_day": 0},
+               "hourly": {"time": ["2026-10-23T22:00"], "precipitation_probability": [0],
+                          "precipitation": [0], "weather_code": [3]}}
+        return [one] * n
+
+    monkeypatch.setattr(live, "get_json", fake)
+    monkeypatch.setattr(live, "weather_alerts", lambda: live.ToolResult(summary="", data=[]))
+    monkeypatch.setattr(trips, "locate", lambda t: {"name": "Newark Airport", "lat": 40.69,
+                                                     "lon": -74.17})
+    out = live.weather(6, 0, "Newark Airport")
+    assert out.summary.splitlines()[1].startswith("Newark Airport: 49F (feels like 42F)")

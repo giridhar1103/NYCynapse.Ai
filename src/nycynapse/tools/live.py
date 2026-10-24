@@ -110,17 +110,26 @@ def _icon(code: int | None) -> str:
     return "clear"
 
 
-def weather(hours: int = 6, days: int = 0) -> ToolResult:
+def weather(hours: int = 6, days: int = 0, near: str | None = None) -> ToolResult:
     """Weather now, the next hours by borough, and (with `days`) a daily forecast up to a week
-    ahead, plus active weather alerts."""
+    ahead, plus active weather alerts. With `near`, that place comes first (Newark, a beach, a
+    stadium) and the daily forecast is for it."""
     hours = max(1, min(int(hours or 6), 48))
     days = max(0, min(int(days or 0), 7))
-    lats = ",".join(str(v[0]) for v in BOROUGHS.values())
-    lons = ",".join(str(v[1]) for v in BOROUGHS.values())
+    points = dict(BOROUGHS)
+    if near:
+        from .trips import locate
+
+        spot = locate(near)
+        if spot:
+            points = {spot["name"]: (spot["lat"], spot["lon"]), **BOROUGHS}
+    lats = ",".join(str(v[0]) for v in points.values())
+    lons = ",".join(str(v[1]) for v in points.values())
     params = {
         "latitude": lats,
         "longitude": lons,
-        "current": "temperature_2m,precipitation,weather_code,wind_speed_10m,is_day",
+        "current": "temperature_2m,apparent_temperature,precipitation,weather_code,"
+        "wind_speed_10m,is_day",
         "hourly": "precipitation_probability,precipitation,weather_code",
         "forecast_hours": hours,
         "timezone": "America/New_York",
@@ -136,7 +145,7 @@ def weather(hours: int = 6, days: int = 0) -> ToolResult:
         params["forecast_days"] = days
     data = get_json("https://api.open-meteo.com/v1/forecast", params, ttl_s=600)
     rows, lines = [], []
-    for name, d in zip(BOROUGHS, data, strict=True):
+    for name, d in zip(points, data, strict=True):
         cur, hr = d["current"], d["hourly"]
         p_max = max(x or 0 for x in hr["precipitation_probability"] or [0])
         total = round(sum(x or 0 for x in hr["precipitation"]), 2)
@@ -148,6 +157,7 @@ def weather(hours: int = 6, days: int = 0) -> ToolResult:
         row = {
             "borough": name,
             "temp_f": round(cur["temperature_2m"]),
+            "feels_f": round(cur.get("apparent_temperature", cur["temperature_2m"])),
             "now": WMO.get(cur["weather_code"], "unknown"),
             "icon": _icon(cur["weather_code"]),
             "day": bool(cur.get("is_day", 1)),
@@ -159,7 +169,8 @@ def weather(hours: int = 6, days: int = 0) -> ToolResult:
         }
         rows.append(row)
         lines.append(
-            f"{name}: {row['temp_f']}F, {row['now']}, steady wind {row['wind_mph']} mph, "
+            f"{name}: {row['temp_f']}F (feels like {row['feels_f']}F), {row['now']}, steady "
+            f"wind {row['wind_mph']} mph, "
             f"{row['rain_now_in']} in falling now; next {hours} h: up to {p_max}% chance of "
             f"rain, {total} in expected"
             + (f" (wet at {', '.join(wet_hours[:6])})" if wet_hours else "")
@@ -168,7 +179,7 @@ def weather(hours: int = 6, days: int = 0) -> ToolResult:
     daily = []
     if days:
         per_boro = [d["daily"] for d in data]
-        city = per_boro[0]  # Manhattan, near Central Park
+        city = per_boro[0]  # the place asked about, else Manhattan near Central Park
         for i, day in enumerate(city["time"]):
             chances = [b["precipitation_probability_max"][i] or 0 for b in per_boro]
             daily.append(
@@ -187,7 +198,8 @@ def weather(hours: int = 6, days: int = 0) -> ToolResult:
                 }
             )
         lines.append(
-            "Daily forecast (Manhattan; rain chance is the range across the five boroughs):\n"
+            f"Daily forecast ({next(iter(points))}; rain chance is the range across the places "
+            "above):\n"
             + "\n".join(
                 f"{x['label']}: {x['sky']}, high {x['high_f']}F, low {x['low_f']}F, rain chance "
                 f"{x['rain_chance_low_pct']}-{x['rain_chance_pct']}%, {x['rain_in']} in, "
@@ -1356,6 +1368,11 @@ TOOLS = [
             "properties": {
                 "hours": {"type": "integer", "minimum": 1, "maximum": 48},
                 "days": {"type": "integer", "minimum": 0, "maximum": 7},
+                "near": {
+                    "type": "string",
+                    "description": "a place outside Manhattan's weather (Newark, Rockaway "
+                    "Beach, Yankee Stadium): its weather comes first",
+                },
             },
         },
         weather,
