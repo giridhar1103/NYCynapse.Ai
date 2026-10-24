@@ -291,6 +291,13 @@ class Agent:
                 force = True
             step = self._step(t, system, static, force)
             if step is None:
+                if last:  # a rewrite failed or timed out: the draft in hand beats an error
+                    answer, step = last
+                    t.steps.append({"note": "rewrite failed; answered with the last draft"})
+                    return self._finish(
+                        t, answer, step.get("follow_ups") or [], declined=False,
+                        places=step.get("places") or [], remember=step.get("remember"),
+                    )
                 return self._finish(t, None, [], declined=False, error=BUSY)
             status = (step.get("status") or "").strip()[:120]
             if status:
@@ -475,6 +482,7 @@ class Agent:
                 prompt,
                 schema=VERIFY_SCHEMA,
                 retries=0,
+                timeout=60,
             )
             found = r.json().get("problems") or []
             t.look = [str(x)[:200] for x in (r.json().get("unfinished") or [])[:2]]
@@ -658,7 +666,12 @@ class Agent:
         text = self._prompt(t, static, force)
         for pid in [t.model] if t.model else self.models():
             try:
-                r = llm.complete_with(pid, system, text, schema=STEP_SCHEMA, retries=1)
+                # Each call gets what is left of the turn (and a little more to finish), so
+                # one slow call cannot hold the reader for five minutes.
+                left = TURN_SECONDS + 45 - (time.monotonic() - t.started)
+                r = llm.complete_with(
+                    pid, system, text, schema=STEP_SCHEMA, retries=1, timeout=max(30, left)
+                )
                 step = r.json()
             except ProviderLimit:
                 self._rest(pid)

@@ -201,7 +201,7 @@ def _agent(monkeypatch, replies, tools):
     script = list(replies)
     seen = []
 
-    def complete_with(pid, system, prompt, schema=None, retries=2):
+    def complete_with(pid, system, prompt, schema=None, retries=2, timeout=None):
         seen.append((pid, prompt))
         r = script.pop(0)
         if isinstance(r, Exception):
@@ -1315,3 +1315,20 @@ def test_review_fixes_for_terminals_weekdays_and_unchecked_stations(monkeypatch)
     opt = {"lines": [{"mode": "subway", "name": "2", "coords": [[-73.99, 40.75], [-73.96, 40.67]]}]}
     assert trips._step_free_first([opt]) == [opt]  # kept only because nothing better exists
     assert "could not be checked" in opt["access"]
+
+
+def test_failed_rewrite_answers_with_the_draft(monkeypatch):
+    agent, _ = _agent(
+        monkeypatch,
+        [
+            _step(calls=[("trip_plan", {})]),
+            _step(answer="No closure listed; take the 2 [1]."),
+            llm.LLMError("model call timed out"),
+            llm.LLMError("model call timed out"),
+            llm.LLMError("model call timed out"),
+            llm.LLMError("model call timed out"),
+        ],
+        [_tool("trip_plan", text="2 train")],
+    )
+    out = agent.run("how do i get to the brooklyn museum?", [], lambda e, d: None)
+    assert out.get("error") is None and "take the 2" in out["answer"]

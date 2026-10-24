@@ -386,10 +386,18 @@ def complete(
 
 
 def complete_with(
-    pid: str, system: str, prompt: str, schema: dict | None = None, retries: int = 2
+    pid: str,
+    system: str,
+    prompt: str,
+    schema: dict | None = None,
+    retries: int = 2,
+    timeout: float | None = None,
 ) -> LLMResult:
-    """Call one named provider, with retries, stopping cleanly on quota errors."""
+    """Call one named provider, with retries, stopping cleanly on quota errors. `timeout`
+    caps each attempt (a turn with little time left cannot wait the provider's full limit)."""
     p = config()["providers"][pid]
+    if timeout:
+        p = {**p, "timeout": max(20, min(p.get("timeout", 300), int(timeout)))}
     last: Exception | None = None
     for attempt in range(retries + 1):
         try:
