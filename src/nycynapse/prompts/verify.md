@@ -11,6 +11,10 @@ List only real problems, at most four, each with the exact words from the draft 
 - clock times in the answer that contradict each other
 - an exact local detail (which gate, entrance, exit number, corner or street) with no source
 - something said about the wrong place, or a figure attached to the wrong thing
+- a venue, museum or restaurant recommended for a time with nothing in the tool results
+  showing it is open then
+- a fare or price that does not fit the reader's trip (another station, peak instead of
+  off-peak, an adult fare for a child they mentioned)
 
 Do not list style, length or tone. Do not list stable general knowledge about the city that is
 correct. Do not ask for hedges: a plain statement the tools support is right. If the draft is
