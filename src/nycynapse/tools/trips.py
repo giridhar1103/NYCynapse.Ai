@@ -221,6 +221,7 @@ _STREET = {
     "road": "rd",
     "place": "pl",
     "parkway": "pkwy",
+    "square": "sq",
     "drive": "dr",
     "expressway": "expy",
 }
@@ -268,6 +269,9 @@ def _stop(raw: str) -> dict | None:
     """A station or stop by the name the agencies use ("Flushing-Main St", "Flushing Main
     Street LIRR", "Jamaica"), from the trip planner's own list of stops."""
     name, _, area = raw.partition(",")
+    m = None if area else re.match(r"(.+?)\s+in\s+([A-Z].*)$", raw)
+    if m:  # "Fulton Street station in Manhattan"
+        name, area = m.group(1), m.group(2)
     want = _key_words(name)
     if not want:
         return None
@@ -312,6 +316,10 @@ def _stop(raw: str) -> dict | None:
             continue
         if len(want) == 1 and got - want - _DROP:  # "Montclair" is not "Upper Montclair"
             continue
+        if boro:  # a borough the reader named is where the stop is, not a preference
+            z = zone_of(lat, lon)
+            if not z or (_zone_borough(z[0]) or "").lower() != boro:
+                continue
         modes = h.get("modes") or []
         rail = "SUBWAY" in modes or "REGIONAL_RAIL" in modes
         dist = -_metres(near, h) if near else 0
@@ -490,6 +498,11 @@ def locate(text: str) -> dict | None:
     to = re.match(r"(.+?)\s+(?:entrance|gate|entry)\s+(?:to|of|for)\s+(?:the\s+)?(.+)$", raw, re.I)
     if to:
         raw = f"{to.group(2)}, {to.group(1)} entrance"
+    # "Wall Street, Pier 11": a numbered pier with a place is its ferry landing.
+    if re.search(r"\bpier\s+\d+", raw, re.I):
+        hit = _ferry_stop(re.sub(r"[,/]", " ", raw), raw)
+        if hit:
+            return hit
     # "Rockaway ferry landing at Beach 108th St", "St. George Ferry Terminal": a ferry stop.
     ferry = re.match(r"(?:the\s+)?(.+?)\s+ferry\b", raw, re.I)
     if ferry:
@@ -500,7 +513,7 @@ def locate(text: str) -> dict | None:
     # place's named entrance is where the trip ends, so try that first.
     gate = re.match(r"(.+?),\s*(.+?)\s+(?:entrance|gate|entry)\s*$", raw, re.I)
     if gate and re.fullmatch(r"(?:the\s+)?(?:main|front|primary)", gate.group(2).strip(), re.I):
-        return _locate(gate.group(1))  # the main entrance is the place itself
+        return locate(gate.group(1))  # the main entrance is the place itself
     if gate:
         whole = _locate(gate.group(1))
         tries = [f"{gate.group(2)}, {gate.group(1)}"]
@@ -531,8 +544,14 @@ def locate(text: str) -> dict | None:
     head, _, tail = raw.partition(",")
     if tail and not _EXACT.search(head) and _EXACT.search(tail.split(",")[0]):
         precise = tail.split(",")[0].strip()
-        found = _locate(f"{precise}, {head.strip()}")
+        # "Beach 108th St boardwalk": the street, without the words about what is on it
+        plain = re.sub(r"\s+(?:boardwalk|promenade|side|area|corner)\s*$", "", precise, flags=re.I)
+        found = _locate(f"{precise}, {head.strip()}") or (
+            _locate(f"{plain}, {head.strip()}") if plain != precise else None
+        )
         area = _locate(head.strip())
+        if not found and area:  # the precise part alone, if it is in that area
+            found = _locate(plain)
         if found and (not area or _metres(found, area) < 4000):
             return {**found, "name": f"{head.strip()} ({found['name']})"}
     found = _locate(raw)
@@ -572,16 +591,17 @@ def locate(text: str) -> dict | None:
     # with the place's name and kept only if it is there.
     inner = [
         p
-        for p in parts[1:]
+        for p in parts
         if re.search(r"\b(?:pier|gate|building|hall|terminal)\s+\w+|\w+\s+pier\b", p, re.I)
     ]
-    if inner:
-        whole = _locate(parts[0])
-        hit = _osm(f"{inner[0]}, {parts[0]}")
+    outer = [p for p in parts if p not in inner]
+    if inner and outer:
+        whole = _locate(outer[0])
+        hit = _osm(f"{inner[0]}, {outer[0]}")
         if whole and hit and _words(_norm(inner[0])) <= _words(_norm(hit["name"])) and (
             _metres(hit, whole) < 2500
         ):
-            return {**hit, "name": f"{parts[0]}, {hit['name']}"}
+            return {**hit, "name": f"{outer[0]}, {hit['name']}"}
     # An address or corner part is the most exact; a borough or town adds nothing on its own.
     exact = [p for p in parts if _EXACT.search(p)]
     if " in " in raw and "," not in raw:
@@ -628,7 +648,9 @@ def _osm(q: str) -> dict | None:
 
 
 # A part of a place name that pins it down: an address, a corner, a station or stop.
-_EXACT = re.compile(r"^\s*\d+\s+\w|\band\b|&|\bat\b|\b(?:station|stop)\b", re.I)
+_EXACT = re.compile(
+    r"^\s*\d+\s+\w|\band\b|&|\bat\b|\b(?:station|stop)\b|\bbeach\s+\d+", re.I
+)
 
 
 def _ferry_stop(name: str, asked: str = "") -> dict | None:
@@ -639,7 +661,7 @@ def _ferry_stop(name: str, asked: str = "") -> dict | None:
     said = _key_words(asked or name)
     hits = []
     # With "terminal" when it was asked for: the Staten Island Ferry's St. George Terminal.
-    for words in dict.fromkeys([_said(want | ({"ferry", "terminal"} & said)), _said(want)]):
+    for words in dict.fromkeys([_said(want | ({"ferry", "terminal", "pier"} & said)), _said(want)]):
         try:
             hits += get_json(
                 GEOCODE, {"text": words, "type": "STOP", "place": _bias(name)}, ttl_s=86400

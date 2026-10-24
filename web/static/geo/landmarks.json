@@ -343,5 +343,30 @@
 "name": "Fordham University (Lincoln Center campus)",
 "lat": 40.77103,
 "lon": -73.98513
+},
+"ubs arena": {
+"name": "UBS Arena",
+"lat": 40.71169,
+"lon": -73.72592
+},
+"the ubs arena": {
+"name": "UBS Arena",
+"lat": 40.71169,
+"lon": -73.72592
+},
+"arthur avenue retail market": {
+"name": "Arthur Avenue Retail Market",
+"lat": 40.85416,
+"lon": -73.8881
+},
+"arthur avenue market": {
+"name": "Arthur Avenue Retail Market",
+"lat": 40.85416,
+"lon": -73.8881
+},
+"arthur ave retail market": {
+"name": "Arthur Avenue Retail Market",
+"lat": 40.85416,
+"lon": -73.8881
 }
 }
