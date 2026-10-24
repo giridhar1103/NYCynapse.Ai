@@ -301,8 +301,7 @@ def _answer_payload(slot: Slot, out: dict, cached: bool = False) -> dict:
         "cached": cached,
         "untraced": out.get("untraced") or [],
         **({"trace": out.get("trace") or []} if TRACE else {}),
-        "places": out.get("places")
-        or next((x.get("items") for x in out.get("map") or [] if x.get("type") == "highlight"), []),
+        "places": out.get("places") or [],
     }
 
 

@@ -174,6 +174,8 @@ class Guide {
           else if (ev === "answer") {
             ended = true;
             this.turn = d.turn;
+            // Only the answer's own places stay highlighted, not what a tool drew on the way.
+            if (!(d.places || []).length) this.map?.clearHighlight();
             view.answer(d, (f) => this.ask(f), (i) => this.map?.focus(i), {
               place: (i) => this.map?.reveal(i), done: () => this.map?.revealAll(), scroll: () => this.scroll(),
               trip: (trip, sel) => this.map?.showTrip(trip, sel) });

@@ -519,17 +519,23 @@ export class GuideMap {
     }
   }
 
+  // Take down highlighted places, such as ones a tool drew while the guide was working.
+  clearHighlight() {
+    if (!this.map) return;
+    for (const id of ["hl-fill", "hl-glow", "hl-line"]) {
+      if (this.map.getLayer(id)) this.map.removeLayer(id);
+    }
+    if (this.map.getSource("hl")) this.map.removeSource("hl");
+    (this.hl || []).forEach((h) => h.marker?.remove());
+    this.hl = [];
+  }
+
   // The places an answer is about. They are drawn hidden and framed first, then each one lights
   // up when the answer reaches it: the outline fades in, glows for a few beats and settles.
   highlight(L, g) {
     const items = (L.items || []).slice(0, 6);
     if (!items.length) return false;
-    for (const id of ["hl-fill", "hl-glow", "hl-line"]) {
-      if (this.map.getLayer(id)) this.map.removeLayer(id);
-    }
-    if (this.map.getSource("hl")) this.map.removeSource("hl");
-    this.hl.forEach((h) => h.marker?.remove());
-    this.hl = [];
+    this.clearHighlight();
     const feats = [];
     const all = new maplibregl.LngLatBounds();
     items.forEach((it) => {

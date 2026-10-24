@@ -704,12 +704,22 @@ class Agent:
             # superseded), and nothing else that would compete with its route on the map.
             layers = [x for x in layers if x.get("type") not in ("trip", "routes", "points")]
             layers.append(trips[-1])
+        # Highlights a tool drew while working (the top neighborhoods by rent, say) are not
+        # the answer's places: the final map keeps only what the answer names.
+        layers = [x for x in layers if x.get("type") != "highlight"]
         highlight = None
         has_trip = any(
             x.get("type") == "trip" for r in t.results if r["result"].ok for x in r["result"].map
         )
         if places and not declined and not has_trip:  # a trip draws its own start and end
-            hints = [i for x in layers if x.get("type") == "highlight" for i in x.get("items", [])]
+            hints = [
+                i
+                for r in t.results
+                if r["result"].ok
+                for x in r["result"].map
+                if x.get("type") == "highlight"
+                for i in x.get("items", [])
+            ]
             try:
                 items = place_index.resolve(places, hints)
             except Exception:  # noqa: BLE001 - the answer stands without its map highlight
