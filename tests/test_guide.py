@@ -1174,3 +1174,30 @@ def test_ferry_terminal_over_the_landing_next_to_it(monkeypatch):
     monkeypatch.setattr(trips, "get_json", lambda *a, **k: hits)
     got = trips._ferry_stop("St. George", "St. George Ferry Terminal")
     assert got["name"] == "St. George Ferry Terminal"
+
+
+def test_clock_times_must_come_from_a_tool():
+    from nycynapse.tools import ToolResult
+
+    res = [ToolResult(summary="Q train from 7 Av at 7:27 PM; LIRR at 2026-10-24T22:14")]
+    assert core._untraced_clocks("Take the 7:27 PM Q, or the 10:14 PM LIRR.", res) == []
+    assert core._untraced_clocks("The last bus is at 10:44 PM.", res) == ["10:44 PM"]
+
+
+def test_fact_check_runs_even_when_the_wording_needs_work(monkeypatch):
+    agent, seen = _agent(
+        monkeypatch,
+        [
+            _step(calls=[("trip_plan", {})]),
+            _step(answer="No closure listed; take the 2 to Eastern Pkwy [1]."),
+            {"problems": [{"quote": "the 2", "why": "the plan uses the 3"}], "unfinished": []},
+            _step(answer="Take the 3 to Eastern Pkwy [1]."),
+            {"problems": [], "unfinished": []},
+        ],
+        [_tool("trip_plan", text="3 train to Eastern Pkwy-Brooklyn Museum")],
+    )
+    agent.verify_answers = True
+    out = agent.run("how do i get to the brooklyn museum?", [], lambda e, d: None)
+    assert out["answer"].startswith("Take the 3")
+    assert "the plan uses the 3" in seen[3][1] and "talks about the data" in seen[3][1]
+    assert len(seen) == 5  # the rewrite was checked again

@@ -108,7 +108,8 @@ _CLAIMS_FAILURE = re.compile(
 _DRAFT_SMELLS = [
     (
         re.compile(
-            r"\.\.\.\s*(?:correct|actually|wait)\b|\b(?:correction|scratch that|wait,|I mean,)",
+            # "Correction: ..." about an earlier answer is allowed; a mid-answer change of mind is not
+            r"\.\.\.\s*(?:correct|actually|wait)\b|\b(?:scratch that|wait,|I mean,)",
             re.I,
         ),
         "it corrects itself mid-answer; write only the final, correct version",
@@ -196,6 +197,9 @@ class Turn:
     retried: bool = False
     unchecked: bool = False
     look: list[str] = field(default_factory=list)  # checks the verifier says are still missing
+    verified: int = 0  # fact checks run on drafts
+    redrafts: int = 0  # rewrites asked for
+    had_facts: bool = False  # the last rewrite was for factual problems
     embedded_ok: bool = False
     redraft: str | None = None
 
@@ -323,36 +327,47 @@ class Agent:
                 t.unchecked = True
                 t.steps.append({"note": "asked to check before answering"})
                 continue
-            issues = [] if step.get("declined") else _draft_issues(answer)
+            style = [] if step.get("declined") else _draft_issues(answer)
             loose: list[str] = []
+            factual: list[str] = []
+            found: list[str] = []
             if answer and not calls and not step.get("declined"):
                 loose = self._untraced(t, answer)
                 if loose:
-                    issues.append(
+                    factual.append(
                         "these figures are not in any tool result: "
                         + ", ".join(loose)
                         + ". Use the figures the tools gave, or leave them out; never estimate "
                         "times, distances, prices or counts yourself"
                     )
+            # Every finished draft gets the fact check, whatever its wording; a rewrite made
+            # for factual problems is checked once more.
             if (
                 answer
                 and not calls
-                and not issues
                 and t.results
-                and t.redraft is None
-                and not force
                 and self.verify_answers
                 and not step.get("declined")
+                and (t.verified == 0 or (t.verified == 1 and t.redrafts == 1 and t.had_facts))
+                and round_no < MAX_ROUNDS
                 and time.monotonic() - t.started < TURN_SECONDS - 60
             ):
-                issues = self._verify(t, answer)
-                if issues == [UNFINISHED] and (
+                t.verified += 1
+                found = self._verify(t, answer)
+                if found == [UNFINISHED] and (
                     self._calls(t) >= MAX_CALLS or round_no >= MAX_ROUNDS - 1
                 ):
-                    issues = []  # no room left to look: a rewrite alone would not finish it
+                    found = []  # no room left to look: a rewrite alone would not finish it
+                factual += found
+            issues = style + factual
             if answer and not calls:
                 last = (answer, step)
-            if answer and not calls and issues and t.redraft is None and round_no < MAX_ROUNDS:
+            # A second rewrite only for what the fact check still finds wrong; figures no tool
+            # gave are dropped after the first instead.
+            again = t.redrafts == 1 and found and found != [UNFINISHED]
+            if answer and not calls and issues and (t.redrafts == 0 or again) and round_no < MAX_ROUNDS:
+                t.had_facts = bool(found)
+                t.redrafts += 1
                 # Made-up figures may need a tool (trip_plan for a travel time), so that rewrite
                 # may still call one; a rewrite for wording alone answers straight away.
                 can_look = (
@@ -362,8 +377,9 @@ class Agent:
                     and time.monotonic() - t.started < TURN_SECONDS - 60
                 )
                 t.redraft = (
-                    f"Your draft answer was:\n{answer}\n\nRewrite it once more as the final "
-                    "answer, with the same facts, citations and places, because "
+                    f"Your draft answer was:\n{answer}\n\nRewrite it as the final answer, "
+                    "keeping what is right with its citations and places, and correcting or "
+                    "leaving out what the problems name, because "
                     + "; and ".join(issues)
                     + "."
                     + (
@@ -463,13 +479,16 @@ class Agent:
         return []
 
     def _untraced(self, t: Turn, answer: str) -> list[str]:
-        return _untraced_numbers(
-            _uncite(answer),
-            [r["result"] for r in t.results],
-            " ".join(f"{h.get('answer', '')} {h.get('facts', '')}" for h in t.history)
+        # Evidence is what tools returned, now or in earlier turns, and what the reader wrote;
+        # never the guide's own earlier answers, or a made-up figure would vouch for itself.
+        memory = (
+            " ".join(f"{h.get('q', '')} {h.get('facts', '')}" for h in t.history)
             + " "
-            + t.question,
+            + t.question
         )
+        results = [r["result"] for r in t.results]
+        return (_untraced_numbers(_uncite(answer), results, memory)
+                + _untraced_clocks(_uncite(answer), results, memory))[:8]
 
     def _valid_calls(self, t: Turn, calls: list[dict]) -> list[dict]:
         names = {x.name for x in self.tools()}
@@ -769,6 +788,34 @@ def _numbers(text: str) -> list[tuple[str, float, float]]:
         value = float(written) * scale
         step = (10 ** -len(m.group(2)) if m.group(2) else 1.0) * scale
         out.append((written, value, step))
+    return out
+
+
+_CLOCK = re.compile(r"\b(\d{1,2}):(\d{2})\s*([ap])\.?m\b", re.I)
+
+
+def _minutes_of_day(h: int, m: int, ap: str) -> int:
+    return (h % 12 + (12 if ap.lower() == "p" else 0)) * 60 + m
+
+
+def _untraced_clocks(answer: str, results: list[ToolResult], memory: str = "") -> list[str]:
+    """Clock times in the answer ("the 10:14 PM train") that no tool gave, within a minute.
+    Tools write times as "10:14 PM" or ISO "22:14"; a time the model worked out itself is the
+    kind of detail that sends someone to an empty platform."""
+    texts = [memory] + [
+        r.summary + " " + json.dumps(r.data, default=str)[:20000] for r in results if r.ok
+    ]
+    known: set[int] = set()
+    for text in texts:
+        for h, m, ap in _CLOCK.findall(text):
+            known.add(_minutes_of_day(int(h), int(m), ap))
+        for h, m in re.findall(r"T(\d{2}):(\d{2})", text):
+            known.add(int(h) * 60 + int(m))
+    out = []
+    for h, m, ap in _CLOCK.findall(answer):
+        x = _minutes_of_day(int(h), int(m), ap)
+        if not any(abs(x - k) <= 1 or abs(x - k) >= 1439 for k in known):
+            out.append(f"{h}:{m} {ap.upper()}M")
     return out
 
 
