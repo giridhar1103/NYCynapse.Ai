@@ -712,6 +712,7 @@ def _locate(text: str) -> dict | None:
             if term and term in ap.get("terminals", {}):
                 out["terminal"] = term
                 out["name"] = f"{ap['name']} Terminal {term}"
+                out["lat"], out["lon"] = ap["terminals"][term]
             return out
     # LaGuardia's terminals are far apart (B to C is a 15 minute walk): the bus stops at each.
     if re.search(r"\b(?:lga|la ?guardia)\b", low) and term in LGA_TERMINALS:
@@ -1043,7 +1044,7 @@ def _plan(a: dict, b: dict, when: datetime, arrive_by: bool, n: int = 5) -> list
             for lg in it.get("legs") or []
         )
 
-    its = [it for it in its if not cancelled(it)] or its
+    its = [it for it in its if not cancelled(it)]
     out, seen = [], set()
 
     # Best first, where each transfer counts as five extra minutes: people prefer one seat.
@@ -1527,6 +1528,11 @@ def _path_options(a: dict, b: dict, when: datetime, arrive_by: bool) -> list[dic
                 continue
             walk1 = _walk_min(a, so)
             best = _path_rides(o, d, when, live, walk1)
+            if best and arrive_by:
+                # The lines that run are those at boarding time, well before a deadline (6 AM
+                # is when Hoboken-WTC starts; a 5:37 AM boarding needs the night pattern).
+                board_at = when - timedelta(minutes=best[0] + _walk_min(sd, b) + 10)
+                best = _path_rides(o, d, board_at, live, walk1)
             if not best:
                 continue
             total, rides, wait_s = best
@@ -1647,7 +1653,11 @@ def _path_options(a: dict, b: dict, when: datetime, arrive_by: bool) -> list[dic
                     "lines": lines,
                 }
             )
-    options.sort(key=lambda o: o["arrive_ts"])
+    # Soonest arrival first, or for a deadline the latest that still makes it.
+    ok = when.timestamp() + 60
+    options.sort(
+        key=lambda o: (o["arrive_ts"] > ok, -o["leave_ts"]) if arrive_by else (0, o["arrive_ts"])
+    )
     seen, out = set(), []
     for o in options:
         if o["steps"][1] not in seen:
@@ -1861,7 +1871,14 @@ def parse_when(text: str | None) -> datetime | None:
     day, named = now.date(), False
     raw, dated = _take_date(raw, now.date())
     small = re.search(r"\b([0-4])(?::\d\d)?\s*a\.?m\b|\bmidnight\b", raw)
-    if not dated and small and re.search(r"\btonight\b|after midnight", raw) and now.hour >= 5:
+    weekday = any(re.search(rf"\b{d[:3]}\w*\b", raw) for d in _DAYS)
+    if (
+        not dated
+        and not weekday  # "after midnight into Friday": Friday's small hours, said below
+        and small
+        and re.search(r"\btonight\b|after midnight", raw)
+        and now.hour >= 5
+    ):
         # "tonight 12:30 AM", "after midnight into Friday": the small hours after this evening
         dated = now.date() + timedelta(days=1)
     if dated:
@@ -1994,14 +2011,18 @@ def _line_changes(option: dict, at: datetime) -> list[str]:
         d = get_json(MTA_ALERTS, ttl_s=120)
     except Exception:  # noqa: BLE001
         return []
-    t, out = at.timestamp(), []
+    # The ride's own window, from leaving to arriving, not the time asked about: an arrive-by
+    # trip rides well before its deadline.
+    t0 = option.get("leave_ts") or at.timestamp()
+    t1 = option.get("arrive_ts") or t0
+    out = []
     for ent in d.get("entity", []):
         al = ent.get("alert", {})
         hit = {x.get("route_id") for x in al.get("informed_entity") or []} & routes
         # An alert with no end is about now (delays): it says nothing about a trip hours away.
-        soon = t - time.time() < 90 * 60
+        soon = t0 - time.time() < 90 * 60
         during = any(
-            int(p.get("start") or 0) <= t and (t < int(p["end"]) if p.get("end") else soon)
+            int(p.get("start") or 0) <= t1 and (t0 < int(p["end"]) if p.get("end") else soon)
             for p in al.get("active_period") or [{}]
         )
         head = _plain(al.get("header_text", {}).get("translation"))[:220]
@@ -2028,21 +2049,35 @@ def _step_free_first(options: list[dict]) -> list[dict]:
     from . import access
 
     def check(o: dict) -> int:
-        seen, texts, bad = set(), [], 0
+        seen, texts, bad, subway = set(), [], 0, False
         for lg in o.get("lines") or []:
-            if lg.get("mode") != "subway" or not lg.get("coords"):
+            if lg.get("mode") != "subway":
                 continue
-            for lon, lat in (lg["coords"][0], lg["coords"][-1]):
+            subway = True
+            ends = (lg["coords"][0], lg["coords"][-1]) if lg.get("coords") else ()
+            if not ends:
+                bad += 1
+                texts.append(f"{lg.get('from') or 'a station'}: could not be checked")
+                continue
+            for lon, lat in ends:
                 try:
                     rec = access.station("", lat, lon, lg.get("name"))
                 except Exception:  # noqa: BLE001
                     rec = None
-                if not rec or rec["name"] in seen:
+                if not rec:
+                    # Not verified is not step-free: an unchecked station counts against it.
+                    bad += 1
+                    texts.append("a station on this ride could not be checked")
                     continue
-                seen.add(rec["name"])
+                if rec["id"] in seen:
+                    continue
+                seen.add(rec["id"])
                 texts.append(access.describe(rec))
-                bad += rec["step_free"] != "yes" or bool(rec["out"])
-        o["access"] = "; ".join(texts) if texts else "no subway stations on this option"
+                bad += rec["step_free"] != "yes" or bool(rec["out"]) or not rec["outages_known"]
+        o["access"] = (
+            "; ".join(texts) if texts
+            else "no subway on this option" if not subway else "could not be checked"
+        )
         return bad
 
     bad = {id(o): check(o) for o in options}
@@ -2115,28 +2150,32 @@ def trip_plan(
         token = _STEP_FREE.set(step_free)
         try:
             options, notes = transit(a, b, t, arrive_by)
+            # Never offer a plan that should already have left. If nothing is left, plan from
+            # now, and for a deadline say it can no longer be made.
+            gone = _now().timestamp() - 120
+            if options and any(o.get("leave_ts", gone + 1) < gone for o in options):
+                still = [o for o in options if o.get("leave_ts", gone + 1) >= gone]
+                if still:
+                    options = still
+                else:
+                    try:
+                        soon, more = transit(a, b, _now(), False)
+                    except Exception:  # noqa: BLE001
+                        soon, more = [], []
+                    notes = (
+                        [
+                            f"Leaving now, no transit option arrives by {t:%-I:%M %p}: every "
+                            "one would have had to leave already. The options below leave now "
+                            "and arrive as soon as possible."
+                        ]
+                        if arrive_by
+                        else ["Those departures have gone; the options below leave from now."]
+                    ) + more
+                    options = soon
         except Exception as e:  # noqa: BLE001 - the drive half can still answer
             options, notes = [], [f"Transit planner unavailable: {str(e)[:80]}"]
         finally:
             _STEP_FREE.reset(token)
-        # Never offer a plan that should already have left. For a deadline that nothing
-        # leaving now can make, say so and give the soonest arrival instead.
-        gone = _now().timestamp() - 120
-        if options and any(o.get("leave_ts", gone + 1) < gone for o in options):
-            still = [o for o in options if o.get("leave_ts", gone + 1) >= gone]
-            if still:
-                options = still
-            elif arrive_by:
-                try:
-                    soon, more = transit(a, b, _now(), False)
-                except Exception:  # noqa: BLE001
-                    soon, more = [], []
-                notes = [
-                    f"Leaving now, no transit option arrives by {t:%-I:%M %p}: every one "
-                    "would have had to leave already. The options below leave now and arrive "
-                    "as soon as possible."
-                ] + more
-                options = soon
         if options and step_free:
             options = _step_free_first(options)
         changes = {id(o): _line_changes(o, t) for o in options}

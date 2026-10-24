@@ -54,6 +54,7 @@ def station(name: str, lat: float, lon: float, line: str | None = None) -> dict 
     s = min(near, key=lambda x: x[1])[0]
     ada = s.get("ada")  # 1 full, 2 partial, 0 none
     notes = s.get("ada_notes") if s.get("ada_notes") not in (None, "NaN", "") else None
+    outages_known = True
     try:
         out = [
             o
@@ -62,9 +63,11 @@ def station(name: str, lat: float, lon: float, line: str | None = None) -> dict 
             and set((o.get("trainno") or "").replace("/", " ").split())
             & set((s.get("daytime_routes") or "").split())
         ]
-    except Exception:  # noqa: BLE001 - the station list alone still answers
-        out = []
+    except Exception:  # noqa: BLE001 - the station list alone still answers, but not fully
+        out, outages_known = [], False
     return {
+        "id": s.get("gtfs_stop_id") or f"{s['stop_name']}|{s.get('daytime_routes')}",
+        "outages_known": outages_known,
         "name": s["stop_name"],
         "routes": s.get("daytime_routes"),
         "step_free": {"1": "yes", "2": "partly"}.get(str(ada), "no"),
@@ -92,4 +95,6 @@ def describe(rec: dict) -> str:
         text += f", {rec['notes']}"
     if rec["out"]:
         text += "; now: " + "; ".join(rec["out"])
+    if not rec.get("outages_known", True):
+        text += "; elevator status could not be checked"
     return text

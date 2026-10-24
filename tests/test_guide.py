@@ -1286,3 +1286,32 @@ def test_reader_note_is_kept_for_follow_ups(monkeypatch):
     agent2, seen2 = _agent(monkeypatch, [_step(answer="Yes, it is.")], [])
     agent2.run("step free?", [out["memory"]], lambda e, d: None)
     assert "from Penn Station, wheelchair" in seen2[0][1]
+
+
+def test_clock_check_reads_iso_in_new_york_time_and_keeps_numbers_honest():
+    from nycynapse.tools import ToolResult
+
+    res = [ToolResult(summary="Leaves 2026-10-24T22:47:00Z")]
+    assert core._untraced_clocks("Leave at 6:47 PM.", res) == []
+    assert core._untraced_clocks("Leave at 10:47 pm.", res) == ["10:47 pm"]
+    # digits of a timestamp are not evidence for a made-up duration
+    assert core._untraced_numbers("The trip takes 47 minutes.", res) == ["47"]
+    assert "10:47" not in core._drop_untraced("Take the 10:47 p.m. train. Bring water.", ["10:47 p.m."])
+
+
+def test_review_fixes_for_terminals_weekdays_and_unchecked_stations(monkeypatch):
+    from datetime import datetime
+
+    from nycynapse.tools import access, trips
+
+    t8 = trips.locate("JFK Terminal 8")
+    assert (t8["lat"], t8["lon"]) == trips.JFK["terminals"]["8"]
+    monkeypatch.setattr(trips, "_now", lambda: datetime(2026, 10, 24, 14, tzinfo=trips.NY))
+    assert trips.parse_when("after midnight into Friday, 12:30am").strftime("%a") == "Fri"
+    def down(*a, **k):
+        raise OSError("feed down")
+
+    monkeypatch.setattr(access, "station", down)
+    opt = {"lines": [{"mode": "subway", "name": "2", "coords": [[-73.99, 40.75], [-73.96, 40.67]]}]}
+    assert trips._step_free_first([opt]) == [opt]  # kept only because nothing better exists
+    assert "could not be checked" in opt["access"]

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import contextvars
 import json
+from datetime import datetime
 import re
 import threading
 import time
@@ -811,7 +812,8 @@ def _numbers(text: str) -> list[tuple[str, float, float]]:
     return out
 
 
-_CLOCK = re.compile(r"\b(\d{1,2}):(\d{2})\s*([ap])\.?m\b", re.I)
+_AMPM = re.compile(r"\b(\d{1,2}):(\d{2})\s*([ap])(?:\.\s?m\.|m\b)", re.I)
+_ISO = re.compile(r"\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?")
 
 
 def _minutes_of_day(h: int, m: int, ap: str) -> int:
@@ -820,22 +822,30 @@ def _minutes_of_day(h: int, m: int, ap: str) -> int:
 
 def _untraced_clocks(answer: str, results: list[ToolResult], memory: str = "") -> list[str]:
     """Clock times in the answer ("the 10:14 PM train") that no tool gave, within a minute.
-    Tools write times as "10:14 PM" or ISO "22:14"; a time the model worked out itself is the
-    kind of detail that sends someone to an empty platform."""
+    Tools write times as "10:14 PM" or as ISO timestamps, which are read in New York time
+    ("2026-10-24T22:47:00Z" is 6:47 PM). Returns the times as written, so they can be dropped."""
+    from zoneinfo import ZoneInfo
+
+    ny = ZoneInfo("America/New_York")
     texts = [memory] + [
         r.summary + " " + json.dumps(r.data, default=str)[:20000] for r in results if r.ok
     ]
     known: set[int] = set()
     for text in texts:
-        for h, m, ap in _CLOCK.findall(text):
+        for h, m, ap in _AMPM.findall(text):
             known.add(_minutes_of_day(int(h), int(m), ap))
-        for h, m in re.findall(r"T(\d{2}):(\d{2})", text):
-            known.add(int(h) * 60 + int(m))
+        for stamp in _ISO.findall(text):
+            try:
+                t = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            t = t.astimezone(ny) if t.tzinfo else t
+            known.add(t.hour * 60 + t.minute)
     out = []
-    for h, m, ap in _CLOCK.findall(answer):
-        x = _minutes_of_day(int(h), int(m), ap)
+    for m in _AMPM.finditer(answer):
+        x = _minutes_of_day(int(m.group(1)), int(m.group(2)), m.group(3))
         if not any(abs(x - k) <= 1 or abs(x - k) >= 1439 for k in known):
-            out.append(f"{h}:{m} {ap.upper()}M")
+            out.append(m.group(0))
     return out
 
 
