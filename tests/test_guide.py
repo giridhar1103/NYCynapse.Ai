@@ -1272,3 +1272,17 @@ def test_rides_with_cancelled_stops_are_dropped(monkeypatch):
     got = trips._plan({"lat": 40.7, "lon": -74.0}, {"lat": 40.75, "lon": -73.99},
                       datetime(2026, 10, 24, 14, tzinfo=trips.NY), False)
     assert [x["startTime"] for x in got] == ["2026-10-24T18:20:00Z"]
+
+
+def test_reader_note_is_kept_for_follow_ups(monkeypatch):
+    agent, seen = _agent(
+        monkeypatch,
+        [_step(calls=[("trip_plan", {})]),
+         {**_step(answer="Take the E [1]."), "remember": "from Penn Station, wheelchair"}],
+        [_tool("trip_plan", text="E train")],
+    )
+    out = agent.run("how do i get to jfk? i use a wheelchair", [], lambda e, d: None)
+    assert out["memory"]["reader"] == "from Penn Station, wheelchair"
+    agent2, seen2 = _agent(monkeypatch, [_step(answer="Yes, it is.")], [])
+    agent2.run("step free?", [out["memory"]], lambda e, d: None)
+    assert "from Penn Station, wheelchair" in seen2[0][1]

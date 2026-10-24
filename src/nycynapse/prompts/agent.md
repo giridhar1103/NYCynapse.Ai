@@ -11,7 +11,10 @@ How to work
   unavailable or failed unless a result you were given says FAILED.
 - Each step, reply with JSON: a short `status` line for the reader (what you are doing now,
   under 80 characters, plain words), and either `calls` (up to 3 tool calls to run in
-  parallel) or a final `answer`. Never both.
+  parallel) or a final `answer`. Never both. With an answer, `remember` holds in one short
+  line what the reader has told you about their plan (where from and to, day and time,
+  deadline, mobility, luggage, budget, who is coming), carried over from earlier turns and
+  updated with anything they changed.
 - Prefer the cheapest source that can answer: the lake first (`ask_lake`, governed and
   traceable), then live and official sources (weather, road_speeds, road_events,
   subway_alerts, transit_changes, trip_plan, find_place, area_stats, open_data), then the web

@@ -69,8 +69,14 @@ STEP_SCHEMA = {
             },
         },
         "declined": {"type": "boolean"},
+        "remember": {
+            "type": "string",
+            "description": "with an answer: what the reader has told you that later turns must "
+            "keep (start, destination, day and time, deadline, mobility, luggage, budget, who "
+            "is with them), in one short line; empty if nothing",
+        },
     },
-    "required": ["status", "calls", "answer", "follow_ups", "places", "declined"],
+    "required": ["status", "calls", "answer", "follow_ups", "places", "declined", "remember"],
     "additionalProperties": False,
 }
 
@@ -406,6 +412,7 @@ class Agent:
                     step.get("follow_ups") or [],
                     declined=bool(step.get("declined")),
                     places=step.get("places") or [],
+                    remember=step.get("remember"),
                 )
             if not calls:
                 if force:
@@ -426,7 +433,7 @@ class Agent:
             answer, step = last
             return self._finish(
                 t, answer, step.get("follow_ups") or [], declined=False,
-                places=step.get("places") or [],
+                places=step.get("places") or [], remember=step.get("remember"),
             )
         return self._finish(t, None, [], declined=False, error=BUSY)
 
@@ -449,6 +456,11 @@ class Agent:
                 )
                 + "\n\n"
                 if t.history
+                else ""
+            )
+            + (
+                f"What the reader has told you: {_reader(t.history)}\n\n"
+                if _reader(t.history)
                 else ""
             )
             + "Tool results:\n\n"
@@ -605,6 +617,11 @@ class Agent:
                     for i, h in enumerate(t.history)
                 )
             )
+        if _reader(t.history):
+            parts.append(
+                "What the reader has told you about their plan (keep to it unless they change "
+                f"it now): {_reader(t.history)}"
+            )
         parts.append(f"Reader's question: {t.question}")
         if t.results:
             numbers = {key: n for n, key, _ in _registry(t.results)}
@@ -671,6 +688,7 @@ class Agent:
         declined: bool,
         error: str | None = None,
         places: list[dict] | None = None,
+        remember: str | None = None,
     ) -> dict:
         if answer and _embedded_calls(answer) is not None:
             answer = (
@@ -746,6 +764,8 @@ class Agent:
                 "answer": _uncite(answer or "")[:900],
                 "facts": facts,
                 "follow_ups": [f.strip() for f in follow_ups if f.strip()][:3],
+                # What the reader said about their plan, kept apart from the guide's own words.
+                "reader": (remember or "").strip()[:400] or _reader(t.history),
             },
             "untraced": untraced,
             "trace": [
@@ -875,6 +895,11 @@ def _registry(results: list[dict]) -> list[tuple[int, str, dict]]:
                 seen.add(key)
                 out.append((len(out) + 1, key, s))
     return out
+
+
+def _reader(history: list[dict]) -> str:
+    """The latest note of what the reader said about their plan, from earlier turns."""
+    return next((h["reader"] for h in reversed(history) if h.get("reader")), "")
 
 
 def _dated(x: dict) -> str:
