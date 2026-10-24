@@ -1332,3 +1332,13 @@ def test_failed_rewrite_answers_with_the_draft(monkeypatch):
     )
     out = agent.run("how do i get to the brooklyn museum?", [], lambda e, d: None)
     assert out.get("error") is None and "take the 2" in out["answer"]
+
+
+def test_leaked_thinking_and_field_dumps_are_never_answers():
+    leaked = ('<ctrl94>thought\n<ctrl95>```json\n{"status": "Checking", "calls": [{"tool": '
+              '"trip_plan", "args": {"origin": "A"}}]}\n```')
+    calls = core._embedded_calls(leaked)
+    assert calls and calls[0]["tool"] == "trip_plan"
+    assert core._embedded_calls('declined: false\ncalls: [{"tool": "web_search"}]') == []
+    assert llm.parse_json('<ctrl94>thought\nhmm<ctrl95>{"a": 1} trailing words') == {"a": 1}
+    assert core._embedded_calls("Take the 2 train to Eastern Pkwy.") is None

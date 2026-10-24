@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import contextvars
 import json
+import re
 import os
 import subprocess
 import tempfile
@@ -117,14 +118,30 @@ def provider_for(role: str) -> tuple[str, dict]:
     return pid, cfg["providers"][pid]
 
 
+_THOUGHT = re.compile(r"<ctrl\d+>\s*thought.*?<ctrl\d+>", re.S)
+
+
+def strip_thought(text: str) -> str:
+    """Drop a model's leaked thinking block ("<ctrl94>thought ... <ctrl95>") and a code fence
+    around the reply."""
+    text = _THOUGHT.sub("", text or "")
+    text = re.sub(r"<ctrl\d+>", "", text).strip()
+    m = re.search(r"```(?:json)?\s*(.*?)\s*```", text, re.S)
+    return m.group(1).strip() if m and text.lstrip().startswith(("```", "thought")) else text
+
+
 def parse_json(text: str) -> Any:
-    text = text.strip()
+    text = strip_thought(text.strip())
     if text.startswith("```"):
         text = text.split("\n", 1)[1].rsplit("```", 1)[0]
     start = min((i for i in (text.find("{"), text.find("[")) if i >= 0), default=-1)
     if start < 0:
         raise LLMError(f"no JSON in reply: {text[:200]}")
-    return json.loads(text[start:])
+    try:
+        return json.loads(text[start:])
+    except json.JSONDecodeError:
+        # A reply with words after its JSON: take the first whole object.
+        return json.JSONDecoder().raw_decode(text[start:])[0]
 
 
 def _anthropic(pid: str, p: dict, system: str, prompt: str, schema: dict | None) -> LLMResult:

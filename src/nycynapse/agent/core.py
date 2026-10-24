@@ -151,7 +151,12 @@ MAX_WORDS = 150
 def _embedded_calls(answer: str) -> list[dict] | None:
     """Tool calls written as JSON into the answer text ('{"status": ..., "calls": [...]}',
     maybe in a code fence). None when the answer is ordinary prose."""
-    text = (answer or "").strip()
+    text = llm.strip_thought((answer or "").strip())
+    # Step fields written out as text ("declined: false\ncalls: [...]"): never an answer.
+    if re.match(r"\s*(?:status|calls|declined|answer)\s*:", text) and re.search(
+        r"^\s*(?:calls|declined)\s*:", text, re.M
+    ):
+        return []
     if not text.startswith(("{", "```")):
         return None
     text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text).strip()
