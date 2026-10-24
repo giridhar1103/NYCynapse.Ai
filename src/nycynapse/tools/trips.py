@@ -125,8 +125,8 @@ _ABBR = {
 
 def _words(text: str) -> set[str]:
     text = re.sub(r"\b(\d+)(?:st|nd|rd|th)\b", r"\1", text)
+    text = re.sub(r"\bnew york\b", " ", text)  # "New Haven" keeps its "new"
     return {_ABBR.get(w, w) for w in text.split()} - {
-        "new",
         "york",
         "manhattan",
         "brooklyn",
