@@ -53,6 +53,12 @@ EWR = {
     "station": ("Newark Liberty International Airport train station", 40.7046, -74.1906),
 }
 JFK["code"], EWR["code"] = "jfk", "ewr"
+LGA_TERMINALS = {"A": (40.7728, -73.8862), "B": (40.7729, -73.8725), "C": (40.7703, -73.8645)}
+# JFK's AirTrain stops at each terminal, from OpenStreetMap.
+JFK["terminals"] = {
+    "1": (40.64307, -73.78907), "4": (40.64392, -73.78241), "5": (40.64681, -73.77986),
+    "7": (40.64823, -73.78319), "8": (40.64675, -73.78886),
+}
 AIRPORT_WORDS = {
     "jfk": JFK,
     "kennedy": JFK,
@@ -698,9 +704,19 @@ def _locate(text: str) -> dict | None:
         return {"name": raw, "lat": lat, "lon": lon} if _inside(lat, lon) else None
     n = _norm(raw)
     low = " ".join(re.sub(r"[^a-z0-9 ]+", " ", raw.lower()).split())
+    term = re.search(r"\bterminal\s*([a-c1-8])\b|\bt([1-8])\b", low)
+    term = (term.group(1) or term.group(2)).upper() if term else None
     for key, ap in AIRPORT_WORDS.items():
         if re.search(rf"\b{key}\b", low):
-            return {"name": ap["name"], "lat": ap["lat"], "lon": ap["lon"], "airport": ap["code"]}
+            out = {"name": ap["name"], "lat": ap["lat"], "lon": ap["lon"], "airport": ap["code"]}
+            if term and term in ap.get("terminals", {}):
+                out["terminal"] = term
+                out["name"] = f"{ap['name']} Terminal {term}"
+            return out
+    # LaGuardia's terminals are far apart (B to C is a 15 minute walk): the bus stops at each.
+    if re.search(r"\b(?:lga|la ?guardia)\b", low) and term in LGA_TERMINALS:
+        lat, lon = LGA_TERMINALS[term]
+        return {"name": f"LaGuardia Airport Terminal {term}", "lat": lat, "lon": lon}
     station = _path_station(n)
     if station:
         return station
@@ -1290,6 +1306,7 @@ def transit(a: dict, b: dict, when: datetime, arrive_by: bool) -> tuple[list[dic
     if a.get("airport") == "jfk" or b.get("airport") == "jfk":
         to_airport = b.get("airport") == "jfk"
         city = a if to_airport else b
+        airport_end = b if to_airport else a
         status = _airtrain_status(when)
         options = []
         for name, lat, lon in JFK["stations"]:
@@ -1306,8 +1323,11 @@ def transit(a: dict, b: dict, when: datetime, arrive_by: bool) -> tuple[list[dic
                 "(AirTrain suspended at this time; the bus takes longer than the AirTrain's "
                 f"{AIRTRAIN['minutes'][0]} to {AIRTRAIN['minutes'][1]} min)"
                 if _shuttle_at(status, short)
-                else f"AirTrain between {short} and the terminals, {AIRTRAIN['minutes'][0]} "
-                f"to {AIRTRAIN['minutes'][1]} min, ${AIRTRAIN['fare_usd']:.2f}"
+                else f"AirTrain between {short} and "
+                + (f"Terminal {airport_end['terminal']}" if airport_end.get("terminal")
+                   else "the terminals")
+                + f", {AIRTRAIN['minutes'][0]} to {AIRTRAIN['minutes'][1]} min, "
+                f"${AIRTRAIN['fare_usd']:.2f}"
             )
             for it in _plan(*pair, t0, arrive_by, n=3)[:2]:
                 end = short if to_airport else city["name"]
