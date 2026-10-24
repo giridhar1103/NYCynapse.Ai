@@ -207,6 +207,7 @@ class Turn:
     verified: int = 0  # fact checks run on drafts
     redrafts: int = 0  # rewrites asked for
     had_facts: bool = False  # the last rewrite was for factual problems
+    switched: bool = False  # moved to the other model after a failure (only once per turn)
     embedded_ok: bool = False
     redraft: str | None = None
 
@@ -678,11 +679,12 @@ class Agent:
                 continue
             except (LLMError, ValueError) as e:
                 t.steps.append({"error": f"{pid}: {str(e)[:200]}"})
-                if t.model:  # already committed to a model this turn: try the other one
+                if t.model:  # already committed to a model this turn: try the other one, once
                     others = [m for m in self.models() if m != pid]
-                    if others:
-                        t.model, t.fell_back = others[0], True
+                    if others and not t.switched:
+                        t.model, t.fell_back, t.switched = others[0], True, True
                         return self._step(t, system, static, force)
+                    return None
                 continue
             if t.model is None:
                 roles = llm.config()["roles"]
