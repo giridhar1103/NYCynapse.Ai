@@ -1765,6 +1765,8 @@ def drive(a: dict, b: dict, when: datetime) -> dict | None:
         return min(hrs, key=lambda h: min(abs(h - when.hour), 24 - abs(h - when.hour)))
 
     hour = near(sorted({r[1] for r in rows}))
+    if min(abs(hour - when.hour), 24 - abs(hour - when.hour)) > 2:
+        return None  # nothing near that hour: 7 AM trips say little about a 3 AM one
     at = [r for r in rows if r[1] == hour]
     # Trip time from all rides at that hour, weighted by how many there were.
     n = sum(r[2] for r in at)
@@ -2255,6 +2257,9 @@ def trip_plan(
             )
         try:
             d = drive(a, b, t)
+            if d and arrive_by:
+                # A deadline's trip starts earlier: the typical time for the hour it leaves.
+                d = drive(a, b, t - timedelta(minutes=d["minutes"][2])) or d
         except Exception:  # noqa: BLE001
             d = None
         data["drive"] = d

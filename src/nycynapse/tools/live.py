@@ -1332,13 +1332,21 @@ def open_data(
         " | ".join(f"{k}={str(v)[:60]}" for k, v in r.items() if k not in ("location",))
         for r in rows[:20]
     )
-    counted = bool(group.strip()) or "count(" in select.lower()
+    grouped = bool(group.strip())
+    counted = grouped or "count(" in select.lower()
     more = ""
     if len(rows) >= params["$limit"] and not counted:
         more = (
             f" (only the first {len(rows)}; there may be more. For a total use "
             "select=count(*), or group by a field)"
         )
+    elif len(rows) >= params["$limit"] and grouped:
+        more = (
+            f" (only the first {len(rows)} groups; there are more, so these do not add up to "
+            "the total: query select=count(*) without group for that)"
+        )
+    elif grouped:
+        more = " (one row per group; a row is that group's count, not the area's total)"
     elif len(rows) > 20:
         more = " (the first 20 are shown)"
     return ToolResult(
