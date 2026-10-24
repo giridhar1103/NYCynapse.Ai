@@ -308,5 +308,40 @@
 "name": "The Met Cloisters",
 "lat": 40.86487,
 "lon": -73.93192
+},
+"fordham university": {
+"name": "Fordham University (Rose Hill campus)",
+"lat": 40.86127,
+"lon": -73.88741
+},
+"fordham university rose hill": {
+"name": "Fordham University (Rose Hill campus)",
+"lat": 40.86127,
+"lon": -73.88741
+},
+"fordham rose hill": {
+"name": "Fordham University (Rose Hill campus)",
+"lat": 40.86127,
+"lon": -73.88741
+},
+"rose hill campus": {
+"name": "Fordham University (Rose Hill campus)",
+"lat": 40.86127,
+"lon": -73.88741
+},
+"fordham university bronx": {
+"name": "Fordham University (Rose Hill campus)",
+"lat": 40.86127,
+"lon": -73.88741
+},
+"fordham lincoln center": {
+"name": "Fordham University (Lincoln Center campus)",
+"lat": 40.77103,
+"lon": -73.98513
+},
+"fordham university lincoln center": {
+"name": "Fordham University (Lincoln Center campus)",
+"lat": 40.77103,
+"lon": -73.98513
 }
 }
