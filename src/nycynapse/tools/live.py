@@ -1282,7 +1282,9 @@ DATASETS = {
         "5uac-w243",
         "NYPD crime complaints this year, released quarterly (felonies, misdemeanors and "
         "violations); for counts near a place use where within_circle(lat_lon, LAT, LON, "
-        "METERS); count by ofns_desc or law_cat_cd, never list individual people",
+        "METERS); count by ofns_desc or law_cat_cd, never list individual people; a total and "
+        "its breakdown use the same where (same circle, same cmplnt_fr_dt range), and say the "
+        "period they cover",
         "cmplnt_fr_dt, cmplnt_fr_tm, boro_nm, addr_pct_cd, ofns_desc, law_cat_cd, "
         "prem_typ_desc, station_name, latitude, longitude, lat_lon",
     ),

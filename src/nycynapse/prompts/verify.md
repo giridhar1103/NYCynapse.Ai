@@ -13,6 +13,9 @@ List only real problems, at most four, each with the exact words from the draft 
 - something said about the wrong place, or a figure attached to the wrong thing
 - a venue, museum or restaurant recommended for a time with nothing in the tool results
   showing it is open then
+- a closure, event, address or price from a web result applied more broadly than the result
+  says: to the whole park when it names a marina, to today when it gives another date, to a
+  place or facility it does not name
 - a fare or price that does not fit the reader's trip (another station, peak instead of
   off-peak, an adult fare for a child they mentioned)
 
