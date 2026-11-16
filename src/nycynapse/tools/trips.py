@@ -17,8 +17,8 @@ import json
 import math
 import re
 import time
-from datetime import date, datetime, timedelta
 from contextvars import ContextVar
+from datetime import date, datetime, timedelta
 from functools import lru_cache
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -56,8 +56,11 @@ JFK["code"], EWR["code"] = "jfk", "ewr"
 LGA_TERMINALS = {"A": (40.7728, -73.8862), "B": (40.7729, -73.8725), "C": (40.7703, -73.8645)}
 # JFK's AirTrain stops at each terminal, from OpenStreetMap.
 JFK["terminals"] = {
-    "1": (40.64307, -73.78907), "4": (40.64392, -73.78241), "5": (40.64681, -73.77986),
-    "7": (40.64823, -73.78319), "8": (40.64675, -73.78886),
+    "1": (40.64307, -73.78907),
+    "4": (40.64392, -73.78241),
+    "5": (40.64681, -73.77986),
+    "7": (40.64823, -73.78319),
+    "8": (40.64675, -73.78886),
 }
 AIRPORT_WORDS = {
     "jfk": JFK,
@@ -199,8 +202,20 @@ def _path_station(n: str) -> dict | None:
     for key, (code, needs_nj) in PATH_NAMES.items():
         # "Red Bull Arena, Harrison, NJ" is the arena, not Harrison's PATH station.
         rest = set(re.sub(rf"\b{key}\b", " ", n).split()) - {
-            "path", "station", "nj", "jersey", "city", "jc", "new", "the", "train", "street",
-            "st", "terminal", "square", "sq",
+            "path",
+            "station",
+            "nj",
+            "jersey",
+            "city",
+            "jc",
+            "new",
+            "the",
+            "train",
+            "street",
+            "st",
+            "terminal",
+            "square",
+            "sq",
         }
         if re.search(rf"\b{key}\b", n) and (nj or not needs_nj) and not rest:
             name, lat, lon = PATH["stations"][code]
@@ -345,10 +360,19 @@ _BORO_CENTER = {
     "manhattan": (40.77, -73.97),
 }
 # Neighborhoods people name instead of the borough.
-_BORO_OF = {"sunset park": "brooklyn", "bay ridge": "brooklyn", "park slope": "brooklyn",
-            "williamsburg": "brooklyn", "bushwick": "brooklyn", "flatbush": "brooklyn",
-            "astoria": "queens", "flushing": "queens", "jamaica": "queens",
-            "harlem": "manhattan", "riverdale": "bronx"}
+_BORO_OF = {
+    "sunset park": "brooklyn",
+    "bay ridge": "brooklyn",
+    "park slope": "brooklyn",
+    "williamsburg": "brooklyn",
+    "bushwick": "brooklyn",
+    "flatbush": "brooklyn",
+    "astoria": "queens",
+    "flushing": "queens",
+    "jamaica": "queens",
+    "harlem": "manhattan",
+    "riverdale": "bronx",
+}
 
 
 def _borough_named(text: str) -> str | None:
@@ -386,6 +410,7 @@ def _corner(raw: str) -> dict | None:
             a, b = ({str(n), "av" if n <= 12 else "st"} for n in (x, y))
     if not a or not b or len(a) > 4 or len(b) > 4:
         return None
+
     def search(a: set[str], b: set[str]) -> list[dict]:
         try:
             hits = get_json(
@@ -461,9 +486,29 @@ def _landmark(n: str) -> dict | None:
     return None
 
 
-_PLACE_WORDS = {"park", "pier", "plaza", "station", "garden", "gardens", "museum", "hotel",
-                "school", "hospital", "market", "mall", "beach", "playground", "library",
-                "church", "terminal", "tower", "college", "university", "field"}
+_PLACE_WORDS = {
+    "park",
+    "pier",
+    "plaza",
+    "station",
+    "garden",
+    "gardens",
+    "museum",
+    "hotel",
+    "school",
+    "hospital",
+    "market",
+    "mall",
+    "beach",
+    "playground",
+    "library",
+    "church",
+    "terminal",
+    "tower",
+    "college",
+    "university",
+    "field",
+}
 
 
 def locate(text: str) -> dict | None:
@@ -473,7 +518,8 @@ def locate(text: str) -> dict | None:
     or "Jackson Heights, 74th St and 37th Ave" falls back to its address or corner part."""
     raw = (text or "").strip()[:120]
     m = re.match(
-        r"(.+?)\s+(?:station\s+|stop\s+)?on the\s+([A-Z0-9](?:(?:\s*(?:,|/|and|&)\s*|\s+)[A-Z0-9])*)"
+        r"(.+?)\s+(?:station\s+|stop\s+)?on the\s+"
+        r"([A-Z0-9](?:(?:\s*(?:,|/|and|&)\s*|\s+)[A-Z0-9])*)"
         r"(?:\s+(?:lines?|trains?))?\b(.*)$",
         raw,
         re.I,
@@ -481,10 +527,14 @@ def locate(text: str) -> dict | None:
     # "Nostrand Av C station", "Court Sq (G)": the line written next to the name. The letter
     # must be a capital as written, and a station of that name must serve that line, so
     # "Avenue J" or "Pier 6" stays what it is.
-    m2 = None if m else re.match(
-        r"(.+?)\s+(?:\(\s*)?([A-Z0-9](?:\s*(?:/|,|and|&)\s*[A-Z0-9])*)(?:\s*\))?"
-        r"(?:\s+(?:station|stop|train|line)s?\b|\s*$|(?=\s*,))(.*)$",
-        raw,
+    m2 = (
+        None
+        if m
+        else re.match(
+            r"(.+?)\s+(?:\(\s*)?([A-Z0-9](?:\s*(?:/|,|and|&)\s*[A-Z0-9])*)(?:\s*\))?"
+            r"(?:\s+(?:station|stop|train|line)s?\b|\s*$|(?=\s*,))(.*)$",
+            raw,
+        )
     )
     if m or m2:
         mm = m or m2
@@ -525,7 +575,9 @@ def locate(text: str) -> dict | None:
             tries.append(gate.group(2))  # a bare street names no point on it
         # The gate's name alone may match a road of that name instead (Mosholu Parkway for
         # the garden's Mosholu gate): a street the reader did not say is not the gate.
-        road = re.compile(r"\b(?:st|street|ave?|avenue|blvd|boulevard|rd|road|pkwy|parkway)\b", re.I)
+        road = re.compile(
+            r"\b(?:st|street|ave?|avenue|blvd|boulevard|rd|road|pkwy|parkway)\b", re.I
+        )
         doors = [
             d
             for d in map(_locate, tries)
@@ -562,9 +614,25 @@ def locate(text: str) -> dict | None:
     parts = [p.strip() for p in re.split(r",|\s+(?:on|in)\s+(?=[A-Z0-9])", raw) if p.strip()]
     if len(parts) < 2:
         return None
-    boroughs = {"brooklyn", "queens", "manhattan", "bronx", "staten island", "new york", "nj",
-                "new jersey", "ny", "long island", "li", "westchester", "connecticut", "ct",
-                "nassau", "suffolk", "upstate"}
+    boroughs = {
+        "brooklyn",
+        "queens",
+        "manhattan",
+        "bronx",
+        "staten island",
+        "new york",
+        "nj",
+        "new jersey",
+        "ny",
+        "long island",
+        "li",
+        "westchester",
+        "connecticut",
+        "ct",
+        "nassau",
+        "suffolk",
+        "upstate",
+    }
     # A region after the town ("Huntington, Long Island", "Harrison, NJ") names no place on
     # its own, but says which town: keep it with the town.
     while len(parts) > 2 and _norm(parts[-1]) in boroughs:
@@ -572,11 +640,7 @@ def locate(text: str) -> dict | None:
     streetish = re.compile(r"\b(?:st|street|ave?|avenue|blvd|boulevard|rd|road|pl|place)\b", re.I)
     last = parts[-1]
     # A town given with the name (not a street, not a borough) must agree with what is found.
-    town = (
-        _locate(last)
-        if not streetish.search(last) and _norm(last) not in boroughs
-        else None
-    )
+    town = _locate(last) if not streetish.search(last) and _norm(last) not in boroughs else None
 
     def checked(found: dict, p: str) -> dict:
         if town and p != last and _metres(found, town) > 3000:
@@ -598,8 +662,11 @@ def locate(text: str) -> dict | None:
     if inner and outer:
         whole = _locate(outer[0])
         hit = _osm(f"{inner[0]}, {outer[0]}")
-        if whole and hit and _words(_norm(inner[0])) <= _words(_norm(hit["name"])) and (
-            _metres(hit, whole) < 2500
+        if (
+            whole
+            and hit
+            and _words(_norm(inner[0])) <= _words(_norm(hit["name"]))
+            and (_metres(hit, whole) < 2500)
         ):
             return {**hit, "name": f"{outer[0]}, {hit['name']}"}
     # An address or corner part is the most exact; a borough or town adds nothing on its own.
@@ -618,8 +685,12 @@ def locate(text: str) -> dict | None:
         if _norm(p) in boroughs or (streetish.search(p) and p not in exact):
             continue  # a bare street ("Fifth Avenue") says nothing about where on it
         found = _locate(p)
-        if found and town and p in exact and _metres(found, town) > 3000 and not zone_of(
-            town["lat"], town["lon"]
+        if (
+            found
+            and town
+            and p in exact
+            and _metres(found, town) > 3000
+            and not zone_of(town["lat"], town["lon"])
         ):
             # "14 Wall Street, Huntington": the address in that town, not the one in the city.
             there = _osm(f"{p}, {last}") or _osm(f"{p}, {last.split(',')[0]}")
@@ -635,8 +706,13 @@ def _osm(q: str) -> dict | None:
     try:
         hits = get_json(
             "https://nominatim.openstreetmap.org/search",
-            {"q": q, "format": "jsonv2", "limit": 1,
-             "viewbox": ",".join(str(x) for x in BOX), "bounded": 1},
+            {
+                "q": q,
+                "format": "jsonv2",
+                "limit": 1,
+                "viewbox": ",".join(str(x) for x in BOX),
+                "bounded": 1,
+            },
             ttl_s=86400,
         )
     except Exception:  # noqa: BLE001
@@ -648,9 +724,7 @@ def _osm(q: str) -> dict | None:
 
 
 # A part of a place name that pins it down: an address, a corner, a station or stop.
-_EXACT = re.compile(
-    r"^\s*\d+\s+\w|\band\b|&|\bat\b|\b(?:station|stop)\b|\bbeach\s+\d+", re.I
-)
+_EXACT = re.compile(r"^\s*\d+\s+\w|\band\b|&|\bat\b|\b(?:station|stop)\b|\bbeach\s+\d+", re.I)
 
 
 def _ferry_stop(name: str, asked: str = "") -> dict | None:
@@ -663,9 +737,12 @@ def _ferry_stop(name: str, asked: str = "") -> dict | None:
     # With "terminal" when it was asked for: the Staten Island Ferry's St. George Terminal.
     for words in dict.fromkeys([_said(want | ({"ferry", "terminal", "pier"} & said)), _said(want)]):
         try:
-            hits += get_json(
-                GEOCODE, {"text": words, "type": "STOP", "place": _bias(name)}, ttl_s=86400
-            ) or []
+            hits += (
+                get_json(
+                    GEOCODE, {"text": words, "type": "STOP", "place": _bias(name)}, ttl_s=86400
+                )
+                or []
+            )
         except Exception:  # noqa: BLE001
             pass
     fits = [
@@ -680,7 +757,9 @@ def _ferry_stop(name: str, asked: str = "") -> dict | None:
     # "St. George Ferry Terminal" is the Staten Island Ferry's terminal, not the NYC Ferry
     # landing next to it: the stop sharing most words with what was asked.
     h = max(fits, key=lambda x: len(_key_words(x["name"]) & said))
-    label = h["name"] if re.search(r"terminal|ferry", h["name"], re.I) else f"{h['name']} ferry landing"
+    label = (
+        h["name"] if re.search(r"terminal|ferry", h["name"], re.I) else f"{h['name']} ferry landing"
+    )
     return {"name": label, "lat": h["lat"], "lon": h["lon"]}
 
 
@@ -695,8 +774,17 @@ def _line_station(name: str, lines: set[str], area: str = "") -> dict | None:
     except Exception:  # noqa: BLE001
         return None
     boro = next(
-        (c for w, c in (("brooklyn", "Bk"), ("queens", "Q"), ("bronx", "Bx"),
-                        ("staten island", "SI"), ("manhattan", "M")) if w in area.lower()),
+        (
+            c
+            for w, c in (
+                ("brooklyn", "Bk"),
+                ("queens", "Q"),
+                ("bronx", "Bx"),
+                ("staten island", "SI"),
+                ("manhattan", "M"),
+            )
+            if w in area.lower()
+        ),
         None,
     )
     fits = []
@@ -791,14 +879,16 @@ def _locate(text: str) -> dict | None:
     for text in [] if outside else texts:
         try:
             d = get_json(
-                "https://geosearch.planninglabs.nyc/v2/search", {"text": text, "size": 1},
+                "https://geosearch.planninglabs.nyc/v2/search",
+                {"text": text, "size": 1},
                 ttl_s=86400,
             )
             f = (d.get("features") or [None])[0]
         except Exception:  # noqa: BLE001 - fall through to the regional search
             f = None
         if f and _words(n) <= _words(_norm(f["properties"].get("label", "").split(",")[0])) | {
-            "new", "york"
+            "new",
+            "york",
         }:
             break
     if f:
@@ -882,8 +972,23 @@ def _locate(text: str) -> dict | None:
 
 # Commuter rail reaches well past the city: Montauk, New Haven, Poughkeepsie, Trenton.
 RAIL_BOX = (-75.0, 40.1, -71.8, 41.75)
-_RAIL_WORDS = {"lirr", "station", "stop", "train", "rail", "railroad", "metro", "north", "mnr",
-               "njt", "nj", "transit", "amtrak", "ny", "the"}
+_RAIL_WORDS = {
+    "lirr",
+    "station",
+    "stop",
+    "train",
+    "rail",
+    "railroad",
+    "metro",
+    "north",
+    "mnr",
+    "njt",
+    "nj",
+    "transit",
+    "amtrak",
+    "ny",
+    "the",
+}
 
 
 _RAIL_MODES = {"REGIONAL_RAIL", "RAIL", "SUBURBAN", "HIGHSPEED_RAIL", "LONG_DISTANCE", "FERRY"}
@@ -912,7 +1017,9 @@ def _rail_stop(raw: str) -> dict | None:
             and RAIL_BOX[1] <= h["lat"] <= RAIL_BOX[3]
             and want <= _words(_norm(h.get("name") or ""))
             # "Upper Montclair" is another station than "Montclair"
-            and not (_words(_norm(h.get("name") or "")) - want - _RAIL_WORDS - {"union", "junction"})
+            and not (
+                _words(_norm(h.get("name") or "")) - want - _RAIL_WORDS - {"union", "junction"}
+            )
         ]
         # A train station only: a bus stop called "NYU Langone Hospital" out on Long Island is
         # not the hospital the reader means.
@@ -1056,13 +1163,18 @@ def _plan(a: dict, b: dict, when: datetime, arrive_by: bool, n: int = 5) -> list
             its += d2.get("itineraries") or []
         except Exception:  # noqa: BLE001
             pass
+
     # The planner carries live cancellations: a ride whose boarding or drop-off stop is
     # cancelled is not a plan.
     def cancelled(it: dict) -> bool:
         return any(
             lg.get("cancelled")
-            or (lg.get("mode") != "WALK"
-                and ((lg.get("from") or {}).get("cancelled") or (lg.get("to") or {}).get("cancelled")))
+            or (
+                lg.get("mode") != "WALK"
+                and (
+                    (lg.get("from") or {}).get("cancelled") or (lg.get("to") or {}).get("cancelled")
+                )
+            )
             for lg in it.get("legs") or []
         )
 
@@ -1359,8 +1471,11 @@ def transit(a: dict, b: dict, when: datetime, arrive_by: bool) -> tuple[list[dic
                 f"{AIRTRAIN['minutes'][0]} to {AIRTRAIN['minutes'][1]} min)"
                 if _shuttle_at(status, short)
                 else f"AirTrain between {short} and "
-                + (f"Terminal {airport_end['terminal']}" if airport_end.get("terminal")
-                   else "the terminals")
+                + (
+                    f"Terminal {airport_end['terminal']}"
+                    if airport_end.get("terminal")
+                    else "the terminals"
+                )
                 + f", {AIRTRAIN['minutes'][0]} to {AIRTRAIN['minutes'][1]} min, "
                 f"${AIRTRAIN['fare_usd']:.2f}"
             )
@@ -1375,7 +1490,8 @@ def transit(a: dict, b: dict, when: datetime, arrive_by: bool) -> tuple[list[dic
         )
         for on, head in status:
             notes.append(
-                f"AirTrain alert, {'in effect at the time of this trip' if on else 'not in effect then'}"
+                "AirTrain alert, "
+                f"{'in effect at the time of this trip' if on else 'not in effect then'}"
                 f": {head}."
             )
         options.sort(key=lambda o: o["minutes"][1])
@@ -1398,6 +1514,7 @@ def transit(a: dict, b: dict, when: datetime, arrive_by: bool) -> tuple[list[dic
             "PATH times marked live use PATH's own next-train times; the others use its "
             "scheduled ride times between stations plus a typical wait."
         )
+
     # Best first: soonest arrival, or with a deadline the latest departure that makes it.
     # Each change costs five minutes either way, since people prefer one seat.
     def best(o: dict) -> float:
@@ -1415,7 +1532,10 @@ def transit(a: dict, b: dict, when: datetime, arrive_by: bool) -> tuple[list[dic
     if out and pool:
         easy = min(pool, key=lambda o: (o["transfers"], o["arrive_ts"]))
         slowest_ok = out[0]["minutes"][1] + 20
-        if easy["transfers"] < min(o["transfers"] for o in out) and easy["minutes"][0] <= slowest_ok:
+        if (
+            easy["transfers"] < min(o["transfers"] for o in out)
+            and easy["minutes"][0] <= slowest_ok
+        ):
             out = out[:3] + [easy]
     return out, notes
 
@@ -1663,7 +1783,10 @@ def _path_options(a: dict, b: dict, when: datetime, arrive_by: bool) -> list[dic
             arrive_ts = end.timestamp() + (0 if arrive_by else spare * 60)
             options.append(
                 {
-                    "minutes": (mins - (spare if arrive_by else 0), mins + (0 if arrive_by else spare)),
+                    "minutes": (
+                        mins - (spare if arrive_by else 0),
+                        mins + (0 if arrive_by else spare),
+                    ),
                     "arrive_ts": arrive_ts,
                     "leave_ts": leave.timestamp(),
                     "leave": leave.strftime("%-I:%M %p"),
@@ -1851,11 +1974,20 @@ def _take_date(raw: str, today) -> tuple[str, object]:
     A date without a year that has already passed this year means next year."""
     pats = [
         (r"\b(\d{4})-(\d{1,2})-(\d{1,2})\b", lambda g: (int(g[0]), int(g[1]), int(g[2]))),
-        (r"\b(" + "|".join(_MONTHS) + r")[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?\b(?:,?\s+(\d{4}))?",
-         lambda g: (int(g[2]) if g[2] else None, _MONTHS.index(g[0]) + 1, int(g[1]))),
-        (r"\b(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?\b",
-         lambda g: ((int(g[2]) + 2000 if len(g[2]) == 2 else int(g[2])) if g[2] else None,
-                    int(g[0]), int(g[1]))),
+        (
+            r"\b("
+            + "|".join(_MONTHS)
+            + r")[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?\b(?:,?\s+(\d{4}))?",
+            lambda g: (int(g[2]) if g[2] else None, _MONTHS.index(g[0]) + 1, int(g[1])),
+        ),
+        (
+            r"\b(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?\b",
+            lambda g: (
+                (int(g[2]) + 2000 if len(g[2]) == 2 else int(g[2])) if g[2] else None,
+                int(g[0]),
+                int(g[1]),
+            ),
+        ),
     ]
     for pat, parts in pats:
         m = re.search(pat, raw)
@@ -1868,7 +2000,7 @@ def _take_date(raw: str, today) -> tuple[str, object]:
                 dt = date(today.year + 1, mo, d)
         except ValueError:
             continue
-        return raw[: m.start()] + " " + raw[m.end():], dt
+        return raw[: m.start()] + " " + raw[m.end() :], dt
     return raw, None
 
 
@@ -2097,8 +2229,11 @@ def _step_free_first(options: list[dict]) -> list[dict]:
                 texts.append(access.describe(rec))
                 bad += rec["step_free"] != "yes" or bool(rec["out"]) or not rec["outages_known"]
         o["access"] = (
-            "; ".join(texts) if texts
-            else "no subway on this option" if not subway else "could not be checked"
+            "; ".join(texts)
+            if texts
+            else "no subway on this option"
+            if not subway
+            else "could not be checked"
         )
         return bad
 
@@ -2219,9 +2354,7 @@ def trip_plan(
             for i, o in enumerate(options, 1):
                 lo, hi = o["minutes"]
                 span = f"{lo} min" if lo == hi else f"{lo} to {hi} min"
-                tag = ", ".join(
-                    t for t, x in ((first, quick), ("fewest changes", easy)) if o is x
-                )
+                tag = ", ".join(t for t, x in ((first, quick), ("fewest changes", easy)) if o is x)
                 lines.append(
                     f"{i}.{f' [{tag}]' if tag else ''} {span} door to door, leave {o['leave']}, "
                     f"arrive {o.get('arrive', '?')}, {o['transfers']} transfer"

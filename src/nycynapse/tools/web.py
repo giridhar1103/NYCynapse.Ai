@@ -157,7 +157,6 @@ def _extract(html: str, url: str) -> tuple[str, str]:
 
 def _pdf_text(data: bytes) -> str:
     import io
-
     import logging
 
     from pypdf import PdfReader
@@ -191,7 +190,10 @@ def _dated(r: dict) -> str:
     ("71 percent of pre-pandemic levels in February 2024")."""
     from datetime import date
 
-    years = [int(y) for y in re.findall(r"\b(20[0-3]\d)\b", f"{r.get('date', '')} {r.get('snippet', '')}")]
+    years = [
+        int(y)
+        for y in re.findall(r"\b(20[0-3]\d)\b", f"{r.get('date', '')} {r.get('snippet', '')}")
+    ]
     if years and max(years) < date.today().year:
         return f" (dated {max(years)}: history, not current)"
     return ""

@@ -1046,7 +1046,7 @@ def find_place(text: str) -> ToolResult:
     if not out:
         # Corners, stations by line and places just outside the city: the trip planner's own
         # place finding knows them ("5th Ave and 59th St, Brooklyn", "Nostrand Av C station").
-        from .trips import locate, zone_of, _zone_borough
+        from .trips import _zone_borough, locate, zone_of
 
         hit = locate(text)
         if hit:
