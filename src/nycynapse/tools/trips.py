@@ -1284,6 +1284,7 @@ def _itinerary(
         if before:  # from the terminals: leave early enough for the slow end of the AirTrain
             legs.insert(0, extra[0])
             leave_ts -= 60 * extra[2]
+            lo = hi  # leave and arrive are both fixed, so the trip takes what lies between
         else:  # to the terminals: arrival is a window
             legs.append(extra[0])
             a, b = (datetime.fromtimestamp(end_ts + 60 * m, NY) for m in extra[1:])
@@ -2336,8 +2337,7 @@ def trip_plan(
         if options and step_free:
             options = _step_free_first(options)
         changes = {id(o): _line_changes(o, t) for o in options}
-        # A ride a service change runs into goes after the ones it does not.
-        options.sort(key=lambda o: bool(o.get("affected")))
+        options = _affected_last(options, arrive_by)
         data["transit"] = options
         if options:
             lines.append("Transit options (best first):")
@@ -2525,6 +2525,26 @@ def trip_plan(
                 lines.append("No car trip time is available for this pair of places.")
     layers.append(_trip_layer(a, b, t, arrive_by, mode, data))
     return ToolResult(summary="\n".join(lines), data=data, sources=sources, map=layers)
+
+
+SOONER_S = 45 * 60
+
+
+def _affected_last(options: list[dict], arrive_by: bool) -> list[dict]:
+    """A ride a service change runs into goes after the ones it does not. But not behind a
+    ride that gets there far later: the 12:31 AM train with a change on its line still comes
+    before the 5:30 AM bus, since the first option is the one the page opens and draws."""
+    clean = [o for o in options if not o.get("affected")]
+    if not clean or len(clean) == len(options):
+        return options
+    first_clean = min(o["arrive_ts"] for o in clean)
+
+    def later(o: dict) -> bool:
+        if not o.get("affected"):
+            return False
+        return arrive_by or first_clean - o["arrive_ts"] <= SOONER_S
+
+    return sorted(options, key=later)
 
 
 def _trip_layer(a: dict, b: dict, t: datetime, arrive_by: bool, mode: str, data: dict) -> dict:

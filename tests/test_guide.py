@@ -994,6 +994,23 @@ def test_unfinished_draft_goes_back_to_look(monkeypatch):
     assert "open the museum's hours page" in seen[3][1]
 
 
+def test_a_ride_with_a_service_change_still_leads_a_far_later_one():
+    from nycynapse.tools import trips
+
+    train = {"arrive_ts": 1 * 3600 + 32 * 60, "affected": ["F change"], "n": "12:31 train"}
+    bus = {"arrive_ts": 7 * 3600 + 6 * 60, "n": "5:30 bus"}
+    close = {"arrive_ts": 1 * 3600 + 50 * 60, "n": "12:40 train"}
+    assert [o["n"] for o in trips._affected_last([train, bus], False)] == [
+        "12:31 train",
+        "5:30 bus",
+    ]
+    # a clean ride arriving soon after still goes first
+    assert trips._affected_last([train, close, bus], False)[0] is close
+    # with a deadline every option already makes it, so the clean one leads
+    assert trips._affected_last([train, bus], True)[0] is bus
+    assert trips._affected_last([bus, close], False) == [bus, close]
+
+
 def test_trip_layer_offers_every_mode_with_paths():
     from datetime import datetime
 
