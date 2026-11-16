@@ -331,12 +331,26 @@ class TurnView {
     this.steps = {};
     this.layers = [];
     this.started = performance.now();
+    this.text = "Reading your question";
+    // A status can stand for many seconds (a model call, the fact check): count them, so the
+    // page is visibly alive, and say early how long answers usually take.
+    this.timer = setInterval(() => this.tick(), 1000);
     log.append(this.box);
   }
 
-  status(text) { this.now.textContent = text; }
+  status(text) { this.text = text; this.tick(); }
+
+  tick() {
+    if (this.text == null) return;
+    const s = Math.round((performance.now() - this.started) / 1000);
+    const slow = s >= 8 && s < 25 ? " · most answers take 20 to 40 seconds" : "";
+    this.now.textContent = this.text.replace(/…$/, "") + (s >= 4 ? ` · ${s} s${slow}` : "…");
+  }
+
+  stop() { clearInterval(this.timer); this.text = null; }
 
   queue(pos) {
+    this.text = null;
     this.now.replaceChildren(el("span", { class: "queue" },
       el("span", { class: "platform" }, el("i"), el("i"), el("i")),
       pos > 0 ? `Busy right now: you're number ${pos} in line. Your question will start shortly.` : "Starting…"));
@@ -445,6 +459,7 @@ class TurnView {
     const bits = d.cached ? ["Stored answer from earlier today"]
       : [`Worked for ${secs} s`, steps ? `${steps} ${steps === 1 ? "check" : "checks"}` : "",
         d.cost_usd ? `$${Number(d.cost_usd).toFixed(3)}` : "", d.fell_back ? "backup model" : ""];
+    this.stop();
     this.now.textContent = "";
     this.now.hidden = true;
     if (!steps) { this.rail.hidden = true; return; }
@@ -459,6 +474,7 @@ class TurnView {
   }
 
   error(message, code) {
+    this.stop();
     this.now.textContent = "";
     this.box.append(el("div", { class: "notice" + (code === "full" || code === "models" ? "" : " warn") }, message));
   }
