@@ -137,7 +137,8 @@ class Chats:
             .execute(
                 "SELECT count(*) AS n FROM app.chat_turns t JOIN app.chats c ON c.id = t.chat_id "
                 "WHERE c.client_hash = %s AND t.asked_at > now() - make_interval(mins => %s) "
-                "AND c.kind = %s",
+                # a reader turned away at full capacity has not used an answer
+                "AND c.kind = %s AND t.outcome IS DISTINCT FROM 'busy'",
                 (client, minutes, self.kind),
             )
             .fetchone()

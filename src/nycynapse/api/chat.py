@@ -236,6 +236,7 @@ async def _turn(question: str, chat_id: str | None, token: str, client: str, ip:
     except BaseException:
         gate.leave_line(ticket)  # the reader left while waiting
         raise
+    queued_ms = int((time.monotonic() - started) * 1000)
 
     events: asyncio.Queue = asyncio.Queue()
 
@@ -249,6 +250,8 @@ async def _turn(question: str, chat_id: str | None, token: str, client: str, ip:
             outcome = "answered" if out.get("answer") and not out.get("error") else "failed"
             if out.get("declined"):
                 outcome = "declined"
+            out["steps"] = (out.get("steps") or []) + [{"queued_ms": queued_ms}]
+            _log_turn(slot, out, outcome, queued_ms)
             try:
                 chats().record(slot, question, out, outcome)
             except psycopg.Error:
@@ -281,6 +284,40 @@ async def _turn(question: str, chat_id: str | None, token: str, client: str, ip:
         if chunk is None:
             return
         yield chunk
+
+
+def _log_turn(slot: Slot, out: dict, outcome: str, queued_ms: int) -> None:
+    """One line per turn for the service log: how it went and where the time was spent.
+    Never the question or who asked."""
+    timeline = next((s["timeline"] for s in out.get("steps") or [] if "timeline" in s), [])
+    spent = {"model": 0, "tool": 0}
+    for x in timeline:
+        spent[x["kind"]] = spent.get(x["kind"], 0) + x["ms"]
+    notes = [s["note"] for s in out.get("steps") or [] if "note" in s]
+    log.info(
+        "turn %s",
+        json.dumps(
+            {
+                "chat": slot.chat_id[:8],
+                "turn": slot.turn,
+                "outcome": outcome,
+                "ms": out.get("latency_ms"),
+                "queued_ms": queued_ms,
+                "model": out.get("model"),
+                "fell_back": bool(out.get("fell_back")),
+                "model_calls": out.get("model_calls"),
+                "model_ms": spent["model"],
+                "tools": sum(1 for x in timeline if x["kind"] == "tool"),
+                "tool_ms": spent["tool"],
+                "tools_failed": [
+                    x["name"] for x in timeline if x["kind"] == "tool" and not x["ok"]
+                ],
+                "rewrites": sum(1 for n in notes if n.startswith("redrafted")),
+                "fixed_in_check": sum(1 for n in notes if n.startswith("fixed in the check")),
+                "usd": out.get("cost_usd"),
+            }
+        ),
+    )
 
 
 def _answer_payload(slot: Slot, out: dict, cached: bool = False) -> dict:

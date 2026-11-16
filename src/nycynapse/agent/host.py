@@ -101,5 +101,8 @@ class MCPHost:
                 self._mark_broken()
         return tool(**args), "local"
 
+    def connected(self) -> bool:
+        return self._connected.is_set() and self._client is not None
+
     def specs(self) -> list[Tool]:
         return [t for t in self.local.values() if t.enabled()]

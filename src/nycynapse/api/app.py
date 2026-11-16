@@ -9,6 +9,7 @@ from its stored trace without calling a model.
 
 import asyncio
 import json
+import logging
 import os
 import threading
 from pathlib import Path
@@ -32,6 +33,21 @@ KEEPALIVE_S = 10
 WEB = REPO / "web"
 RESULTS = REPO / "evals" / "results"
 
+
+
+def _log_to_stderr() -> None:
+    """The service log (journald) gets this package's lines; it adds the time itself."""
+    pkg = logging.getLogger("nycynapse")
+    if not pkg.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
+        pkg.addHandler(handler)
+        pkg.setLevel(os.environ.get("NYCYNAPSE_LOG_LEVEL", "INFO"))
+        pkg.propagate = False
+
+
+_log_to_stderr()
+log = logging.getLogger(__name__)
 settings = Settings.from_env()
 app = FastAPI(title="NYCynapse", docs_url=None, redoc_url=None)
 _busy = threading.Semaphore(1)
@@ -60,6 +76,29 @@ def answerer() -> Answerer:
 def warm_up():
     # Loading the embedding model takes several seconds; do it before the first reader asks.
     threading.Thread(target=lambda: answerer().ctx.embed("warm up"), daemon=True).start()
+    threading.Thread(target=_warm_tools, daemon=True).start()
+
+
+def _warm_tools() -> None:
+    """Start the tools server and make the calls whose first run is slow (station lists,
+    schedules, alert feeds), so the first reader after a restart does not wait for them."""
+    if os.environ.get("NYCYNAPSE_WARM", "1") == "0":
+        return
+    try:
+        host = chat.agent().host
+        for name, args in (
+            ("subway_alerts", {}),
+            ("transit_changes", {"system": "subway"}),
+            (
+                "trip_plan",
+                {"origin": "Times Square", "destination": "Grand Central Terminal",
+                 "mode": "transit"},
+            ),
+        ):
+            res, _ = host.call(name, args)
+            log.info("warmed %s: %s", name, "ok" if res.ok else (res.error or "")[:120])
+    except Exception:  # noqa: BLE001 - warming is a courtesy, never a reason not to start
+        log.exception("could not warm the tools")
 
 
 def _client(request: Request) -> str:
@@ -278,6 +317,47 @@ def evals():
 @app.get("/api/health")
 def health():
     return {"ok": True, "catalog": answerer().ctx.version, "chat": chat.gate.stats()}
+
+
+@app.get("/api/health/deep")
+def health_deep():
+    """Each part an answer depends on, checked for real. 503 names what is down."""
+    parts: dict[str, bool] = {}
+
+    def check(name: str, fn) -> None:
+        try:
+            parts[name] = bool(fn())
+        except Exception as e:  # noqa: BLE001 - a failed check is the finding
+            log.warning("health: %s failed: %s", name, str(e)[:160])
+            parts[name] = False
+
+    check("store", lambda: answerer().ctx.conn.execute("SELECT 1").fetchone() is not None)
+    check(
+        "lake",
+        lambda: answerer()
+        .ctx.lake.cursor()
+        .execute("SELECT count(*) FROM lake.gold.ops_source_freshness")
+        .fetchone()[0]
+        > 0,
+    )
+    check("tools_server", lambda: chat.agent().host.connected())
+    check("models", lambda: chat.agent().available())
+    stale: list[str] = []
+    try:
+        stale = [
+            r[0]
+            for r in answerer()
+            .ctx.lake.cursor()
+            .execute("SELECT table_name FROM lake.gold.ops_source_freshness WHERE is_stale")
+            .fetchall()
+        ]
+    except Exception:  # noqa: BLE001 - reported by the lake check above
+        pass
+    ok = all(parts.values())
+    return JSONResponse(
+        {"ok": ok, **parts, "stale_tables": stale, "chat": chat.gate.stats()},
+        status_code=200 if ok else 503,
+    )
 
 
 chat.setup(settings, lambda: answerer().ctx)
