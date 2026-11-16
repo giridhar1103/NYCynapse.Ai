@@ -1164,21 +1164,7 @@ def _plan(a: dict, b: dict, when: datetime, arrive_by: bool, n: int = 5) -> list
         except Exception:  # noqa: BLE001
             pass
 
-    # The planner carries live cancellations: a ride whose boarding or drop-off stop is
-    # cancelled is not a plan.
-    def cancelled(it: dict) -> bool:
-        return any(
-            lg.get("cancelled")
-            or (
-                lg.get("mode") != "WALK"
-                and (
-                    (lg.get("from") or {}).get("cancelled") or (lg.get("to") or {}).get("cancelled")
-                )
-            )
-            for lg in it.get("legs") or []
-        )
-
-    its = [it for it in its if not cancelled(it)]
+    its = [it for it in its if not _cancelled(it)]
     out, seen = [], set()
 
     # Best first, where each transfer counts as five extra minutes: people prefer one seat.
@@ -1205,6 +1191,19 @@ def _plan(a: dict, b: dict, when: datetime, arrive_by: bool, n: int = 5) -> list
         seen.add(sig)
         out.append(it)
     return out
+
+
+def _cancelled(it: dict) -> bool:
+    """The planner carries live cancellations: a ride that is cancelled, or whose boarding or
+    drop-off stop is, is not a plan. Only rides count: the planner also puts the flag on the
+    walks between them, and reading those threw out every itinerary for some trips."""
+    return any(
+        lg.get("cancelled")
+        or (lg.get("from") or {}).get("cancelled")
+        or (lg.get("to") or {}).get("cancelled")
+        for lg in it.get("legs") or []
+        if lg.get("mode") != "WALK"
+    )
 
 
 def _metres(a: dict, b: dict) -> float:

@@ -994,6 +994,16 @@ def test_unfinished_draft_goes_back_to_look(monkeypatch):
     assert "open the museum's hours page" in seen[3][1]
 
 
+def test_only_rides_can_be_cancelled():
+    from nycynapse.tools import trips
+
+    walk = {"mode": "WALK", "cancelled": True, "from": {}, "to": {}}
+    ride = {"mode": "SUBWAY", "cancelled": False, "from": {}, "to": {}}
+    assert not trips._cancelled({"legs": [walk, ride, walk]})
+    assert trips._cancelled({"legs": [walk, {**ride, "cancelled": True}]})
+    assert trips._cancelled({"legs": [{**ride, "to": {"cancelled": True}}]})
+
+
 def test_a_ride_with_a_service_change_still_leads_a_far_later_one():
     from nycynapse.tools import trips
 
