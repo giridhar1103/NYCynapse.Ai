@@ -805,7 +805,12 @@ def test_calendar_dates_are_not_read_as_clock_times(monkeypatch):
     now = datetime(2026, 10, 20, 15, 30, tzinfo=trips.NY)  # a Tuesday afternoon
     monkeypatch.setattr(trips, "_now", lambda: now)
     sat = datetime(2026, 10, 24, 5, 30, tzinfo=trips.NY)
-    for w in ("Saturday October 24 5:30 AM", "2026-10-24 5:30 AM", "Oct 24th 5:30am", "10/24 5:30 AM"):
+    for w in (
+        "Saturday October 24 5:30 AM",
+        "2026-10-24 5:30 AM",
+        "Oct 24th 5:30am",
+        "10/24 5:30 AM",
+    ):
         assert trips.parse_when(w) == sat, w
     assert trips.parse_when("Jan 3 9am") == datetime(2027, 1, 3, 9, tzinfo=trips.NY)
     assert trips.parse_when("October 20 at 1pm").hour == 13  # a named date is never rolled
@@ -816,17 +821,30 @@ def test_airtrain_leg_counts_in_leave_and_arrive():
 
     def it(start, end):
         return {
-            "startTime": start, "endTime": end,
-            "legs": [{"mode": "SUBWAY", "routeShortName": "E", "duration": 1800,
-                      "startTime": start, "endTime": end, "intermediateStops": [{}],
-                      "from": {"name": "A", "lat": 40.7, "lon": -73.9},
-                      "to": {"name": "END", "lat": 40.7, "lon": -73.8}}],
+            "startTime": start,
+            "endTime": end,
+            "legs": [
+                {
+                    "mode": "SUBWAY",
+                    "routeShortName": "E",
+                    "duration": 1800,
+                    "startTime": start,
+                    "endTime": end,
+                    "intermediateStops": [{}],
+                    "from": {"name": "A", "lat": 40.7, "lon": -73.9},
+                    "to": {"name": "END", "lat": 40.7, "lon": -73.8},
+                }
+            ],
         }
 
-    to = trips._itinerary(it("2026-10-21T10:00:00Z", "2026-10-21T10:30:00Z"), "Jamaica", ("AirTrain", 8, 20))
+    to = trips._itinerary(
+        it("2026-10-21T10:00:00Z", "2026-10-21T10:30:00Z"), "Jamaica", ("AirTrain", 8, 20)
+    )
     assert to["minutes"] == (38, 50)
     assert to["arrive"].startswith("6:38 to 6:50 AM at the terminals")
-    back = trips._itinerary(it("2026-10-21T10:00:00Z", "2026-10-21T10:30:00Z"), "Home", ("AirTrain", 8, 20), before=True)
+    back = trips._itinerary(
+        it("2026-10-21T10:00:00Z", "2026-10-21T10:30:00Z"), "Home", ("AirTrain", 8, 20), before=True
+    )
     assert back["leave"] == "5:40 AM from the terminals" and back["steps"][0] == "AirTrain"
 
 
@@ -880,6 +898,79 @@ def test_verified_draft_is_rewritten_with_the_problems(monkeypatch):
     out = agent.run("which zoo gate from the bus?", [], lambda e, d: None)
     assert out["answer"].startswith("Get off at Southern Blvd")
     assert "no source names a gate" in seen[3][1]
+
+
+def test_check_hands_back_the_fixed_answer_without_a_rewrite(monkeypatch):
+    agent, seen = _agent(
+        monkeypatch,
+        [
+            _step(calls=[("trip_plan", {})]),
+            _step(answer="Take the Bx9 and use Gate A on Southern Blvd, it is the nearest [1]."),
+            {
+                "problems": [{"quote": "Gate A on Southern Blvd", "why": "no source names a gate"}],
+                "unfinished": [],
+                "fixed": "Take the Bx9 and get off at Southern Blvd and E 183 St [1].",
+            },
+        ],
+        [_tool("trip_plan", text="Bx9 to Southern Blvd/E 183 St")],
+    )
+    agent.verify_answers = True
+    said = []
+    out = agent.run("which zoo gate from the bus?", [], lambda e, d: said.append((e, d)))
+    assert out["answer"].startswith("Take the Bx9 and get off at Southern Blvd")
+    assert len(seen) == 3  # no rewrite call, no second check
+    assert any("fixed in the check" in s.get("note", "") for s in out["steps"])
+    assert ("status", {"text": "Checking the answer against its sources"}) in said
+    timeline = out["steps"][-1]["timeline"]
+    assert [x["name"] for x in timeline] == ["step", "trip_plan", "step", "verify"]
+
+
+def test_a_gutted_or_missing_fix_falls_back_to_a_rewrite(monkeypatch):
+    agent, seen = _agent(
+        monkeypatch,
+        [
+            _step(calls=[("trip_plan", {})]),
+            _step(answer="Take the Bx9 and use Gate A on Southern Blvd, it is the nearest [1]."),
+            {"problems": [{"quote": "Gate A", "why": "no source names a gate"}], "fixed": "No."},
+            _step(answer="Get off at Southern Blvd and 183rd St [1]."),
+            {"problems": [], "unfinished": [], "fixed": None},
+        ],
+        [_tool("trip_plan", text="Bx9 to Southern Blvd/E 183 St")],
+    )
+    agent.verify_answers = True
+    out = agent.run("which zoo gate from the bus?", [], lambda e, d: None)
+    assert out["answer"].startswith("Get off at Southern Blvd")
+    assert len(seen) == 5  # the old path: rewrite, then one more check
+
+
+def test_fix_must_read_like_the_answer():
+    draft = "Take the N from Astoria to Coney Island, about 77 minutes with no transfers [1]."
+    assert core._usable_fix(draft, "Take the N from Astoria, about 77 minutes [1].")
+    assert core._usable_fix(draft, None) is None
+    assert core._usable_fix(draft, "Yes.") is None
+    assert core._usable_fix(draft, '{"status": "x", "calls": []}') is None
+    assert core._usable_fix(draft, draft + " word" * 60) is None
+
+
+def test_a_tool_that_raises_does_not_end_the_turn(monkeypatch):
+    agent, _ = _agent(
+        monkeypatch,
+        [_step(calls=[("weather", {})]), _step(answer="I could not get the weather just now.")],
+        [_tool("weather", text="x")],
+    )
+
+    def boom(name, args):
+        raise RuntimeError("socket closed")
+
+    agent.host.call = boom
+    out = agent.run("is it raining in Queens right now?", [], lambda e, d: None)
+    assert out["answer"].startswith("I could not get the weather")
+    assert out["steps"][-1]["timeline"][1] == {
+        "kind": "tool",
+        "name": "weather",
+        "ms": out["steps"][-1]["timeline"][1]["ms"],
+        "ok": False,
+    }
 
 
 def test_unfinished_draft_goes_back_to_look(monkeypatch):
@@ -1037,14 +1128,34 @@ def test_station_named_with_its_line(monkeypatch):
     from nycynapse.tools import access, trips
 
     rows = [
-        {"stop_name": "Church Av", "daytime_routes": "F G", "borough": "Bk",
-         "gtfs_latitude": "40.644", "gtfs_longitude": "-73.979"},
-        {"stop_name": "Church Av", "daytime_routes": "2 5", "borough": "Bk",
-         "gtfs_latitude": "40.650", "gtfs_longitude": "-73.949"},
-        {"stop_name": "57 St-7 Av", "daytime_routes": "N Q R W", "borough": "M",
-         "gtfs_latitude": "40.764", "gtfs_longitude": "-73.980"},
-        {"stop_name": "7 Av", "daytime_routes": "B Q", "borough": "Bk",
-         "gtfs_latitude": "40.677", "gtfs_longitude": "-73.972"},
+        {
+            "stop_name": "Church Av",
+            "daytime_routes": "F G",
+            "borough": "Bk",
+            "gtfs_latitude": "40.644",
+            "gtfs_longitude": "-73.979",
+        },
+        {
+            "stop_name": "Church Av",
+            "daytime_routes": "2 5",
+            "borough": "Bk",
+            "gtfs_latitude": "40.650",
+            "gtfs_longitude": "-73.949",
+        },
+        {
+            "stop_name": "57 St-7 Av",
+            "daytime_routes": "N Q R W",
+            "borough": "M",
+            "gtfs_latitude": "40.764",
+            "gtfs_longitude": "-73.980",
+        },
+        {
+            "stop_name": "7 Av",
+            "daytime_routes": "B Q",
+            "borough": "Bk",
+            "gtfs_latitude": "40.677",
+            "gtfs_longitude": "-73.972",
+        },
     ]
     monkeypatch.setattr(access, "_stations", lambda: rows)
     assert trips.locate("Church Avenue station on the 2 and 5")["lon"] == -73.949
@@ -1062,10 +1173,20 @@ def test_line_letter_before_station_and_borough_named(monkeypatch):
     from nycynapse.tools import access, trips
 
     rows = [
-        {"stop_name": "Nostrand Av", "daytime_routes": "A C", "borough": "Bk",
-         "gtfs_latitude": "40.680", "gtfs_longitude": "-73.950"},
-        {"stop_name": "Norwood Av", "daytime_routes": "J Z", "borough": "Bk",
-         "gtfs_latitude": "40.681", "gtfs_longitude": "-73.880"},
+        {
+            "stop_name": "Nostrand Av",
+            "daytime_routes": "A C",
+            "borough": "Bk",
+            "gtfs_latitude": "40.680",
+            "gtfs_longitude": "-73.950",
+        },
+        {
+            "stop_name": "Norwood Av",
+            "daytime_routes": "J Z",
+            "borough": "Bk",
+            "gtfs_latitude": "40.681",
+            "gtfs_longitude": "-73.880",
+        },
     ]
     monkeypatch.setattr(access, "_stations", lambda: rows)
     assert trips.locate("Nostrand Av C station, Brooklyn")["name"] == "Nostrand Av (A C)"
@@ -1108,8 +1229,11 @@ def test_named_entrance_of_a_big_place(monkeypatch):
         "Central Park": {"name": "Central Park", "lat": 40.7829, "lon": -73.9654},
         "Conservatory Garden": {"name": "Conservatory Garden", "lat": 40.7937, "lon": -73.9526},
         # the city's address search puts this one at the park's middle
-        "Conservatory Garden, Central Park": {"name": "CP CONSERVATORY GARDEN",
-                                              "lat": 40.7825, "lon": -73.9655},
+        "Conservatory Garden, Central Park": {
+            "name": "CP CONSERVATORY GARDEN",
+            "lat": 40.7825,
+            "lon": -73.9655,
+        },
         "New York Botanical Garden": {"name": "NYBG", "lat": 40.8664, "lon": -73.8808},
         "Mosholu": {"name": "Mosholu Pkwy", "lat": 40.8797, "lon": -73.8847},
     }
@@ -1132,10 +1256,12 @@ def test_old_web_figures_are_marked_dated():
 def test_stop_names_keep_numbers_and_towns(monkeypatch):
     from nycynapse.tools import trips
 
-    hits = [{"name": "Beach 105 St", "lat": 40.583, "lon": -73.827, "modes": ["SUBWAY"]},
-            {"name": "UPPER MONTCLAIR", "lat": 40.842, "lon": -74.209, "modes": ["REGIONAL_RAIL"]},
-            {"name": "Rockaway", "lat": 40.584, "lon": -73.832, "modes": ["FERRY"]},
-            {"name": "Rockaway Av", "lat": 40.663, "lon": -73.909, "modes": ["SUBWAY"]}]
+    hits = [
+        {"name": "Beach 105 St", "lat": 40.583, "lon": -73.827, "modes": ["SUBWAY"]},
+        {"name": "UPPER MONTCLAIR", "lat": 40.842, "lon": -74.209, "modes": ["REGIONAL_RAIL"]},
+        {"name": "Rockaway", "lat": 40.584, "lon": -73.832, "modes": ["FERRY"]},
+        {"name": "Rockaway Av", "lat": 40.663, "lon": -73.909, "modes": ["SUBWAY"]},
+    ]
     monkeypatch.setattr(trips, "get_json", lambda *a, **k: hits)
     assert trips._stop("Beach 108th Street station") is None
     assert trips._stop("Montclair") is None
@@ -1152,8 +1278,9 @@ def test_today_is_kept_and_a_past_time_is_said(monkeypatch):
     monkeypatch.setattr(trips, "_now", lambda: now)
     assert trips.parse_when("today 3pm").day == 23  # not rolled to tomorrow
     assert trips.parse_when("at 3pm").day == 24
-    monkeypatch.setattr(trips, "locate", lambda t: {"name": t, "lat": 40.7 + len(t) / 1000,
-                                                     "lon": -73.9})
+    monkeypatch.setattr(
+        trips, "locate", lambda t: {"name": t, "lat": 40.7 + len(t) / 1000, "lon": -73.9}
+    )
     out = trips.trip_plan("Harlem-125 St", "125 St on the A", "transit", "today 3pm", True)
     assert not out.ok and "already passed" in out.error
 
@@ -1168,9 +1295,10 @@ def test_path_station_only_when_nothing_else_is_named():
 def test_ferry_terminal_over_the_landing_next_to_it(monkeypatch):
     from nycynapse.tools import trips
 
-    hits = [{"name": "St. George", "lat": 40.6461, "lon": -74.0742, "modes": ["FERRY"]},
-            {"name": "St. George Ferry Terminal", "lat": 40.6442, "lon": -74.0722,
-             "modes": ["FERRY"]}]
+    hits = [
+        {"name": "St. George", "lat": 40.6461, "lon": -74.0742, "modes": ["FERRY"]},
+        {"name": "St. George Ferry Terminal", "lat": 40.6442, "lon": -74.0722, "modes": ["FERRY"]},
+    ]
     monkeypatch.setattr(trips, "get_json", lambda *a, **k: hits)
     got = trips._ferry_stop("St. George", "St. George Ferry Terminal")
     assert got["name"] == "St. George Ferry Terminal"
@@ -1208,17 +1336,30 @@ def test_weather_near_a_place_comes_first(monkeypatch):
 
     def fake(url, params, *a, **k):
         n = len(params["latitude"].split(","))
-        one = {"current": {"time": "2026-10-23T21:00", "temperature_2m": 49,
-                           "apparent_temperature": 42, "precipitation": 0, "weather_code": 3,
-                           "wind_speed_10m": 6, "is_day": 0},
-               "hourly": {"time": ["2026-10-23T22:00"], "precipitation_probability": [0],
-                          "precipitation": [0], "weather_code": [3]}}
+        one = {
+            "current": {
+                "time": "2026-10-23T21:00",
+                "temperature_2m": 49,
+                "apparent_temperature": 42,
+                "precipitation": 0,
+                "weather_code": 3,
+                "wind_speed_10m": 6,
+                "is_day": 0,
+            },
+            "hourly": {
+                "time": ["2026-10-23T22:00"],
+                "precipitation_probability": [0],
+                "precipitation": [0],
+                "weather_code": [3],
+            },
+        }
         return [one] * n
 
     monkeypatch.setattr(live, "get_json", fake)
     monkeypatch.setattr(live, "weather_alerts", lambda: live.ToolResult(summary="", data=[]))
-    monkeypatch.setattr(trips, "locate", lambda t: {"name": "Newark Airport", "lat": 40.69,
-                                                     "lon": -74.17})
+    monkeypatch.setattr(
+        trips, "locate", lambda t: {"name": "Newark Airport", "lat": 40.69, "lon": -74.17}
+    )
     out = live.weather(6, 0, "Newark Airport")
     assert out.summary.splitlines()[1].startswith("Newark Airport: 49F (feels like 42F)")
 
@@ -1231,8 +1372,10 @@ def test_tonight_small_hours_and_airtrain_shuttle_by_station(monkeypatch):
     monkeypatch.setattr(trips, "_now", lambda: datetime(2026, 10, 22, 20, tzinfo=trips.NY))
     got = trips.parse_when("tonight 12:30am, after midnight into Friday")
     assert (got.day, got.hour, got.minute) == (23, 0, 30)
-    alerts = [(False, "AirTrain between Howard Beach and all terminals is replaced by shuttle"),
-              (True, "AirTrain between Jamaica and Federal Circle is replaced by free shuttle")]
+    alerts = [
+        (False, "AirTrain between Howard Beach and all terminals is replaced by shuttle"),
+        (True, "AirTrain between Jamaica and Federal Circle is replaced by free shuttle"),
+    ]
     assert trips._shuttle_at(alerts, "Jamaica station")
     assert not trips._shuttle_at(alerts, "Howard Beach-JFK Airport")
 
@@ -1243,14 +1386,35 @@ def test_service_change_naming_a_station_of_the_ride(monkeypatch):
 
     from nycynapse.tools import trips
 
-    feed = {"entity": [{"alert": {
-        "header_text": {"translation": [{"language": "en", "text": "In Queens, no [7] at Flushing-Main St"}]},
-        "informed_entity": [{"route_id": "7"}],
-        "active_period": [{"start": int(_time.time()) - 60, "end": int(_time.time()) + 86400}],
-    }}]}
+    feed = {
+        "entity": [
+            {
+                "alert": {
+                    "header_text": {
+                        "translation": [
+                            {"language": "en", "text": "In Queens, no [7] at Flushing-Main St"}
+                        ]
+                    },
+                    "informed_entity": [{"route_id": "7"}],
+                    "active_period": [
+                        {"start": int(_time.time()) - 60, "end": int(_time.time()) + 86400}
+                    ],
+                }
+            }
+        ]
+    }
     monkeypatch.setattr(trips, "get_json", lambda *a, **k: feed)
-    opt = {"lines": [{"mode": "subway", "name": "7", "from": "Times Sq-42 St",
-                      "to": "Flushing-Main St", "via": ["Queensboro Plaza"]}]}
+    opt = {
+        "lines": [
+            {
+                "mode": "subway",
+                "name": "7",
+                "from": "Times Sq-42 St",
+                "to": "Flushing-Main St",
+                "via": ["Queensboro Plaza"],
+            }
+        ]
+    }
     got = trips._line_changes(opt, datetime.now(trips.NY))
     assert got[0].startswith("Affects this ride on the 7") and opt["affected"]
 
@@ -1261,24 +1425,42 @@ def test_rides_with_cancelled_stops_are_dropped(monkeypatch):
     from nycynapse.tools import trips
 
     def it(start, cancel):
-        return {"startTime": start, "endTime": start, "transfers": 0, "legs": [
-            {"mode": "BUS", "routeShortName": "126", "duration": 600, "startTime": start,
-             "endTime": start, "intermediateStops": [{}],
-             "from": {"name": "A", "lat": 40.7, "lon": -74.0},
-             "to": {"name": "B", "lat": 40.75, "lon": -73.99, "cancelled": cancel}}]}
+        return {
+            "startTime": start,
+            "endTime": start,
+            "transfers": 0,
+            "legs": [
+                {
+                    "mode": "BUS",
+                    "routeShortName": "126",
+                    "duration": 600,
+                    "startTime": start,
+                    "endTime": start,
+                    "intermediateStops": [{}],
+                    "from": {"name": "A", "lat": 40.7, "lon": -74.0},
+                    "to": {"name": "B", "lat": 40.75, "lon": -73.99, "cancelled": cancel},
+                }
+            ],
+        }
 
     plans = {"itineraries": [it("2026-10-24T18:05:00Z", True), it("2026-10-24T18:20:00Z", False)]}
     monkeypatch.setattr(trips, "get_json", lambda *a, **k: plans)
-    got = trips._plan({"lat": 40.7, "lon": -74.0}, {"lat": 40.75, "lon": -73.99},
-                      datetime(2026, 10, 24, 14, tzinfo=trips.NY), False)
+    got = trips._plan(
+        {"lat": 40.7, "lon": -74.0},
+        {"lat": 40.75, "lon": -73.99},
+        datetime(2026, 10, 24, 14, tzinfo=trips.NY),
+        False,
+    )
     assert [x["startTime"] for x in got] == ["2026-10-24T18:20:00Z"]
 
 
 def test_reader_note_is_kept_for_follow_ups(monkeypatch):
     agent, seen = _agent(
         monkeypatch,
-        [_step(calls=[("trip_plan", {})]),
-         {**_step(answer="Take the E [1]."), "remember": "from Penn Station, wheelchair"}],
+        [
+            _step(calls=[("trip_plan", {})]),
+            {**_step(answer="Take the E [1]."), "remember": "from Penn Station, wheelchair"},
+        ],
         [_tool("trip_plan", text="E train")],
     )
     out = agent.run("how do i get to jfk? i use a wheelchair", [], lambda e, d: None)
@@ -1296,7 +1478,9 @@ def test_clock_check_reads_iso_in_new_york_time_and_keeps_numbers_honest():
     assert core._untraced_clocks("Leave at 10:47 pm.", res) == ["10:47 pm"]
     # digits of a timestamp are not evidence for a made-up duration
     assert core._untraced_numbers("The trip takes 47 minutes.", res) == ["47"]
-    assert "10:47" not in core._drop_untraced("Take the 10:47 p.m. train. Bring water.", ["10:47 p.m."])
+    assert "10:47" not in core._drop_untraced(
+        "Take the 10:47 p.m. train. Bring water.", ["10:47 p.m."]
+    )
 
 
 def test_review_fixes_for_terminals_weekdays_and_unchecked_stations(monkeypatch):
@@ -1308,6 +1492,7 @@ def test_review_fixes_for_terminals_weekdays_and_unchecked_stations(monkeypatch)
     assert (t8["lat"], t8["lon"]) == trips.JFK["terminals"]["8"]
     monkeypatch.setattr(trips, "_now", lambda: datetime(2026, 10, 24, 14, tzinfo=trips.NY))
     assert trips.parse_when("after midnight into Friday, 12:30am").strftime("%a") == "Fri"
+
     def down(*a, **k):
         raise OSError("feed down")
 
@@ -1335,8 +1520,10 @@ def test_failed_rewrite_answers_with_the_draft(monkeypatch):
 
 
 def test_leaked_thinking_and_field_dumps_are_never_answers():
-    leaked = ('<ctrl94>thought\n<ctrl95>```json\n{"status": "Checking", "calls": [{"tool": '
-              '"trip_plan", "args": {"origin": "A"}}]}\n```')
+    leaked = (
+        '<ctrl94>thought\n<ctrl95>```json\n{"status": "Checking", "calls": [{"tool": '
+        '"trip_plan", "args": {"origin": "A"}}]}\n```'
+    )
     calls = core._embedded_calls(leaked)
     assert calls and calls[0]["tool"] == "trip_plan"
     assert core._embedded_calls('declined: false\ncalls: [{"tool": "web_search"}]') == []

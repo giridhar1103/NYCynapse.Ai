@@ -28,3 +28,16 @@ leaves unanswered or hands back to them ("check the timetable", "confirm with th
 when a tool could settle it: opening an official page already found, planning the trip, a
 fare or hours lookup. Say each as the check to make, in a few words. Leave it empty when the
 draft answers everything the reader asked, or when no tool could do better.
+
+Last, `fixed`. When you listed any problem, or the request names things already known to need
+fixing, write the whole answer again in `fixed`, corrected, ready for the reader:
+- change only what the problems name: put the right fact from the tool results in its place,
+  or take the sentence out when the tool results cannot settle it
+- keep every other sentence, its citations like [2] and its formatting exactly as written; a
+  fact you correct carries the number of the source you took it from
+- never add a time, price, distance or count that is not in the tool results, and never add
+  advice the draft did not have
+- if it has to get shorter, drop side notes first and keep the best option and its times
+- do not mention the check, the draft or the tools
+
+When nothing had to change, `fixed` is null.

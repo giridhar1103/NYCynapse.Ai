@@ -13,8 +13,9 @@ from __future__ import annotations
 
 import contextvars
 import json
-import re
+import logging
 import os
+import re
 import subprocess
 import tempfile
 import threading
@@ -42,6 +43,7 @@ def _lock_for(pid: str) -> threading.BoundedSemaphore:
 
 
 _config: dict | None = None
+log = logging.getLogger(__name__)
 
 
 class LLMError(Exception):
@@ -109,6 +111,10 @@ def override(pid: str | None) -> contextvars.Token:
     if pid is not None and pid not in config()["providers"]:
         raise LLMError(f"unknown provider {pid}")
     return _override.set(pid)
+
+
+def reset_override(token: contextvars.Token) -> None:
+    _override.reset(token)
 
 
 def provider_for(role: str) -> tuple[str, dict]:
@@ -417,17 +423,31 @@ def complete_with(
         p = {**p, "timeout": max(20, min(p.get("timeout", 300), int(timeout)))}
     last: Exception | None = None
     for attempt in range(retries + 1):
+        asked = time.monotonic()
         try:
             lock = _lock_for(pid)
             if not lock.acquire(timeout=_WAIT_S):
+                log.warning("model %s busy: no free slot in %ss", pid, int(_WAIT_S))
                 raise ProviderBusy(f"{pid} is busy with other questions")
+            waited = int((time.monotonic() - asked) * 1000)
             try:
-                return _IMPL[p["type"]](pid, p, system, prompt, schema)
+                r = _IMPL[p["type"]](pid, p, system, prompt, schema)
             finally:
                 lock.release()
+            log.info(
+                "model call %s",
+                json.dumps(
+                    {"model": pid, "ms": r.latency_ms, "waited_ms": waited, "in": r.tokens_in,
+                     "out": r.tokens_out, "usd": r.cost_usd, "attempt": attempt + 1}
+                ),
+            )
+            return r
         except LLMError as e:
             if any(m in str(e).lower() for m in LIMIT_MARKERS):
+                log.warning("model %s at its limit: %s", pid, str(e)[:160])
                 raise ProviderLimit(str(e)[:300]) from e
+            log.warning("model %s failed (attempt %s): %s", pid, attempt + 1, str(e)[:160])
             last = e
-            time.sleep(3 * (attempt + 1))
+            if attempt < retries:
+                time.sleep(3 * (attempt + 1))
     raise LLMError(f"{pid} failed after {retries + 1} attempts: {last}")

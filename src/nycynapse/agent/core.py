@@ -15,7 +15,8 @@ from __future__ import annotations
 
 import contextvars
 import json
-from datetime import datetime
+import logging
+import os
 import re
 import threading
 import time
@@ -23,6 +24,7 @@ import uuid
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from datetime import datetime
 
 from ..llm import client as llm
 from ..llm.client import LLMError, ProviderLimit
@@ -32,6 +34,12 @@ from . import places as place_index
 from .host import MCPHost
 from .lake import Lake, now_as_of
 from .lake import tools as lake_tools
+
+log = logging.getLogger(__name__)
+
+# The fact check hands back the corrected answer itself, so a draft with problems costs one
+# model call instead of a check, a rewrite and a second check. "0" restores the old flow.
+FIX_IN_CHECK = os.environ.get("NYCYNAPSE_VERIFY_FIX", "1") != "0"
 
 UNFINISHED = "the draft leaves part of the question unanswered"
 MAX_ROUNDS = 5
@@ -99,8 +107,12 @@ VERIFY_SCHEMA = {
             "maxItems": 2,
             "items": {"type": "string"},
         },
+        "fixed": {
+            "type": ["string", "null"],
+            "description": "the whole corrected answer when anything had to change, else null",
+        },
     },
-    "required": ["problems", "unfinished"],
+    "required": ["problems", "unfinished", "fixed"],
     "additionalProperties": False,
 }
 
@@ -115,7 +127,8 @@ _CLAIMS_FAILURE = re.compile(
 _DRAFT_SMELLS = [
     (
         re.compile(
-            # "Correction: ..." about an earlier answer is allowed; a mid-answer change of mind is not
+            # "Correction: ..." about an earlier answer is allowed; a change of mind
+            # in the middle of an answer is not
             r"\.\.\.\s*(?:correct|actually|wait)\b|\b(?:scratch that|wait,|I mean,)",
             re.I,
         ),
@@ -215,6 +228,8 @@ class Turn:
     switched: bool = False  # moved to the other model after a failure (only once per turn)
     embedded_ok: bool = False
     redraft: str | None = None
+    fixed: str | None = None  # the corrected answer the last fact check handed back
+    timeline: list[dict] = field(default_factory=list)  # every model and tool call, timed
 
 
 class Agent:
@@ -301,8 +316,12 @@ class Agent:
                     answer, step = last
                     t.steps.append({"note": "rewrite failed; answered with the last draft"})
                     return self._finish(
-                        t, answer, step.get("follow_ups") or [], declined=False,
-                        places=step.get("places") or [], remember=step.get("remember"),
+                        t,
+                        answer,
+                        step.get("follow_ups") or [],
+                        declined=False,
+                        places=step.get("places") or [],
+                        remember=step.get("remember"),
                     )
                 return self._finish(t, None, [], declined=False, error=BUSY)
             status = (step.get("status") or "").strip()[:120]
@@ -360,6 +379,7 @@ class Agent:
                         + ". Use the figures the tools gave, or leave them out; never estimate "
                         "times, distances, prices or counts yourself"
                     )
+            t.fixed = None
             # Every finished draft gets the fact check, whatever its wording; a rewrite made
             # for factual problems is checked once more.
             if (
@@ -373,7 +393,8 @@ class Agent:
                 and time.monotonic() - t.started < TURN_SECONDS - 60
             ):
                 t.verified += 1
-                found = self._verify(t, answer)
+                emit("status", {"text": "Checking the answer against its sources"})
+                found = self._verify(t, answer, style + factual)
                 if found == [UNFINISHED] and (
                     self._calls(t) >= MAX_CALLS or round_no >= MAX_ROUNDS - 1
                 ):
@@ -382,20 +403,40 @@ class Agent:
             issues = style + factual
             if answer and not calls:
                 last = (answer, step)
+            room = (
+                self._calls(t) < MAX_CALLS
+                and round_no < MAX_ROUNDS - 1
+                and time.monotonic() - t.started < TURN_SECONDS - 60
+            )
+            if answer and not calls and issues and t.fixed and not (t.look and room):
+                # The check already wrote the corrected answer from the same tool results:
+                # take it. Only a part still unanswered goes back to the model, with tools.
+                t.steps.append({"note": "fixed in the check: " + "; ".join(issues)})
+                t.redraft = t.redraft or ""
+                return self._finish(
+                    t,
+                    t.fixed,
+                    step.get("follow_ups") or [],
+                    declined=False,
+                    places=step.get("places") or [],
+                    remember=step.get("remember"),
+                )
             # A second rewrite only for what the fact check still finds wrong; figures no tool
             # gave are dropped after the first instead.
             again = t.redrafts == 1 and found and found != [UNFINISHED]
-            if answer and not calls and issues and (t.redrafts == 0 or again) and round_no < MAX_ROUNDS:
+            if (
+                answer
+                and not calls
+                and issues
+                and (t.redrafts == 0 or again)
+                and round_no < MAX_ROUNDS
+            ):
                 t.had_facts = bool(found)
                 t.redrafts += 1
                 # Made-up figures may need a tool (trip_plan for a travel time), so that rewrite
                 # may still call one; a rewrite for wording alone answers straight away.
-                can_look = (
-                    bool(loose or t.look)
-                    and self._calls(t) < MAX_CALLS
-                    and round_no < MAX_ROUNDS - 1
-                    and time.monotonic() - t.started < TURN_SECONDS - 60
-                )
+                can_look = bool(loose or t.look) and room
+                emit("status", {"text": "Tightening the answer"})
                 t.redraft = (
                     f"Your draft answer was:\n{answer}\n\nRewrite it as the final answer, "
                     "keeping what is right with its citations and places, and correcting or "
@@ -446,15 +487,19 @@ class Agent:
         if last:  # out of rounds with a draft in hand: that draft, not an error
             answer, step = last
             return self._finish(
-                t, answer, step.get("follow_ups") or [], declined=False,
-                places=step.get("places") or [], remember=step.get("remember"),
+                t,
+                answer,
+                step.get("follow_ups") or [],
+                declined=False,
+                places=step.get("places") or [],
+                remember=step.get("remember"),
             )
         return self._finish(t, None, [], declined=False, error=BUSY)
 
     def _calls(self, t: Turn) -> int:
         return len(t.results)
 
-    def _verify(self, t: Turn, answer: str) -> list[str]:
+    def _verify(self, t: Turn, answer: str, also: list[str] | None = None) -> list[str]:
         """A second look at a finished draft: claims the tool results do not support, times
         that do not fit together, places or details stated without a source. Problems found
         go into the one rewrite; a failed check never blocks the answer."""
@@ -480,21 +525,36 @@ class Agent:
             + "Tool results:\n\n"
             + "\n\n".join(_result_text(r, numbers) for r in t.results)
             + f"\n\nDraft answer:\n{answer}"
+            + (
+                "\n\nAlready known to need fixing in the draft (fix these in `fixed` too): "
+                + "; ".join(also)
+                if also and FIX_IN_CHECK
+                else ""
+            )
         )
+        t.fixed = None
+        pid = t.model or self.models()[0]
+        began = time.monotonic()
         try:
             r = llm.complete_with(
-                t.model or self.models()[0],
+                pid,
                 load_prompt("verify"),
                 prompt,
                 schema=VERIFY_SCHEMA,
                 retries=0,
                 timeout=60,
             )
-            found = r.json().get("problems") or []
-            t.look = [str(x)[:200] for x in (r.json().get("unfinished") or [])[:2]]
+            reply = r.json()
+            found = reply.get("problems") or []
+            t.look = [str(x)[:200] for x in (reply.get("unfinished") or [])[:2]]
             t.cost_usd += r.cost_usd or 0
             t.model_calls += 1
-        except Exception:  # noqa: BLE001 - the check is a safety net, not a gate
+            t.timeline.append(_timed("model", "verify", began, True, pid))
+            if FIX_IN_CHECK and (found or also):
+                t.fixed = _usable_fix(answer, reply.get("fixed"))
+        except Exception as e:  # noqa: BLE001 - the check is a safety net, not a gate
+            t.timeline.append(_timed("model", "verify", began, False, pid))
+            log.warning("fact check failed: %s", str(e)[:200])
             return []
         out = [f'"{p["quote"][:120]}": {p["why"][:200]}' for p in found[:4] if p.get("quote")]
         if out:
@@ -509,13 +569,13 @@ class Agent:
         # Evidence is what tools returned, now or in earlier turns, and what the reader wrote;
         # never the guide's own earlier answers, or a made-up figure would vouch for itself.
         memory = (
-            " ".join(f"{h.get('q', '')} {h.get('facts', '')}" for h in t.history)
-            + " "
-            + t.question
+            " ".join(f"{h.get('q', '')} {h.get('facts', '')}" for h in t.history) + " " + t.question
         )
         results = [r["result"] for r in t.results]
-        return (_untraced_numbers(_uncite(answer), results, memory)
-                + _untraced_clocks(_uncite(answer), results, memory))[:8]
+        return (
+            _untraced_numbers(_uncite(answer), results, memory)
+            + _untraced_clocks(_uncite(answer), results, memory)
+        )[:8]
 
     def _valid_calls(self, t: Turn, calls: list[dict]) -> list[dict]:
         names = {x.name for x in self.tools()}
@@ -579,17 +639,24 @@ class Agent:
                     "state": "start",
                 },
             )
-            if c["tool"] in self.lake_tools:
-                self._emit_local.fn = lambda s, cid=c["id"]: t.emit("lake", {"id": cid, **s})
-                try:
-                    res = self.lake_tools[c["tool"]](**c["args"])
-                finally:
-                    self._emit_local.fn = None
-                via = "lake"
-            else:
-                res, via = self.host.call(c["tool"], c["args"])
-            llm._override.reset(token)
+            try:
+                if c["tool"] in self.lake_tools:
+                    self._emit_local.fn = lambda s, cid=c["id"]: t.emit("lake", {"id": cid, **s})
+                    try:
+                        res = self.lake_tools[c["tool"]](**c["args"])
+                    finally:
+                        self._emit_local.fn = None
+                    via = "lake"
+                else:
+                    res, via = self.host.call(c["tool"], c["args"])
+            except Exception as e:  # noqa: BLE001 - one broken tool must not end the turn
+                log.exception("tool %s raised", c["tool"])
+                res, via = failed(f"{type(e).__name__}: {str(e)[:200]}"), "error"
+            finally:
+                llm.reset_override(token)
             ms = int((time.monotonic() - started) * 1000)
+            if not res.ok:
+                log.warning("tool %s failed: %s", c["tool"], (res.error or "")[:200])
             t.emit(
                 "tool",
                 {
@@ -620,6 +687,9 @@ class Agent:
                 )
                 t.model_calls += calls_made or 0
                 t.results.append(r)
+                t.timeline.append(
+                    {"kind": "tool", "name": r["tool"], "ms": r["ms"], "ok": r["result"].ok}
+                )
 
     def _prompt(self, t: Turn, static: str, force: bool) -> str:
         parts = [static]
@@ -671,6 +741,7 @@ class Agent:
     def _step(self, t: Turn, system: str, static: str, force: bool) -> dict | None:
         text = self._prompt(t, static, force)
         for pid in [t.model] if t.model else self.models():
+            began = time.monotonic()
             try:
                 # Each call gets what is left of the turn (and a little more to finish), so
                 # one slow call cannot hold the reader for five minutes.
@@ -680,9 +751,11 @@ class Agent:
                 )
                 step = r.json()
             except ProviderLimit:
+                t.timeline.append(_timed("model", "step", began, False, pid))
                 self._rest(pid)
                 continue
             except (LLMError, ValueError) as e:
+                t.timeline.append(_timed("model", "step", began, False, pid))
                 t.steps.append({"error": f"{pid}: {str(e)[:200]}"})
                 if t.model:  # already committed to a model this turn: try the other one, once
                     others = [m for m in self.models() if m != pid]
@@ -697,6 +770,7 @@ class Agent:
                 t.fell_back = pid != (roles.get("agent") or roles["default"])
             t.cost_usd += r.cost_usd or 0
             t.model_calls += 1
+            t.timeline.append(_timed("model", "step", began, True, pid))
             return step
         return None
 
@@ -784,7 +858,8 @@ class Agent:
                     "ms": r.get("ms"),
                 }
                 for r in t.results
-            ],
+            ]
+            + [{"timeline": t.timeline}],
             "model": t.model,
             "fell_back": t.fell_back,
             "cost_usd": round(t.cost_usd, 4),
@@ -810,6 +885,23 @@ class Agent:
             ]
             + [{"note": s["note"]} for s in t.steps if "note" in s],
         }
+
+
+def _timed(kind: str, name: str, began: float, ok: bool, model: str | None = None) -> dict:
+    out = {"kind": kind, "name": name, "ms": int((time.monotonic() - began) * 1000), "ok": ok}
+    return {**out, "model": model} if model else out
+
+
+def _usable_fix(draft: str, fixed) -> str | None:
+    """The corrected answer from the fact check, if it reads like an answer: prose, not far
+    longer than the draft, and not the draft gutted to a line."""
+    text = llm.strip_thought(str(fixed or "")).strip()
+    if not text or _embedded_calls(text) is not None:
+        return None
+    before, after = len(_uncite(draft).split()), len(_uncite(text).split())
+    if after < max(8, before * 0.3) or after > before + 40:
+        return None
+    return text
 
 
 _NUM = re.compile(
