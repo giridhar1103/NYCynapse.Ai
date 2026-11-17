@@ -1015,6 +1015,28 @@ def test_same_address_in_two_boroughs_goes_to_the_one_named_or_manhattan():
     assert trips._same_address([], None) is None
 
 
+def test_sites_that_refuse_readers_are_not_tried_again(monkeypatch):
+    from nycynapse.tools import web
+    from nycynapse.tools.http import BlockedURL
+
+    calls = []
+
+    def refuse(url, pdf=False):
+        calls.append(url)
+        raise BlockedURL("the page returned HTTP 403")
+
+    monkeypatch.setattr(web, "safe_get", refuse)
+    monkeypatch.setattr(web, "_closed", {"panynj.gov": float("inf")})
+    assert not web.closed("https://example.org/a")
+    first = web.read_page("https://www.example.org/hours")
+    assert not first.ok and "does not let this guide open" in first.error
+    assert web.closed("https://example.org/other")
+    web.read_page("https://example.org/other")
+    assert calls == ["https://www.example.org/hours"]  # the second one was not fetched
+    assert web.closed("https://www.panynj.gov/path/en/index.html")
+    assert not web.closed("https://notpanynj.gov/")
+
+
 def test_only_rides_can_be_cancelled():
     from nycynapse.tools import trips
 

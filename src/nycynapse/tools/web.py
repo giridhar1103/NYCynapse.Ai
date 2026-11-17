@@ -11,7 +11,9 @@ from __future__ import annotations
 import os
 import re
 import threading
+import time
 from datetime import date
+from urllib.parse import urlsplit
 
 from . import Tool, ToolResult, failed
 from .http import BlockedURL, env, get_json, post_json, safe_get
@@ -115,6 +117,9 @@ def web_search(query: str, n: int = 5) -> ToolResult:
     for name, fn in (("Google via Serper", _serper), ("Tavily", _tavily), ("SearXNG", _searxng)):
         try:
             results = [r for r in fn(query, n) if r.get("url") or r.get("snippet")]
+            for r in results:
+                if r.get("url") and closed(r["url"]):
+                    r["closed"] = True
         except Exception as e:  # noqa: BLE001 - try the next engine
             errors.append(f"{name}: {type(e).__name__}")
             continue
@@ -199,12 +204,50 @@ def _dated(r: dict) -> str:
     return ""
 
 
+# Sites that turn automated readers away, or serve an empty shell filled in by scripts. Trying
+# them costs a step of the answer for nothing, so they are remembered: these from the start,
+# and any site that refuses, for a few hours. Search results from them are marked, and the
+# guide works from the search snippet or another source instead.
+CLOSED_S = 6 * 3600
+_closed: dict[str, float] = {
+    h: float("inf")
+    for h in ("nycgovparks.org", "panynj.gov", "yelp.com", "facebook.com", "instagram.com")
+}
+_closed_lock = threading.Lock()
+SHUT = "does not let this guide open its pages; use what the search result says, or another site"
+
+
+def _site(url: str) -> str:
+    host = (urlsplit(url.strip()).hostname or "").lower()
+    return host[4:] if host.startswith("www.") else host
+
+
+def closed(url: str) -> bool:
+    site = _site(url)
+    with _closed_lock:
+        return any(
+            (site == h or site.endswith("." + h)) and until > time.time()
+            for h, until in _closed.items()
+        )
+
+
+def _close(url: str) -> None:
+    if _site(url):
+        with _closed_lock:
+            _closed[_site(url)] = time.time() + CLOSED_S
+
+
 def read_page(url: str, find: str | None = None) -> ToolResult:
     """Read the main text of a web page or PDF found by a search; with `find`, the parts of it
     around that phrase."""
+    if closed(url):
+        return failed(f"{_site(url)} {SHUT}")
     try:
         final, ctype, body = safe_get(url.strip(), pdf=True)
     except BlockedURL as e:
+        if re.search(r"HTTP (?:401|403|405|429|451)\b", str(e)):
+            _close(url)
+            return failed(f"{_site(url)} {SHUT}")
         return failed(str(e))
     if ctype == "application/pdf":
         try:
