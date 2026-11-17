@@ -34,7 +34,6 @@ WEB = REPO / "web"
 RESULTS = REPO / "evals" / "results"
 
 
-
 def _log_to_stderr() -> None:
     """The service log (journald) gets this package's lines; it adds the time itself."""
     pkg = logging.getLogger("nycynapse")
@@ -91,8 +90,11 @@ def _warm_tools() -> None:
             ("transit_changes", {"system": "subway"}),
             (
                 "trip_plan",
-                {"origin": "Times Square", "destination": "Grand Central Terminal",
-                 "mode": "transit"},
+                {
+                    "origin": "Times Square",
+                    "destination": "Grand Central Terminal",
+                    "mode": "transit",
+                },
             ),
         ):
             res, _ = host.call(name, args)
@@ -334,11 +336,13 @@ def health_deep():
     check("store", lambda: answerer().ctx.conn.execute("SELECT 1").fetchone() is not None)
     check(
         "lake",
-        lambda: answerer()
-        .ctx.lake.cursor()
-        .execute("SELECT count(*) FROM lake.gold.ops_source_freshness")
-        .fetchone()[0]
-        > 0,
+        lambda: (
+            answerer()
+            .ctx.lake.cursor()
+            .execute("SELECT count(*) FROM lake.gold.ops_source_freshness")
+            .fetchone()[0]
+            > 0
+        ),
     )
     check("tools_server", lambda: chat.agent().host.connected())
     check("models", lambda: chat.agent().available())
@@ -392,9 +396,15 @@ async def security_headers(request: Request, call_next):
     h.setdefault("Cross-Origin-Opener-Policy", "same-origin")
     path = request.url.path
     if "/static/" in path:
-        # Map outlines and libraries change rarely; scripts and styles are versioned in their URLs.
-        long = "/static/vendor/" in path or "/static/geo/" in path or request.url.query
-        h.setdefault("Cache-Control", f"public, max-age={86400 if long else 300}")
+        # Scripts and styles carry a version in their address and the libraries are pinned, so
+        # those never change under the same address. Map outlines change rarely.
+        if "/static/vendor/" in path or request.url.query:
+            keep = "public, max-age=31536000, immutable"
+        elif "/static/geo/" in path:
+            keep = "public, max-age=86400"
+        else:
+            keep = "public, max-age=300"
+        h.setdefault("Cache-Control", keep)
     elif not path.startswith("/api/"):
         h.setdefault("Cache-Control", "no-cache")
     return response

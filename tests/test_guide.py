@@ -1037,6 +1037,28 @@ def test_sites_that_refuse_readers_are_not_tried_again(monkeypatch):
     assert not web.closed("https://notpanynj.gov/")
 
 
+def test_the_model_is_told_the_per_tool_limits(monkeypatch):
+    agent, seen = _agent(
+        monkeypatch,
+        [
+            _step(calls=[("web_search", {"query": "a"}), ("web_search", {"query": "b"})]),
+            _step(answer="Nothing is posted about that [1]."),
+        ],
+        [_tool("web_search", text="result")],
+    )
+    agent.run("what is new at the pier this week?", [], lambda e, d: None)
+    assert "No tool more than 4 times" in seen[0][1]
+    assert "Used so far: web_search 2 of 3." in seen[1][1] or "Answer now" in seen[1][1]
+
+
+def test_no_example_names_a_fixed_month():
+    import re
+
+    from nycynapse.agent.examples import EXAMPLES
+
+    assert not any(re.search(r"\b20\d\d\b", e["q"]) for e in EXAMPLES)
+
+
 def test_only_rides_can_be_cancelled():
     from nycynapse.tools import trips
 

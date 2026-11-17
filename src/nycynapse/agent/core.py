@@ -45,6 +45,7 @@ UNFINISHED = "the draft leaves part of the question unanswered"
 MAX_ROUNDS = 5
 MAX_CALLS = 9
 MAX_PER_TOOL = {"web_search": 3, "read_page": 3, "ask_lake": 3}
+PER_TOOL = 4  # every other tool
 TURN_SECONDS = 150
 REST_S = 20 * 60  # how long a main model that hit its limit is left alone
 
@@ -287,6 +288,16 @@ class Agent:
         return "\n".join(out)
 
     def _coverage_text(self) -> str:
+        # The lake's coverage moves once a day at most: no need to open the lake every turn.
+        kept = getattr(self, "_coverage", None)
+        if kept and time.monotonic() - kept[0] < 600:
+            return kept[1]
+        text = self._read_coverage()
+        if not text.startswith("("):
+            self._coverage = (time.monotonic(), text)
+        return text
+
+    def _read_coverage(self) -> str:
         try:
             ctx = self.lake.fork()
             cov = ctx.coverage
@@ -602,7 +613,7 @@ class Agent:
                     }
                 )
                 continue
-            if used.get(name, 0) >= MAX_PER_TOOL.get(name, 4):
+            if used.get(name, 0) >= MAX_PER_TOOL.get(name, PER_TOOL):
                 t.results.append(
                     {
                         "id": uuid.uuid4().hex[:8],
@@ -732,9 +743,20 @@ class Agent:
         if force:
             parts.append("Answer now with what you have. Do not call any more tools.")
         else:
+            used: dict[str, int] = {}
+            for r in t.results:
+                used[r["tool"]] = used.get(r["tool"], 0) + 1
+            spent = [
+                f"{name} {n} of {MAX_PER_TOOL.get(name, PER_TOOL)}"
+                for name, n in used.items()
+                if n >= MAX_PER_TOOL.get(name, PER_TOOL) - 1
+            ]
             parts.append(
                 f"Budget left: {left} tool calls, "
-                f"{max(0, int(TURN_SECONDS - (time.monotonic() - t.started)))} seconds."
+                f"{max(0, int(TURN_SECONDS - (time.monotonic() - t.started)))} seconds. "
+                f"No tool more than {PER_TOOL} times in one answer (web_search, read_page and "
+                f"ask_lake {MAX_PER_TOOL['web_search']})."
+                + (" Used so far: " + ", ".join(spent) + "." if spent else "")
             )
         return "\n\n".join(parts)
 
