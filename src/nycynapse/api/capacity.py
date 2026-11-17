@@ -1,6 +1,6 @@
 """How many conversations are answered at once, and the line for the rest.
 
-A few answers run at the same time (each model call is a separate process, and the machine is
+A few answers run at the same time (each one makes several model calls and the machine is
 small). A short line forms behind them; everyone in it is told their place, and it moves first
 come, first served. When the line is full, a new question is turned away at once with a clear
 message instead of waiting without end.

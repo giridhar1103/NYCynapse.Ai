@@ -1,13 +1,11 @@
 """HTTP API and static site.
 
-GET only, so the site can sit behind the same read-only proxy as the other projects. A question
-is answered as a stream of server-sent events: one per pipeline stage, then the result and the
-answer. Questions run one at a time; a few more may wait. Each reader gets a small hourly
-allowance and the whole site a daily spending cap, and a question asked recently is answered
-from its stored trace without calling a model.
+GET only, so the site can sit behind the same read-only proxy as the other projects. The guide
+itself is in `chat.py` (one conversation turn as a stream of events, with its limits and its
+line). This module holds the rest: the pages, the catalog, freshness, evaluation results,
+stored answers, health checks and the security headers.
 """
 
-import asyncio
 import json
 import logging
 import os
@@ -15,8 +13,8 @@ import threading
 from pathlib import Path
 
 import psycopg
-from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .. import lake
@@ -24,12 +22,8 @@ from ..catalog import store
 from ..config import REPO, Settings
 from ..pipeline.context import Context
 from . import chat, pulse
-from .service import PAUSED, Answerer, client_hash
+from .service import Answerer
 
-PER_HOUR = int(os.environ.get("NYCYNAPSE_PER_HOUR", "8"))
-DAILY_BUDGET = float(os.environ.get("NYCYNAPSE_DAILY_BUDGET_USD", "4"))
-WAITING = int(os.environ.get("NYCYNAPSE_QUEUE", "3"))
-KEEPALIVE_S = 10
 WEB = REPO / "web"
 RESULTS = REPO / "evals" / "results"
 
@@ -49,8 +43,6 @@ _log_to_stderr()
 log = logging.getLogger(__name__)
 settings = Settings.from_env()
 app = FastAPI(title="NYCynapse", docs_url=None, redoc_url=None)
-_busy = threading.Semaphore(1)
-_queue = threading.Semaphore(WAITING + 1)
 _state: dict = {}
 _setup = threading.Lock()
 
@@ -101,115 +93,6 @@ def _warm_tools() -> None:
             log.info("warmed %s: %s", name, "ok" if res.ok else (res.error or "")[:120])
     except Exception:  # noqa: BLE001 - warming is a courtesy, never a reason not to start
         log.exception("could not warm the tools")
-
-
-def _client(request: Request) -> str:
-    # Behind the site's proxy every request comes from the same few addresses, so the proxy
-    # passes the reader's address along.
-    ip = (
-        request.headers.get("x-client-ip")
-        or request.headers.get("x-real-ip")
-        or (request.client.host if request.client else "?")
-    )
-    return client_hash(ip)
-
-
-def _sse(event: str, data) -> bytes:
-    return f"event: {event}\ndata: {json.dumps(data, default=str)}\n\n".encode()
-
-
-async def _relay(a: Answerer, question: str, client: str):
-    """Run the question in its own thread and pass its events on.
-
-    The thread owns the queue places and gives them back when the question is done, even if
-    the reader left. A reader who leaves early still gets the stored answer on asking again.
-    While waiting, a comment line goes out now and then so proxies keep the stream open.
-    """
-    loop = asyncio.get_running_loop()
-    events: asyncio.Queue = asyncio.Queue()
-
-    def work():
-        try:
-            with _busy:
-                loop.call_soon_threadsafe(
-                    events.put_nowait, _sse("stage", {"stage": "start", "label": "Start", "ms": 0})
-                )
-                for event, data in a.stream(question, client):
-                    loop.call_soon_threadsafe(events.put_nowait, _sse(event, data))
-        except Exception as e:  # noqa: BLE001 - reported to the reader
-            msg = {"message": f"Something went wrong answering that ({type(e).__name__})."}
-            loop.call_soon_threadsafe(events.put_nowait, _sse("error", msg))
-        finally:
-            _queue.release()
-            loop.call_soon_threadsafe(events.put_nowait, None)
-
-    threading.Thread(target=work, daemon=True).start()
-    while True:
-        try:
-            chunk = await asyncio.wait_for(events.get(), KEEPALIVE_S)
-        except TimeoutError:
-            yield b": still working\n\n"
-            continue
-        if chunk is None:
-            return
-        yield chunk
-
-
-@app.get("/api/ask")
-def ask(request: Request, q: str = Query(min_length=3, max_length=400)):
-    # The one-shot pipeline endpoint from before the guide. The site no longer uses it and it
-    # has no bot check, so it is off unless switched on.
-    if os.environ.get("NYCYNAPSE_LEGACY_ASK", "") != "1":
-        raise HTTPException(410, "This endpoint has moved: ask the guide at /api/chat.")
-    a = answerer()
-    question = " ".join(q.split())
-    cached = a.recent(question)
-    if cached:
-
-        def replay():
-            for s in cached["stages"]:
-                yield _sse("stage", s)
-            r = cached["result"] or {}
-            if r.get("columns"):
-                yield _sse(
-                    "result", {"columns": r["columns"], "rows": r["rows"], "sql": cached["sql"]}
-                )
-            yield _sse(
-                "answer",
-                {
-                    "trace_id": cached["id"],
-                    "classification": cached["classification"],
-                    "answer": cached["answer"],
-                    "chart": r.get("chart"),
-                    "caveats": r.get("caveats", []),
-                    "evidence": r.get("evidence", []),
-                    "cached": True,
-                    "cost_usd": 0,
-                    "latency_ms": cached["latency_ms"],
-                },
-            )
-
-        return StreamingResponse(replay(), media_type="text/event-stream")
-
-    if a.paused():
-        raise HTTPException(503, PAUSED)
-    client = _client(request)
-    if a.asked_recently(client) >= PER_HOUR:
-        raise HTTPException(
-            429,
-            f"That is {PER_HOUR} questions this hour. Try again later, or "
-            "open one of the example answers.",
-        )
-    if a.spent_today() >= DAILY_BUDGET:
-        raise HTTPException(503, "Today's question budget is used up. Example answers still work.")
-    if not _queue.acquire(blocking=False):
-        raise HTTPException(503, "Busy answering other questions. Try again in a minute.")
-
-    return StreamingResponse(
-        _relay(a, question, client),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
-    )
 
 
 @app.get("/api/trace/{trace_id}")

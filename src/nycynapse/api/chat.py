@@ -104,6 +104,22 @@ def _clean(q: str) -> str:
     return " ".join(q.split())
 
 
+def _address(request: Request) -> str | None:
+    """The reader's address. nginx works it out (see deploy/nginx-nycynapse-zones.conf) and
+    passes it in these headers; a caller cannot set them."""
+    return (
+        request.headers.get("x-client-ip")
+        or request.headers.get("x-real-ip")
+        or (request.client.host if request.client else None)
+    )
+
+
+def _client(request: Request) -> str:
+    from .service import client_hash
+
+    return client_hash(_address(request) or "?")
+
+
 def verify_turnstile(token: str, ip: str | None) -> bool:
     secret = os.environ.get("TURNSTILE_SECRET_KEY", "").strip()
     if not secret or os.environ.get("NYCYNAPSE_TURNSTILE", "") == "off":
@@ -148,8 +164,6 @@ def rate(
 ):
     """A reader marks one of their own answers right or wrong (a GET, like everything here:
     the site's proxy passes nothing else)."""
-    from .app import _client
-
     try:
         ok = chats().rate(
             chat.strip(), turn, _client(request), 1 if v == "up" else -1, _clean(note) or None
@@ -166,10 +180,8 @@ def rate(
 async def chat(
     request: Request, q: str = Query("", max_length=2000), chat: str = "", token: str = ""
 ):
-    from .app import _client  # the reader's hashed address, as for questions
-
     client = _client(request)
-    ip = request.headers.get("x-client-ip") or request.headers.get("x-real-ip")
+    ip = _address(request)
     question = _clean(q)
     return StreamingResponse(
         _turn(question, chat.strip() or None, token, client, ip),
@@ -296,6 +308,11 @@ async def _turn(question: str, chat_id: str | None, token: str, client: str, ip:
         finally:
             gate.done()
             loop.call_soon_threadsafe(events.put_nowait, None)
+            # This thread ends here; so does its database connection.
+            conn = getattr(_local, "conn", None)
+            if conn is not None and not conn.closed:
+                conn.close()
+            _local.conn = None
 
     threading.Thread(target=work, daemon=True, name="chat-turn").start()
     yield _sse("status", {"text": "Reading your question"})

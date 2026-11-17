@@ -1,6 +1,7 @@
 """The guide agent and its guardrails, without network or model calls."""
 
 import json
+import re
 import threading
 import time
 
@@ -395,6 +396,103 @@ def test_chat_lifecycle(app_dsn):
     busy = chats.begin(None, "reader-c")
     chats.record(busy, "q", {"error": "full"}, "busy")
     assert chats.asked_recently("reader-c") == before
+
+
+class _Store:
+    """The chat store, in memory."""
+
+    def __init__(self, asked=0, spent=0.0):
+        self.asked, self.spent, self.rows = asked, spent, []
+
+    def asked_recently(self, client, minutes=60):
+        return self.asked
+
+    def spent_today(self):
+        return self.spent
+
+    def begin(self, chat_id, client):
+        from nycynapse.agent.chats import Slot
+
+        return Slot("11111111-1111-1111-1111-111111111111", 1, [])
+
+    def example(self, question):
+        return None
+
+    def record(self, slot, question, out, outcome):
+        self.rows.append((question, outcome))
+
+
+def _events(body: str) -> list[tuple[str, dict]]:
+    out = []
+    for block in body.split("\n\n"):
+        ev = re.search(r"^event: (.*)$", block, re.M)
+        data = re.search(r"^data: (.*)$", block, re.M)
+        if ev and data:
+            out.append((ev.group(1), json.loads(data.group(1))))
+    return out
+
+
+def _chat_client(monkeypatch, store, run=None, available=True):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from nycynapse.api import chat
+
+    class Guide:
+        def available(self):
+            return available
+
+        def run(self, question, history, emit):
+            return run(question, emit)
+
+    monkeypatch.setenv("NYCYNAPSE_TURNSTILE", "off")
+    monkeypatch.setattr(chat, "chats", lambda: store)
+    monkeypatch.setattr(chat, "agent", lambda: Guide())
+    monkeypatch.setattr(chat, "gate", chat.Gate(1, 1))
+    app = FastAPI()
+    app.include_router(chat.router)
+    return TestClient(app), chat
+
+
+def test_a_turn_streams_its_events_in_order_and_frees_the_seat(monkeypatch):
+    def run(question, emit):
+        emit("status", {"text": "Checking the 7"})
+        return {"answer": "The 7 is fine [1].", "steps": [], "latency_ms": 5, "model": "main"}
+
+    store = _Store()
+    client, chat = _chat_client(monkeypatch, store, run)
+    r = client.get("/api/chat", params={"q": "Is the 7 train running?"})
+    names = [e for e, _ in _events(r.text)]
+    assert names[0] == "chat" and names[-1] == "answer"
+    assert ("status", {"text": "Checking the 7"}) in _events(r.text)
+    answer = _events(r.text)[-1][1]
+    assert answer["text"] == "The 7 is fine [1]." and answer["can_rate"]
+    assert store.rows == [("Is the 7 train running?", "answered")]
+    assert chat.gate.stats()["active"] == 0
+
+
+def test_a_turn_that_crashes_tells_the_reader_and_frees_the_seat(monkeypatch):
+    def run(question, emit):
+        raise RuntimeError("boom")
+
+    client, chat = _chat_client(monkeypatch, _Store(), run)
+    last = _events(client.get("/api/chat", params={"q": "Is the 7 train running?"}).text)[-1]
+    assert last[0] == "error" and last[1]["code"] == "failed"
+    assert chat.gate.stats()["active"] == 0
+
+
+def test_questions_are_refused_before_any_model_is_called(monkeypatch):
+    def run(question, emit):
+        raise AssertionError("no model for a refused question")
+
+    def code(store, q="Is the 7 train running?", available=True):
+        client, _ = _chat_client(monkeypatch, store, run, available)
+        return _events(client.get("/api/chat", params={"q": q}).text)[-1][1]["code"]
+
+    assert code(_Store(), q="hi") == "length"
+    assert code(_Store(asked=10_000)) == "rate"
+    assert code(_Store(spent=10_000.0)) == "budget"
+    assert code(_Store(), available=False) == "models"
 
 
 def test_the_line_moves_first_come_first_served():
