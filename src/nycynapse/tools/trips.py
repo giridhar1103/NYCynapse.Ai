@@ -398,6 +398,13 @@ def _said(words: set[str]) -> str:
 def _corner(raw: str) -> dict | None:
     """Where two streets meet ("Main St and Roosevelt Ave, Flushing"): a bus stop named for
     the corner, which the agencies place right at it."""
+    # "Main St and 41st Ave Flushing NY": the area written straight after the corner.
+    raw = re.sub(r"[\s,]+(?:NY|NYC|New York)\s*$", "", raw, flags=re.I)
+    if "," not in raw:
+        for area in sorted([*_BORO_CENTER, *_BORO_OF], key=len, reverse=True):
+            if raw.lower().endswith(" " + area):
+                raw = f"{raw[: -len(area) - 1]}, {raw[-len(area) :]}"
+                break
     m = re.match(r"\s*(.+?)\s+(?:and|&|at|/)\s+(.+?)(?:(?:,|\s+in)\s+(.+))?\s*$", raw, re.I)
     if not m:
         return None
@@ -453,7 +460,7 @@ def _corner(raw: str) -> dict | None:
                     found, near_by = more, True
                     break
     if not found:
-        return None
+        return _corner_by_street(m.group(1), m.group(2), m.group(3))
 
     def rank(h: dict) -> tuple:
         near = _metres(hood, h) if hood else 0
@@ -462,6 +469,58 @@ def _corner(raw: str) -> dict | None:
     h = min(found, key=rank)
     name = f"{m.group(1).strip()} and {m.group(2).strip()}"
     return {"name": f"near {name}" if near_by else name, "lat": h["lat"], "lon": h["lon"]}
+
+
+def _corner_by_street(a: str, b: str, area: str | None) -> dict | None:
+    """A corner of two named streets with no bus stop on it ("Ludlow St and Stanton St"):
+    the first street, in the area named, is within a short walk, and the name says "near"."""
+    if any(ch.isdigit() for ch in a + b) or not re.search(
+        r"\b(?:st|street|av|ave|avenue|pl|place|rd|road|blvd|boulevard)\b", a, re.I
+    ):
+        return None
+    where = area or "Manhattan"
+    other = _locate(f"{b.strip()}, {where}")
+    if not other:
+        return None
+    # Walk the first street by house number and keep the address nearest the second street.
+    want, best = _key_words(a), None
+    for n in (1, 40, 80, 120, 160, 200, 260, 320, 400, 500):
+        try:
+            d = get_json(
+                "https://geosearch.planninglabs.nyc/v2/search",
+                {"text": f"{n} {a.strip()}, {where}", "size": 1},
+                ttl_s=7 * 86400,
+            )
+        except Exception:  # noqa: BLE001
+            continue
+        f = (d.get("features") or [None])[0]
+        if not f or not want <= _key_words(f["properties"].get("name") or ""):
+            continue
+        lon, lat = f["geometry"]["coordinates"]
+        far = _metres(other, {"lat": lat, "lon": lon})
+        if best is None or far < best[0]:
+            best = (far, lat, lon)
+    if best is None or best[0] > 350:
+        return None
+    return {"name": f"near {a.strip()} and {b.strip()}", "lat": best[1], "lon": best[2]}
+
+
+def _same_address(features: list[dict], said: str | None) -> dict | None:
+    """The same street address exists in several boroughs (233 5th Ave is in Manhattan and in
+    Park Slope). Of the matches with the same wording, take the one in the borough the reader
+    named, or Manhattan, as for street corners."""
+    if not features:
+        return None
+    top = features[0]
+
+    def first(f: dict) -> str:
+        return (f["properties"].get("label") or "").split(",")[0].strip().lower()
+
+    want = said or "manhattan"
+    for f in features:
+        if first(f) == first(top) and (f["properties"].get("borough") or "").lower() == want:
+            return f
+    return top
 
 
 @lru_cache(maxsize=1)
@@ -880,10 +939,10 @@ def _locate(text: str) -> dict | None:
         try:
             d = get_json(
                 "https://geosearch.planninglabs.nyc/v2/search",
-                {"text": text, "size": 1},
+                {"text": text, "size": 5},
                 ttl_s=86400,
             )
-            f = (d.get("features") or [None])[0]
+            f = _same_address(d.get("features") or [], said)
         except Exception:  # noqa: BLE001 - fall through to the regional search
             f = None
         if f and _words(n) <= _words(_norm(f["properties"].get("label", "").split(",")[0])) | {

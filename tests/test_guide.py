@@ -994,6 +994,27 @@ def test_unfinished_draft_goes_back_to_look(monkeypatch):
     assert "open the museum's hours page" in seen[3][1]
 
 
+def test_same_address_in_two_boroughs_goes_to_the_one_named_or_manhattan():
+    from nycynapse.tools import trips
+
+    def f(label, boro):
+        return {"properties": {"label": label, "borough": boro}}
+
+    hits = [
+        f("233 5 AVENUE, Brooklyn, NY", "Brooklyn"),
+        f("233 5 AVENUE, New York, NY", "Manhattan"),
+    ]
+    assert trips._same_address(hits, None)["properties"]["borough"] == "Manhattan"
+    assert trips._same_address(hits, "brooklyn")["properties"]["borough"] == "Brooklyn"
+    # a different address further down the list is not "the same place elsewhere"
+    other = [
+        f("12 OAK STREET, Queens, NY", "Queens"),
+        f("12 OAK AVENUE, New York, NY", "Manhattan"),
+    ]
+    assert trips._same_address(other, None)["properties"]["borough"] == "Queens"
+    assert trips._same_address([], None) is None
+
+
 def test_only_rides_can_be_cancelled():
     from nycynapse.tools import trips
 

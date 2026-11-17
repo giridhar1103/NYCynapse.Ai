@@ -368,5 +368,30 @@
 "name": "Arthur Avenue Retail Market",
 "lat": 40.85416,
 "lon": -73.8881
+},
+"red hook recreation area": {
+"name": "Red Hook Recreation Area (ball fields)",
+"lat": 40.6722,
+"lon": -74.004
+},
+"red hook ball fields": {
+"name": "Red Hook Recreation Area (ball fields)",
+"lat": 40.6722,
+"lon": -74.004
+},
+"red hook ballfields": {
+"name": "Red Hook Recreation Area (ball fields)",
+"lat": 40.6722,
+"lon": -74.004
+},
+"red hook fields": {
+"name": "Red Hook Recreation Area (ball fields)",
+"lat": 40.6722,
+"lon": -74.004
+},
+"museum of sex": {
+"name": "Museum of Sex",
+"lat": 40.7441,
+"lon": -73.9874
 }
 }
