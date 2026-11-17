@@ -65,6 +65,13 @@ def answerer() -> Answerer:
 
 @app.on_event("startup")
 def warm_up():
+    # Database changes that came with this version of the code are applied before it serves.
+    try:
+        applied = store.migrate(store.connect(settings.app_pg_dsn))
+        if applied:
+            log.info("applied database migrations: %s", ", ".join(applied))
+    except Exception:  # noqa: BLE001 - the site still answers; the log says what is missing
+        log.exception("could not apply database migrations")
     # Loading the embedding model takes several seconds; do it before the first reader asks.
     threading.Thread(target=lambda: answerer().ctx.embed("warm up"), daemon=True).start()
     threading.Thread(target=_warm_tools, daemon=True).start()
