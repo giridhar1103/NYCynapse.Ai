@@ -138,6 +138,30 @@ def config():
     }
 
 
+@router.get("/api/chat/rate")
+def rate(
+    request: Request,
+    chat: str,
+    turn: int = Query(ge=1, le=MAX_TURNS),
+    v: str = Query(pattern="^(up|down)$"),
+    note: str = Query("", max_length=300),
+):
+    """A reader marks one of their own answers right or wrong (a GET, like everything here:
+    the site's proxy passes nothing else)."""
+    from .app import _client
+
+    try:
+        ok = chats().rate(
+            chat.strip(), turn, _client(request), 1 if v == "up" else -1, _clean(note) or None
+        )
+    except psycopg.Error:
+        log.exception("could not store a rating")
+        ok = False
+    if ok:
+        log.info("rating %s", json.dumps({"chat": chat[:8], "turn": turn, "v": v}))
+    return {"ok": ok}
+
+
 @router.get("/api/chat")
 async def chat(
     request: Request, q: str = Query("", max_length=2000), chat: str = "", token: str = ""
@@ -327,6 +351,7 @@ def _answer_payload(slot: Slot, out: dict, cached: bool = False) -> dict:
         "chat": slot.chat_id,
         "turn": slot.turn,
         "follow_ups_left": max(0, turns_left),
+        "can_rate": not declined and bool(out.get("answer")),
         "text": out.get("answer"),
         "follow_ups": out.get("follow_ups") or [],
         "declined": declined,

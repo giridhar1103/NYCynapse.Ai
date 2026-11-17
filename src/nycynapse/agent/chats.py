@@ -118,6 +118,20 @@ class Chats:
         else:
             conn.execute("UPDATE app.chats SET last_at = now() WHERE id = %s", (slot.chat_id,))
 
+    def rate(self, chat_id: str, turn: int, client: str, rating: int, note: str | None) -> bool:
+        """The reader's verdict on one of their own answers. False when it is not theirs."""
+        try:
+            uuid.UUID(chat_id)
+        except ValueError:
+            return False
+        done = self._conn().execute(
+            "UPDATE app.chat_turns t SET rating = %s, rating_note = %s, rated_at = now() "
+            "FROM app.chats c WHERE c.id = t.chat_id AND t.chat_id = %s AND t.turn = %s "
+            "AND c.client_hash = %s AND t.outcome = 'answered'",
+            (rating, note, chat_id, turn, client),
+        )
+        return done.rowcount == 1
+
     def spent_today(self) -> float:
         row = (
             self._conn()

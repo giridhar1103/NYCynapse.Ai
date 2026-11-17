@@ -320,6 +320,29 @@ function tripPanel(trip, draw) {
 
 let uid = 0;
 
+// "Was this right?" under an answer: one tap, and for a no, an optional line saying what was off.
+function rateRow(d) {
+  const row = el("div", { class: "rate" });
+  const send = (v, note = "") => fetch(url("api/chat/rate?" + new URLSearchParams({ chat: d.chat, turn: d.turn, v, note })))
+    .catch(() => { /* a lost rating is not worth a message */ });
+  const thanks = (text) => row.replaceChildren(el("span", { class: "rate-done" }, text));
+  const yes = el("button", { type: "button", "aria-label": "This answer was right" }, "Yes");
+  const no = el("button", { type: "button", "aria-label": "This answer was wrong or unhelpful" }, "No");
+  yes.addEventListener("click", () => { send("up"); thanks("Thanks, noted."); });
+  no.addEventListener("click", () => {
+    send("down");
+    const what = el("input", { type: "text", maxlength: "300", placeholder: "What was off? (optional)", "aria-label": "What was off?" });
+    const ok = el("button", { type: "button" }, "Send");
+    const done = () => { if (what.value.trim()) send("down", what.value.trim()); thanks("Thanks, that helps fix it."); };
+    ok.addEventListener("click", done);
+    what.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); done(); } });
+    row.replaceChildren(what, ok);
+    what.focus();
+  });
+  row.append(el("span", {}, "Was this right?"), yes, no);
+  return row;
+}
+
 class TurnView {
   constructor(log) {
     this.uid = ++uid;
@@ -421,6 +444,7 @@ class TurnView {
     if ((d.untraced || []).length) {
       card.append(el("div", { class: "meta warnline" }, `Not matched to the data found: ${d.untraced.join(", ")}`));
     }
+    if (d.can_rate && d.chat) card.append(rateRow(d));
     this.box.append(card);
     let follow = null;
     if (d.follow_ups_left > 0 && (d.follow_ups || []).length) {

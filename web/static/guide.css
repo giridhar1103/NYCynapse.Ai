@@ -447,3 +447,7 @@ a.cite:hover { background: var(--ink); color: var(--bg); border-color: var(--ink
 .fares small { flex-basis: 100%; color: var(--muted); font-size: 11.5px; }
 .trip-start { width: 16px; height: 16px; border-radius: 50%; background: #fff; border: 4px solid #202124; box-shadow: 0 0 0 2px #fff; }
 .trip-end { width: 22px; height: 30px; background: #d93025; clip-path: path("M11 0C4.9 0 0 4.9 0 11c0 8.3 11 19 11 19s11-10.7 11-19C22 4.9 17.1 0 11 0z"); }
+.rate { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--rule); font-size: 13px; color: var(--muted); }
+.rate button { background: transparent; border: 1px solid var(--rule-strong); border-radius: 999px; padding: 3px 12px; font-size: 13px; color: var(--ink); cursor: pointer; }
+.rate button:hover { background: var(--surface); }
+.rate input { flex: 1; min-width: 0; border: 1px solid var(--rule-strong); border-radius: 999px; padding: 4px 12px; font-size: 13px; background: var(--surface); color: var(--ink); }

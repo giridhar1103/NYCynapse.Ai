@@ -380,6 +380,42 @@ def test_chat_lifecycle(app_dsn):
     assert e.value.code == "full"
     with pytest.raises(ChatError):
         chats.begin("not-a-uuid", "reader-a")
+    # the reader's verdict, on their own answers only
+    assert chats.rate(slot.chat_id, 1, "reader-a", -1, "wrong station")
+    assert not chats.rate(slot.chat_id, 1, "reader-b", 1, None)
+    assert not chats.rate(slot.chat_id, 9, "reader-a", 1, None)
+    assert not chats.rate("not-a-uuid", 1, "reader-a", 1, None)
+    row = conn.execute(
+        "SELECT rating, rating_note FROM app.chat_turns WHERE chat_id = %s AND turn = 1",
+        (slot.chat_id,),
+    ).fetchone()
+    assert (row["rating"], row["rating_note"]) == (-1, "wrong station")
+    # being turned away at full capacity does not use up the hourly allowance
+    before = chats.asked_recently("reader-c")
+    busy = chats.begin(None, "reader-c")
+    chats.record(busy, "q", {"error": "full"}, "busy")
+    assert chats.asked_recently("reader-c") == before
+
+
+def test_the_line_moves_first_come_first_served():
+    from nycynapse.api.capacity import Full, Gate
+
+    gate = Gate(active=1, waiting=2)
+    first = gate.join()
+    assert gate.wait(first, 0.01)
+    second, third = gate.join(), gate.join()
+    assert (gate.position(second), gate.position(third)) == (1, 2)
+    with pytest.raises(Full):
+        gate.join()
+    assert not gate.wait(second, 0.01)  # the seat is still taken
+    gate.done()
+    assert not gate.wait(third, 0.01)  # not ahead of the one before it
+    assert gate.wait(second, 0.01)
+    gate.leave_line(third)  # the reader closed the page
+    assert gate.stats() == {"active": 1, "waiting": 0, "active_max": 1, "waiting_max": 2}
+    gate.done()
+    gate.done()  # a second release must not go below zero
+    assert gate.stats()["active"] == 0
 
 
 def test_a_claimed_tool_failure_before_any_tool_ran_is_retried(monkeypatch):
