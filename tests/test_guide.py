@@ -495,6 +495,30 @@ def test_questions_are_refused_before_any_model_is_called(monkeypatch):
     assert code(_Store(), available=False) == "models"
 
 
+def test_a_shared_location_reaches_the_model_but_is_not_kept(monkeypatch):
+    agent, seen = _agent(
+        monkeypatch,
+        [
+            _step(calls=[("trip_plan", {"origin": "40.7128,-74.0060", "destination": "MoMA"})]),
+            _step(answer="Take the E from where you are [1]."),
+        ],
+        [_tool("trip_plan", text="E train")],
+    )
+    out = agent.run("how do I get to MoMA from here?", [], lambda e, d: None, (40.7128, -74.006))
+    assert "40.7128,-74.0060" in seen[0][1]
+    kept = json.dumps([out["steps"], out["trace"]])
+    assert "40.71" not in kept and "(reader location)" in kept
+
+
+def test_only_a_location_in_the_region_is_accepted():
+    from nycynapse.api.chat import _where
+
+    assert _where("40.71283,-74.00601") == (40.713, -74.006)
+    assert _where("51.5,-0.12") is None
+    assert _where("40.7; DROP TABLE") is None
+    assert _where("") is None
+
+
 def test_the_line_moves_first_come_first_served():
     from nycynapse.api.capacity import Full, Gate
 

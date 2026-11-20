@@ -178,19 +178,40 @@ def rate(
 
 @router.get("/api/chat")
 async def chat(
-    request: Request, q: str = Query("", max_length=2000), chat: str = "", token: str = ""
+    request: Request,
+    q: str = Query("", max_length=2000),
+    chat: str = "",
+    token: str = "",
+    at: str = Query("", max_length=40),
 ):
     client = _client(request)
     ip = _address(request)
     question = _clean(q)
     return StreamingResponse(
-        _turn(question, chat.strip() or None, token, client, ip),
+        _turn(question, chat.strip() or None, token, client, ip, _where(at)),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
     )
 
 
-async def _turn(question: str, chat_id: str | None, token: str, client: str, ip: str | None):
+def _where(at: str) -> tuple[float, float] | None:
+    """A location the reader chose to share ("40.7128,-74.0060"), rounded to about 100 m, and
+    only inside the region the guide covers. Never stored."""
+    m = re.fullmatch(r"\s*(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)\s*", at or "")
+    if not m:
+        return None
+    lat, lon = round(float(m.group(1)), 3), round(float(m.group(2)), 3)
+    return (lat, lon) if 40.0 <= lat <= 41.8 and -75.0 <= lon <= -71.8 else None
+
+
+async def _turn(
+    question: str,
+    chat_id: str | None,
+    token: str,
+    client: str,
+    ip: str | None,
+    where: tuple[float, float] | None = None,
+):
     loop = asyncio.get_running_loop()
 
     def err(code: str, message: str | None = None) -> bytes:
@@ -282,7 +303,11 @@ async def _turn(question: str, chat_id: str | None, token: str, client: str, ip:
     def work() -> None:
         # Owns the seat: gives it back when the answer is done, even if the reader has left.
         try:
-            out = a.run(question, slot.history, emit)
+            out = (
+                a.run(question, slot.history, emit, where)
+                if where
+                else a.run(question, slot.history, emit)
+            )
             outcome = "answered" if out.get("answer") and not out.get("error") else "failed"
             if out.get("declined"):
                 outcome = "declined"

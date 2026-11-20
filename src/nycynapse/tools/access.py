@@ -74,8 +74,11 @@ def station(name: str, lat: float, lon: float, line: str | None = None) -> dict 
         "notes": notes,
         "out": [
             f"elevator {o.get('equipment')} ({o.get('serving')}) out"
-            + (f" until about {_when(o['estimatedreturntoservice'])}"
-               if o.get("estimatedreturntoservice") else "")
+            + (
+                f" until about {_when(o['estimatedreturntoservice'])}"
+                if o.get("estimatedreturntoservice")
+                else ""
+            )
             for o in out[:3]
         ],
     }

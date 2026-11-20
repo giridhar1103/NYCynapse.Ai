@@ -1051,9 +1051,16 @@ def find_place(text: str) -> ToolResult:
         hit = locate(text)
         if hit:
             z = zone_of(hit["lat"], hit["lon"])
-            out = [{"label": hit["name"], "borough": _zone_borough(z[0]) if z else None,
-                    "neighborhood": z[1] if z else None, "lat": hit["lat"], "lon": hit["lon"],
-                    "kind": "place"}]
+            out = [
+                {
+                    "label": hit["name"],
+                    "borough": _zone_borough(z[0]) if z else None,
+                    "neighborhood": z[1] if z else None,
+                    "lat": hit["lat"],
+                    "lon": hit["lon"],
+                    "kind": "place",
+                }
+            ]
     if not out:
         return failed(f"no place in New York City matched {text!r}")
     top = out[0]

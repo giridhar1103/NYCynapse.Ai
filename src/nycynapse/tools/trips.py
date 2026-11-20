@@ -870,7 +870,8 @@ def _locate(text: str) -> dict | None:
     m = re.fullmatch(r"\s*(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)\s*", raw)
     if m:
         lat, lon = float(m.group(1)), float(m.group(2))
-        return {"name": raw, "lat": lat, "lon": lon} if _inside(lat, lon) else None
+        # Coordinates come from a reader who shared their location.
+        return {"name": "Your location", "lat": lat, "lon": lon} if _inside(lat, lon) else None
     n = _norm(raw)
     low = " ".join(re.sub(r"[^a-z0-9 ]+", " ", raw.lower()).split())
     term = re.search(r"\bterminal\s*([a-c1-8])\b|\bt([1-8])\b", low)

@@ -282,7 +282,9 @@ async def security_headers(request: Request, call_next):
     h.setdefault("X-Content-Type-Options", "nosniff")
     h.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
     h.setdefault("X-Frame-Options", "DENY")
-    h.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()")
+    h.setdefault(
+        "Permissions-Policy", "camera=(), microphone=(self), geolocation=(self), payment=()"
+    )
     h.setdefault("Cross-Origin-Opener-Policy", "same-origin")
     path = request.url.path
     if "/static/" in path:

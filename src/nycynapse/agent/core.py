@@ -231,6 +231,7 @@ class Turn:
     redraft: str | None = None
     fixed: str | None = None  # the corrected answer the last fact check handed back
     timeline: list[dict] = field(default_factory=list)  # every model and tool call, timed
+    where: tuple[float, float] | None = None  # the reader's location, if they shared it
 
 
 class Agent:
@@ -308,8 +309,14 @@ class Agent:
 
     # the loop
 
-    def run(self, question: str, history: list[dict], emit: Callable[[str, dict], None]) -> dict:
-        t = Turn(question=question, history=history, emit=emit)
+    def run(
+        self,
+        question: str,
+        history: list[dict],
+        emit: Callable[[str, dict], None],
+        where: tuple[float, float] | None = None,
+    ) -> dict:
+        t = Turn(question=question, history=history, emit=emit, where=where)
         system = load_prompt("agent")
         static = (
             f"Now: {now_as_of()} (New York).\n\nTools:\n{self._tool_text()}\n\n"
@@ -718,6 +725,15 @@ class Agent:
                 "What the reader has told you about their plan (keep to it unless they change "
                 f"it now): {_reader(t.history)}"
             )
+        if t.where:
+            lat, lon = t.where
+            parts.append(
+                f"The reader shared their location from their device: {lat:.4f},{lon:.4f}. "
+                "When they say here, me, near me, nearby or from where I am, use exactly "
+                f'"{lat:.4f},{lon:.4f}" as the place (trip_plan origin, citibike_now near, '
+                "find_place). Never write the coordinates in the answer; call it "
+                '"where you are".'
+            )
         parts.append(f"Reader's question: {t.question}")
         if t.results:
             numbers = {key: n for n, key, _ in _registry(t.results)}
@@ -874,7 +890,7 @@ class Agent:
                 {
                     "tool": r["tool"],
                     "kind": kinds.get(r["tool"]),
-                    "args": _public_args(r["args"]),
+                    "args": _hide_where(_public_args(r["args"]), t.where),
                     "ok": r["result"].ok,
                     "error": r["result"].error,
                     "ms": r.get("ms"),
@@ -899,7 +915,7 @@ class Agent:
             "trace": [
                 {
                     "tool": r["tool"],
-                    "args": r["args"],
+                    "args": _hide_where(r["args"], t.where),
                     "ok": r["result"].ok,
                     "summary": (r["result"].summary or "")[:6000],
                 }
@@ -1193,6 +1209,25 @@ def _cite(answer: str, results: list[dict], declined: bool) -> tuple[str, list[d
 def _short(text: str, n: int = 160) -> str:
     text = " ".join((text or "").split())
     return text if len(text) <= n else text[: n - 1] + "…"
+
+
+def _hide_where(args: dict, where: tuple[float, float] | None) -> dict:
+    """What is kept of a turn never holds the reader's own location."""
+    if not where:
+        return args
+
+    def hide(m: re.Match) -> str:
+        lat, lon = float(m.group(1)), float(m.group(2))
+        near = abs(lat - where[0]) < 0.01 and abs(lon - where[1]) < 0.01
+        return "(reader location)" if near else m.group(0)
+
+    def clean(v):
+        return _COORDS.sub(hide, v) if isinstance(v, str) else v
+
+    return {k: clean(v) for k, v in args.items()}
+
+
+_COORDS = re.compile(r"(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)")
 
 
 def _public_args(args: dict) -> dict:

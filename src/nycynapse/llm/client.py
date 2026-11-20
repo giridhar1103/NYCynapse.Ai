@@ -437,8 +437,15 @@ def complete_with(
             log.info(
                 "model call %s",
                 json.dumps(
-                    {"model": pid, "ms": r.latency_ms, "waited_ms": waited, "in": r.tokens_in,
-                     "out": r.tokens_out, "usd": r.cost_usd, "attempt": attempt + 1}
+                    {
+                        "model": pid,
+                        "ms": r.latency_ms,
+                        "waited_ms": waited,
+                        "in": r.tokens_in,
+                        "out": r.tokens_out,
+                        "usd": r.cost_usd,
+                        "attempt": attempt + 1,
+                    }
                 ),
             )
             return r
