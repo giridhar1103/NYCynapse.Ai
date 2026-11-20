@@ -94,3 +94,11 @@ def test_nearby_restrooms_near_a_busy_place():
 
     r = nearby("Grand Central Terminal", "restroom", 3)
     assert r.ok and r.summary.count("\n- ") >= 2, r.summary[:300]
+
+
+def test_a_step_free_trip_opens_on_the_route_with_fewest_stairs():
+    from nycynapse.tools.trips import trip_plan
+
+    r = trip_plan("Bronx Zoo Asia Gate", "Yankee Stadium", "transit", "Sunday 5 PM", step_free=True)
+    stairs = [(o.get("access") or "").count("(stairs)") for o in r.data["transit"]]
+    assert stairs and stairs[0] == min(stairs), stairs

@@ -17,6 +17,7 @@ import json
 import math
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
 from contextvars import ContextVar
 from datetime import date, datetime, timedelta
 from functools import lru_cache
@@ -2397,6 +2398,14 @@ def _step_free_first(options: list[dict]) -> list[dict]:
 # The tool --------------------------------------------------------------------------------------
 
 
+def _typical_drive(a: dict, b: dict, t: datetime, arrive_by: bool) -> dict | None:
+    d = drive(a, b, t)
+    if d and arrive_by:
+        # A deadline's trip starts earlier: the typical time for the hour it leaves.
+        d = drive(a, b, t - timedelta(minutes=d["minutes"][2])) or d
+    return d
+
+
 def trip_plan(
     origin: str,
     destination: str,
@@ -2454,6 +2463,25 @@ def trip_plan(
     data: dict = {"from": a, "to": b, "when": t.isoformat()}
     sources: list[dict] = []
     layers: list[dict] = []
+    # Walking, biking and the two car lookups do not depend on transit: start them now, so they
+    # run while the transit planner works instead of after it.
+    gap = _metres(a, b)
+    pool = ThreadPoolExecutor(max_workers=4)
+    later: dict = {}
+    for how, limit, label in (("WALK", 5000, "walk"), ("BIKE", 16000, "bike")):
+        if mode == label or (mode == "both" and gap <= limit):
+            later[label] = pool.submit(direct, a, b, how)
+    if mode in ("both", "drive"):
+        later["car"] = pool.submit(car_route, a, b, t)
+        later["drive"] = pool.submit(_typical_drive, a, b, t, arrive_by)
+    pool.shutdown(wait=False)
+
+    def ready(name: str):
+        try:
+            return later[name].result(timeout=40)
+        except Exception:  # noqa: BLE001 - that mode is just left out
+            return None
+
     if mode in ("both", "transit"):
         token = _STEP_FREE.set(step_free)
         try:
@@ -2487,7 +2515,8 @@ def trip_plan(
         if options and step_free:
             options = _step_free_first(options)
         changes = {id(o): _line_changes(o, t) for o in options}
-        options = _affected_last(options, arrive_by)
+        if not step_free:  # for a step-free trip, the order by access stands
+            options = _affected_last(options, arrive_by)
         data["transit"] = options
         late = _hours_away(options, t, arrive_by)
         if options and late:
@@ -2577,14 +2606,10 @@ def trip_plan(
             sources.append(
                 {"kind": "official", "title": "AirTrain Newark (Port Authority)", "url": EWR_URL}
             )
-    gap = _metres(a, b)
-    for how, limit, label in (("WALK", 5000, "walk"), ("BIKE", 16000, "bike")):
-        if not (mode == label or (mode == "both" and gap <= limit)):
+    for label in ("walk", "bike"):
+        if label not in later:
             continue
-        try:
-            r = direct(a, b, how)
-        except Exception:  # noqa: BLE001
-            r = None
+        r = ready(label)
         data[label] = r
         if r:
             lines.append(
@@ -2600,7 +2625,7 @@ def trip_plan(
         elif mode == label:
             lines.append(f"No {label} route was found between these places.")
     if mode in ("both", "drive"):
-        car = car_route(a, b, t)
+        car = ready("car")
         data["car"] = car
         if car:
             delay = (
@@ -2619,13 +2644,7 @@ def trip_plan(
                     "url": "https://www.tomtom.com",
                 }
             )
-        try:
-            d = drive(a, b, t)
-            if d and arrive_by:
-                # A deadline's trip starts earlier: the typical time for the hour it leaves.
-                d = drive(a, b, t - timedelta(minutes=d["minutes"][2])) or d
-        except Exception:  # noqa: BLE001
-            d = None
+        d = ready("drive")
         data["drive"] = d
         if arrive_by and (car or d):
             # A deadline needs a time to leave, from the slow end of a normal trip.

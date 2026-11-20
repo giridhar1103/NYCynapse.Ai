@@ -146,7 +146,8 @@ _DRAFT_SMELLS = [
             r"|\baccording to\b|\bpublished (?:text|wording)\b|\bI (?:found|have no|can't tell)\b"
             r"|\b(?:trip )?planner\b|\bavailable to me\b|\bmy (?:tools?|data|numbers|search)\b"
             r"|\bI (?:searched|pulled|ran|queried)\b|\b(?:tool|search) (?:returned|results?)\b"
-            r"|\bwouldn't load\b",
+            r"|\bwouldn't load\b"
+            r"|\b(?:weren't|were not|wasn't|was not|isn't|aren't|not yet) (?:checked|confirmed)\b",
             re.I,
         ),
         "it talks about the data or what was checked; describe the city itself "

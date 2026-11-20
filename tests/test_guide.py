@@ -672,6 +672,11 @@ def test_plain_live_questions_are_checked_before_the_first_model_call(monkeypatc
     assert out["answer"].startswith("The 7 is running normally")
 
 
+def test_talking_about_what_was_not_checked_is_sent_back():
+    assert core._draft_issues("Earlier departures weren't checked, so there may be more.")
+    assert not core._draft_issues("The 9:56 AM runs direct to Cold Spring.")
+
+
 def test_the_line_moves_first_come_first_served():
     from nycynapse.api.capacity import Full, Gate
 

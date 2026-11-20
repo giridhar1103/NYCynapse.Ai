@@ -108,6 +108,11 @@ def nearby(near: str, what: str = "restroom", n: int = 5) -> ToolResult:
         "Hours are as the city lists them; check them against the day and time the reader asked "
         "about, and say when a place may be closed then."
     )
+    if what == "restroom":
+        lines.append(
+            "The city's list leaves out restrooms inside malls, department stores, hotels and big "
+            "stations; one of those nearby is often the quickest option."
+        )
     return ToolResult(
         summary="\n".join(lines),
         data={"near": p, "results": [r for _, _, r in found]},
