@@ -551,7 +551,7 @@ class Agent:
             )
         )
         t.fixed = None
-        pid = t.model or self.models()[0]
+        pid = _verify_model() or t.model or self.models()[0]
         began = time.monotonic()
         try:
             r = llm.complete_with(
@@ -923,6 +923,16 @@ class Agent:
             ]
             + [{"note": s["note"]} for s in t.steps if "note" in s],
         }
+
+
+def _verify_model() -> str | None:
+    """A faster model for the fact check, when one is named and configured; else the model
+    that wrote the draft checks it."""
+    pid = os.environ.get("NYCYNAPSE_VERIFY_MODEL", "").strip()
+    try:
+        return pid if pid and pid in llm.config()["providers"] else None
+    except LLMError:
+        return None
 
 
 def _timed(kind: str, name: str, began: float, ok: bool, model: str | None = None) -> dict:

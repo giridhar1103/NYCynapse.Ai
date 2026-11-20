@@ -18,6 +18,7 @@ from pathlib import Path
 
 from ..tools import Tool, ToolResult, failed
 from ..tools import live as live_tools
+from ..tools import nearby as nearby_tools
 from ..tools import trips as trip_tools
 from ..tools import web as web_tools
 
@@ -41,7 +42,10 @@ def _server_params():
 
 class MCPHost:
     def __init__(self):
-        self.local = {t.name: t for t in live_tools.TOOLS + trip_tools.TOOLS + web_tools.TOOLS}
+        self.local = {
+            t.name: t
+            for t in live_tools.TOOLS + trip_tools.TOOLS + nearby_tools.TOOLS + web_tools.TOOLS
+        }
         self._loop = asyncio.new_event_loop()
         self._thread = threading.Thread(target=self._loop.run_forever, daemon=True, name="mcp-host")
         self._thread.start()

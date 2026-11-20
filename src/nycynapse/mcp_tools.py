@@ -11,6 +11,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp_types import ToolAnnotations
 
 from .tools import live, trips, web
+from .tools import nearby as amenities
 from .tools.http import load_keys
 
 load_keys()
@@ -114,6 +115,13 @@ def open_data(
     """Query an allowlisted NYC Open Data dataset with SoQL. Datasets: 311, collisions, events,
     film_permits, restaurant_inspections, farmers_markets."""
     return live.open_data(dataset, select, where, group, order, limit).as_dict()
+
+
+@server.tool(annotations=LIVE)
+def nearby(near: str, what: str = "restroom", n: int = 5) -> dict:
+    """The nearest public restrooms (hours, access, changing tables) or drinking fountains to
+    a place, from NYC Open Data. `what` is restroom or drinking_fountain."""
+    return amenities.nearby(near, what, n).as_dict()
 
 
 @server.tool(annotations=LIVE)

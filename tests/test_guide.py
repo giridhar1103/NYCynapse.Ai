@@ -552,6 +552,35 @@ def test_only_a_location_in_the_region_is_accepted():
     assert _where("") is None
 
 
+def test_nearby_lists_the_closest_working_places_first(monkeypatch):
+    from nycynapse.tools import nearby
+
+    monkeypatch.setattr(
+        nearby, "locate", lambda t: {"name": "Bryant Park", "lat": 40.7536, "lon": -73.9832}
+    )
+    asked = {}
+
+    def fake(url, params=None, headers=None, ttl_s=60):
+        asked.update(params)
+        far = {"facility_name": "Far", "location_1": {"coordinates": [-73.9700, 40.7600]}}
+        near = {
+            "facility_name": "Bryant Park - 40th St",
+            "location_type": "Park",
+            "hours_of_operation": "7am-10pm",
+            "changing_stations": "Yes",
+            "location_1": {"coordinates": [-73.9838, 40.7531]},
+        }
+        return [far, near]
+
+    monkeypatch.setattr(nearby, "get_json", fake)
+    r = nearby.nearby("Bryant Park", "restroom", 2)
+    assert r.ok and "status='Operational'" in asked["$where"]
+    first = r.summary.splitlines()[1]
+    assert first.startswith("- Bryant Park - 40th St (Park)") and "baby changing table" in first
+    assert r.map[0]["points"][0]["label"].startswith("Bryant Park")
+    assert not nearby.nearby("x", "jacuzzi").ok
+
+
 def test_the_line_moves_first_come_first_served():
     from nycynapse.api.capacity import Full, Gate
 
