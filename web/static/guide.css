@@ -482,3 +482,4 @@ a.cite:hover { background: var(--ink); color: var(--bg); border-color: var(--ink
 .skeleton i:nth-child(1) { width: 92%; } .skeleton i:nth-child(2) { width: 78%; } .skeleton i:nth-child(3) { width: 54%; }
 @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 @media (prefers-reduced-motion: reduce) { .skeleton i, .g-input .g-ico.wait svg { animation: none; } }
+.notice .retry { margin-left: 6px; background: var(--ink); color: var(--bg); border: 0; border-radius: 999px; padding: 4px 12px; font-size: 13px; font-weight: 700; cursor: pointer; }

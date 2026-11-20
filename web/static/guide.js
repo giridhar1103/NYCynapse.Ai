@@ -210,8 +210,11 @@ class Guide {
     this.renderTurns();
     this.log.querySelector(".welcome")?.remove();
     remember(q);
-    this.log.append(el("div", { class: "msg-q" }, q));
+    const qEl = el("div", { class: "msg-q" }, q);
+    this.log.append(qEl);
     const view = new TurnView(this.log);
+    // A failed answer can be asked again in one tap; the failed attempt is cleared away.
+    view.retry = () => { qEl.remove(); view.box.remove(); this.ask(q); };
     this.scroll();
     await this.map?.ready;
     this.map?.clear();
@@ -646,7 +649,12 @@ class TurnView {
   error(message, code) {
     this.stop();
     this.now.textContent = "";
-    this.box.append(el("div", { class: "notice" + (code === "full" || code === "models" ? "" : " warn") }, message));
+    const notice = el("div", { class: "notice" + (code === "full" || code === "models" ? "" : " warn") }, message);
+    const again = ["waited", "models", "failed", undefined].includes(code) || (code === "full" && /capacity/i.test(message));
+    if (again && this.retry) {
+      notice.append(" ", el("button", { type: "button", class: "retry", onclick: () => this.retry() }, "Try again"));
+    }
+    this.box.append(notice);
   }
 }
 
