@@ -1393,6 +1393,16 @@ def test_no_example_names_a_fixed_month():
     assert not any(re.search(r"\b20\d\d\b", e["q"]) for e in EXAMPLES)
 
 
+def test_searches_for_places_with_twins_elsewhere_stay_in_new_york():
+    from nycynapse.tools import web
+
+    assert web._local("Long Beach cab fare from midtown") == "Long Beach cab fare from midtown NY"
+    assert web._local("Long Beach LIRR schedule NY") == "Long Beach LIRR schedule NY"
+    assert web._local("Delta baggage fees") == "Delta baggage fees"
+    assert web._ELSEWHERE.search("Long Beach Yellow Cab, Long Beach, CA 90802")
+    assert not web._ELSEWHERE.search("Long Beach, NY taxi rates")
+
+
 def test_only_rides_can_be_cancelled():
     from nycynapse.tools import trips
 

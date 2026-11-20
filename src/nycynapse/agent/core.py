@@ -1041,6 +1041,9 @@ def _dated(x: dict) -> str:
     return dated(x)
 
 
+ELSEWHERE = " (mentions another state: may be about a different place)"
+
+
 def _result_text(r: dict, numbers: dict[str, int]) -> str:
     res: ToolResult = r["result"]
     head = f"[{r['tool']} {json.dumps(r['args'])}] " + ("OK" if res.ok else "FAILED")
@@ -1053,6 +1056,7 @@ def _result_text(r: dict, numbers: dict[str, int]) -> str:
             f"[{numbers.get(_source_key({'url': x.get('url'), 'title': x.get('title')}), '?')}] "
             f"{x.get('title')} ({x.get('url')}){' ' + x['date'] if x.get('date') else ''}"
             f"{_dated(x)}{' (cannot be opened with read_page)' if x.get('closed') else ''}"
+            f"{ELSEWHERE if x.get('elsewhere') else ''}"
             f"\n    {(x.get('snippet') or '').strip()[:300]}"
             for x in data["results"]
         ]

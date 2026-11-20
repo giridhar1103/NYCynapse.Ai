@@ -105,9 +105,33 @@ def _searxng(query: str, n: int) -> list[dict]:
     ]
 
 
+# Places in and near the city that share a name with places elsewhere: a search for "Long Beach
+# cab fare" finds California first. These get "NY" added when the query does not place them.
+_TWINS = re.compile(
+    r"\b(?:long beach|jamaica|flushing|woodside|kingston|richmond|bayside|greenwich|hempstead|"
+    r"springfield gardens|elmhurst|forest hills|riverdale|harlem|chelsea|soho|tribeca|"
+    r"rockaway|far rockaway|howard beach|bay ridge|greenpoint|east elmhurst|sunnyside)\b",
+    re.I,
+)
+_PLACED = re.compile(
+    r"\b(?:ny|nyc|n\.y\.|new york|brooklyn|queens|bronx|manhattan|staten island|long island|"
+    r"nassau|suffolk|westchester|nj|new jersey|ct|connecticut)\b",
+    re.I,
+)
+_ELSEWHERE = re.compile(
+    r"\b(?:california|calif\.|florida|texas|illinois|ohio|michigan|washington state|oregon|"
+    r"arizona|georgia|massachusetts|pennsylvania|jamaica, w\.i\.|kingston, jamaica)\b"
+    r"|, (?:CA|FL|TX|IL|OH|MI|WA|OR|AZ|GA|MA|PA)\b",
+)
+
+
+def _local(query: str) -> str:
+    return f"{query} NY" if _TWINS.search(query) and not _PLACED.search(query) else query
+
+
 def web_search(query: str, n: int = 5) -> ToolResult:
     """Search the web; New York results are preferred."""
-    query = " ".join(query.split())[:200]
+    query = _local(" ".join(query.split())[:200])
     if not query:
         return failed("empty search")
     if not _spend_search():
@@ -120,6 +144,9 @@ def web_search(query: str, n: int = 5) -> ToolResult:
             for r in results:
                 if r.get("url") and closed(r["url"]):
                     r["closed"] = True
+                text = f"{r.get('title') or ''} {r.get('snippet') or ''}"
+                if _ELSEWHERE.search(text) and not _ELSEWHERE.search(query):
+                    r["elsewhere"] = True
         except Exception as e:  # noqa: BLE001 - try the next engine
             errors.append(f"{name}: {type(e).__name__}")
             continue
