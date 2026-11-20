@@ -1,7 +1,7 @@
 // Landing page: the live map drawing, the ticker, examples, the lakehouse diagram, and the
 // hand-off to the guide overlay.
 
-import { guide } from "./guide.js?v=25";
+import { guide } from "./guide.js?v=26";
 import { drawHero } from "./hero.js?v=3";
 
 const { el, get } = NY;
@@ -181,3 +181,9 @@ document.querySelectorAll(".reveal").forEach((n) => io.observe(n));
 if ("serviceWorker" in navigator) {
   addEventListener("load", () => navigator.serviceWorker.register(NY.url("sw.js")).catch(() => { /* optional */ }));
 }
+
+// Fetch the map library while the reader is still reading, so the guide opens at once.
+import("./map.js?v=11").then((m) => {
+  const go = () => m.loadMapLibrary().catch(() => { /* loads again when the map opens */ });
+  if ("requestIdleCallback" in window) requestIdleCallback(go, { timeout: 4000 }); else setTimeout(go, 2500);
+});

@@ -2,7 +2,11 @@
 // drawn on top: shaded areas, points, road segments, lit subway lines, live weather with the rain
 // radar, and the places the answer talks about, numbered and labelled.
 
-import * as maplibregl from "./vendor/maplibre-gl.mjs";
+// The map library is 1.1 MB: it loads when the first map is made (or quietly once the page is
+// idle), not before the landing page can paint.
+let maplibregl = null;
+const LIB = "./vendor/maplibre-gl.mjs";
+export const loadMapLibrary = () => import(LIB).then((m) => { maplibregl = m; return m; });
 
 const { url } = NY;
 const NYC = [[-74.26, 40.49], [-73.69, 40.92]];
@@ -53,6 +57,7 @@ export class GuideMap {
   }
 
   async init() {
+    if (!maplibregl) await loadMapLibrary();
     const g = await geodata();
     this.map = new maplibregl.Map({
       container: this.el, style: STYLE[theme()], bounds: NYC, fitBoundsOptions: { padding: 30 },
