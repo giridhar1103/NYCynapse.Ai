@@ -25,6 +25,8 @@ from typing import Any
 
 import httpx
 
+from . import warm
+
 # Calls in flight per provider. Each vendor has its own limits, so different vendors can run
 # side by side.
 _CONCURRENCY = int(os.environ.get("NYCYNAPSE_LLM_CONCURRENCY", "2"))
@@ -277,6 +279,8 @@ def _command(pid: str, p: dict, system: str, prompt: str, schema: dict | None) -
             "read files: everything you need is below. Reply with the answer only."
         )
         prompt = f"<instructions>\n{system}\n</instructions>\n\n<task>\n{prompt}\n</task>"
+    if warm.usable(p):
+        return _command_warm(pid, p, system, prompt, schema)
     with tempfile.TemporaryDirectory() as td:
         schema_path, out_path = os.path.join(td, "schema.json"), os.path.join(td, "out.txt")
         if schema is not None:
@@ -326,22 +330,7 @@ def _command(pid: str, p: dict, system: str, prompt: str, schema: dict | None) -
             d = json.loads(proc.stdout)
         except json.JSONDecodeError as e:
             raise LLMError(f"unreadable reply: {(proc.stderr or proc.stdout)[:300]}") from e
-        if d.get("is_error"):
-            raise LLMError(f"{d.get('subtype')}: {str(d.get('result'))[:300]}")
-        text = d.get("result", "")
-        if isinstance(d.get("structured_output"), dict | list):
-            text = json.dumps(d["structured_output"])
-        u = d.get("usage") or {}
-        tin = (
-            sum(
-                u.get(k) or 0
-                for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
-            )
-            or None
-        )
-        return LLMResult(
-            text, p.get("model", ""), pid, ms, tin, u.get("output_tokens"), d.get("total_cost_usd")
-        )
+        return _json_result(pid, p, d, ms)
     if p.get("parse") == "agy_json":
         return _agy_result(pid, p, proc, ms)
     if p.get("parse") == "codex_jsonl":
@@ -349,6 +338,55 @@ def _command(pid: str, p: dict, system: str, prompt: str, schema: dict | None) -
     if proc.returncode != 0 and not out.strip():
         raise LLMError(f"exited {proc.returncode}: {proc.stderr[:300]}")
     return LLMResult(out.strip(), p.get("model", ""), pid, ms)
+
+
+def _command_warm(pid: str, p: dict, system: str, prompt: str, schema: dict | None) -> LLMResult:
+    """The same call through a process started ahead of time (see warm.py)."""
+    subst = {
+        "{prompt}": "",
+        "{system}": system,
+        "{model}": p.get("model", ""),
+        "{effort}": p.get("effort", "low"),
+        "{schema_json}": json.dumps(schema) if schema is not None else "",
+    }
+    argv: list[str] = []
+    for a in p["argv"]:
+        if a in ("{schema_file}", "{schema_json}") and schema is None:
+            if argv:
+                argv.pop()
+            continue
+        for k, v in subst.items():
+            a = a.replace(k, v)
+        argv.append(a)
+    key = (pid, system, subst["{schema_json}"])
+    try:
+        d, ms, was_warm = warm.call(key, argv, prompt, p.get("timeout", 300))
+    except TimeoutError as e:
+        raise LLMError("model call timed out") from e
+    except (EOFError, OSError) as e:
+        raise LLMError(f"model process failed: {e}") from e
+    log.debug("model %s from a %s process", pid, "waiting" if was_warm else "new")
+    return _json_result(pid, p, d, ms)
+
+
+def _json_result(pid: str, p: dict, d: dict, ms: int) -> LLMResult:
+    """The result envelope of a tool that answers in one JSON object."""
+    if d.get("is_error"):
+        raise LLMError(f"{d.get('subtype')}: {str(d.get('result'))[:300]}")
+    text = d.get("result", "")
+    if isinstance(d.get("structured_output"), dict | list):
+        text = json.dumps(d["structured_output"])
+    u = d.get("usage") or {}
+    tin = (
+        sum(
+            u.get(k) or 0
+            for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
+        )
+        or None
+    )
+    return LLMResult(
+        text, p.get("model", ""), pid, ms, tin, u.get("output_tokens"), d.get("total_cost_usd")
+    )
 
 
 def _agy_result(pid: str, p: dict, proc, ms: int) -> LLMResult:
