@@ -37,6 +37,9 @@ PLACES = [
     ("Snug Harbor Cultural Center, Staten Island", 40.6430, -74.1030, 500),
     ("Wall Street, Pier 11", 40.7033, -74.0071, 350),
     ("40.7128,-74.0060", 40.7128, -74.0060, 10),
+    ("South Ferry", 40.7021, -74.0137, 200),
+    ("White Plains, NY", 41.0326, -73.7752, 600),
+    ("Long Beach, NY", 40.5902, -73.6648, 800),
 ]
 
 
@@ -71,6 +74,7 @@ TRIPS = [
     ("Penn Station", "LaGuardia Terminal B", "transit", "door to door"),
     ("World Trade Center", "Hoboken Terminal", "transit", "PATH"),
     ("Brooklyn Museum", "Prospect Park", "walk", "Walk"),
+    ("Fordham Rd and Jerome Ave, Bronx", "White Plains, NY", "transit", "Metro-North"),
 ]
 
 

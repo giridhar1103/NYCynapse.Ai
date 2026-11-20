@@ -613,6 +613,14 @@ def locate(text: str) -> dict | None:
         if hit:
             return hit
     # "Rockaway ferry landing at Beach 108th St", "St. George Ferry Terminal": a ferry stop.
+    # "South Ferry" is the station at the tip of Manhattan, not a ferry landing called South.
+    if re.fullmatch(
+        r"\s*(?:the\s+)?south\s+ferry(?:\s+(?:station|stop|subway|terminal))?"
+        r"(?:\s*,?\s*(?:manhattan|nyc|new york(?:,? ny)?))?\s*",
+        raw,
+        re.I,
+    ):
+        return {"name": "South Ferry", "lat": 40.70207, "lon": -74.01366}
     ferry = re.match(r"(?:the\s+)?(.+?)\s+ferry\b", raw, re.I)
     if ferry:
         hit = _ferry_stop(ferry.group(1), raw)
@@ -1026,6 +1034,14 @@ def _locate(text: str) -> dict | None:
         fits = (want <= got or bool(outside)) and not extra and not streetish
         if _inside(lat, lon) and fits:
             name = h.get("name") or q
+            # A town outside the city ("White Plains, NY") comes back as the middle of its
+            # boundary, which the transit planner may not connect to anything. Its train
+            # station is where a trip there starts or ends.
+            town = outside or h.get("addresstype") in ("city", "town", "village", "hamlet")
+            if town or re.match(r"(?:city|town|village) of\b", name, re.I):
+                station = _rail_stop(raw)
+                if station and _metres(station, {"lat": lat, "lon": lon}) < 6000:
+                    return {**station, "name": f"{station['name']} station"}
             return {"name": f"near {name}" if k else name, "lat": lat, "lon": lon}
     return _rail_stop(raw)
 
@@ -1090,7 +1106,8 @@ def _rail_stop(raw: str) -> dict | None:
             or re.search(r"lirr|amtrak|\brail|(?<!bus )\bstation\b", h["name"], re.I)
         ]
         if rail:
-            h = rail[0]
+            # "White Plains" is White Plains, not North White Plains.
+            h = min(rail, key=lambda h: len(_words(_norm(h.get("name") or "")) - want))
             return {"name": h["name"], "lat": h["lat"], "lon": h["lon"]}
     return None
 
@@ -2398,6 +2415,16 @@ def trip_plan(
         changes = {id(o): _line_changes(o, t) for o in options}
         options = _affected_last(options, arrive_by)
         data["transit"] = options
+        first = min((o.get("leave_ts", 0) for o in options), default=0)
+        soonest = min((o["arrive_ts"] for o in options), default=0)
+        late = soonest - t.timestamp() > 2 * 3600 if arrive_by else first - t.timestamp() > 3 * 3600
+        if options and late:
+            notes.append(
+                "Every transit option found is hours away from the time asked. That usually "
+                "means the planner could not link these exact points then, not that nothing "
+                "runs: plan again from or to the nearest station before telling the reader "
+                "there is no service or the deadline cannot be met."
+            )
         if options:
             lines.append("Transit options (best first):")
             # Name the quickest and the simplest, so a reader who wants fewer changes (luggage,
