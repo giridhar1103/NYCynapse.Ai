@@ -42,6 +42,8 @@ log = logging.getLogger(__name__)
 # model call instead of a check, a rewrite and a second check. "0" restores the old flow.
 FIX_IN_CHECK = os.environ.get("NYCYNAPSE_VERIFY_FIX", "1") != "0"
 
+PREFETCH = os.environ.get("NYCYNAPSE_PREFETCH", "1") != "0"
+
 UNFINISHED = "the draft leaves part of the question unanswered"
 MAX_ROUNDS = 5
 MAX_CALLS = 9
@@ -325,6 +327,15 @@ class Agent:
         )
         force = False
         last: tuple[str, dict] | None = None  # the latest draft, in case the rounds run out
+        early = self._valid_calls(t, _prefetch(question)) if PREFETCH else []
+        if early:
+            # The obvious live check for this kind of question, made before the first model
+            # call, so that call can answer instead of only asking for it.
+            emit("status", {"text": "Checking the live feeds"})
+            t.steps.append(
+                {"status": "fetched before the first step", "calls": [c["tool"] for c in early]}
+            )
+            self._run_calls(t, early)
         for round_no in range(MAX_ROUNDS + 1):
             elapsed = time.monotonic() - t.started
             if round_no == MAX_ROUNDS or elapsed > TURN_SECONDS - 30 or self._calls(t) >= MAX_CALLS:
@@ -928,6 +939,37 @@ class Agent:
             ]
             + [{"note": s["note"]} for s in t.steps if "note" in s],
         }
+
+
+_LINE = re.compile(r"\b(?:the\s+)?([1-7ACEBDFGJLMNQRWZ]|SIR)\s*(?:train|trains|line)\b")
+_STATUS = re.compile(
+    r"\b(?:running|run|delays?|delayed|service|working|suspended|status|normal|normally|"
+    r"on time|problems?|issues?|down)\b",
+    re.I,
+)
+_WEATHER = re.compile(
+    r"\b(?:rain|raining|rainy|snow|snowing|weather|forecast|temperature|umbrella|thunder|"
+    r"storms?|windy|heat|freezing|degrees)\b",
+    re.I,
+)
+_LATER = re.compile(
+    r"\b(?:tomorrow|weekend|this week|monday|tuesday|wednesday|thursday|friday|saturday|"
+    r"sunday|next few days)\b",
+    re.I,
+)
+
+
+def _prefetch(question: str) -> list[dict]:
+    """Tool calls a question plainly needs, whatever else it asks: the alerts for a subway line
+    asked about, the weather when it asks about rain. Nothing when in doubt."""
+    calls = []
+    m = _LINE.search(question)
+    if m and _STATUS.search(question):
+        calls.append({"tool": "subway_alerts", "args": json.dumps({"line": m.group(1)})})
+    if _WEATHER.search(question):
+        args = {"days": 3} if _LATER.search(question) else {"hours": 12}
+        calls.append({"tool": "weather", "args": json.dumps(args)})
+    return calls
 
 
 _STAIRS = re.compile(

@@ -210,6 +210,7 @@ def _agent(monkeypatch, replies, tools):
         return LLMResult(json.dumps(r), "m", pid, 5, 10, 10, 0.001)
 
     monkeypatch.setattr(llm, "complete_with", complete_with)
+    monkeypatch.setattr(core, "PREFETCH", False)  # scripted replies decide every tool call
     agent = core.Agent.__new__(core.Agent)
     agent.verify_answers = False  # scripted replies cover the answer steps only
     agent.lake = _Lake()
@@ -639,6 +640,25 @@ def test_plans_hours_away_or_glued_to_the_next_morning_are_caught():
     assert not trips._hours_away([tonight], t, False)
     assert trips._hours_away([morning], t, False)
     assert trips._hours_away([morning], t, True)
+
+
+def test_plain_live_questions_are_checked_before_the_first_model_call(monkeypatch):
+    assert [c["tool"] for c in core._prefetch("Is the 7 train running normally right now?")] == [
+        "subway_alerts"
+    ]
+    assert json.loads(core._prefetch("delays on the A line?")[0]["args"]) == {"line": "A"}
+    assert json.loads(core._prefetch("will it rain saturday?")[0]["args"]) == {"days": 3}
+    assert core._prefetch("Which neighborhoods had the most noise complaints?") == []
+    assert core._prefetch("how do I get to the A train from here?") == []  # no status word
+    agent, seen = _agent(
+        monkeypatch,
+        [_step(answer="The 7 is running normally [1].")],
+        [_tool("subway_alerts", text="No alerts for the 7")],
+    )
+    monkeypatch.setattr(core, "PREFETCH", True)
+    out = agent.run("Is the 7 train running normally right now?", [], lambda e, d: None)
+    assert "No alerts for the 7" in seen[0][1]  # the first model call already had the result
+    assert out["answer"].startswith("The 7 is running normally")
 
 
 def test_the_line_moves_first_come_first_served():
