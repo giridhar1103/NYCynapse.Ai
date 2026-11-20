@@ -2643,6 +2643,14 @@ def trip_plan(
                 )
                 if d.get(k)
             )
+            # Say which one is missing, so one fare is never read as both.
+            gone = [
+                lbl
+                for lbl, k in (("yellow taxi", "taxi_fare_usd"), ("Uber or Lyft", "app_fare_usd"))
+                if not d.get(k)
+            ]
+            if fares and gone:
+                fares += f" (no typical {' or '.join(gone)} fare for this pair)"
             lines.append(
                 f"By taxi or car: usually {med} min ({p25} to {p75} min for most trips) from "
                 f"{d['from_zone']} to {d['to_zone']} around {_hour(d['hour'])} on a {d['day']}, "
