@@ -2824,7 +2824,9 @@ TOOLS = [
         "taxi: typical time and fare for that hour from recent taxi and app trips (not live "
         "traffic). Use for every 'how do I get to', 'how long does it take', 'fastest way' or "
         "airport question, and with mode bike for bike rides; never estimate routes or times "
-        "yourself. Set `when` to the time the reader will travel.",
+        "yourself. Set `when` to the time the reader will travel. Plan the whole trip in one "
+        "call from the real start to the real end: separate calls for each leg do not line up "
+        "in time, and stitching them leaves people waiting.",
         {
             "type": "object",
             "properties": {
