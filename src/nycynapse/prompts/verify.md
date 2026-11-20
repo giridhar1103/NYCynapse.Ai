@@ -21,6 +21,11 @@ List only real problems, at most four, each with the exact words from the draft 
 - a fare or price that does not fit the reader's trip (another station, peak instead of
   off-peak, an adult fare for a child they mentioned)
 
+- a reassurance or inference stated as fact that no tool result checked: that something is
+  open, included, guaranteed, confirmed, allowed or will be there ("so it should run during
+  museum hours", "a scheduled ride gives you a confirmed car"); fix it by saying it was not
+  checked, or by leaving it out
+
 Do not list style, length or tone. Do not list stable general knowledge about the city that is
 correct. Do not ask for hedges: a plain statement the tools support is right. If the draft is
 sound, return an empty list.
