@@ -455,6 +455,8 @@ a.cite:hover { background: var(--ink); color: var(--bg); border-color: var(--ink
 /* location, voice, copy, welcome, skeleton */
 .g-input form { align-items: flex-end; }
 #g-send { height: 44px; flex: none; }
+.g-input textarea { min-width: 0; width: 100%; }
+@media (max-width: 480px) { .g-input form { gap: 6px; } .g-input .g-ico { width: 38px; } #g-send { padding: 0 13px; } }
 .g-input .g-ico { background: transparent; color: var(--muted); border: 1px solid var(--rule-strong); width: 42px; height: 44px; padding: 0; display: grid; place-items: center; border-radius: 12px; flex: none; transition: color .15s, background .15s, border-color .15s; }
 .g-input .g-ico svg { width: 20px; height: 20px; fill: currentColor; }
 .g-input .g-ico:hover { color: var(--ink); background: var(--surface); }
@@ -463,6 +465,7 @@ a.cite:hover { background: var(--ink); color: var(--bg); border-color: var(--ink
 #g-mic.on { background: #d93025; border-color: #d93025; }
 @keyframes pulse { 50% { opacity: .35; } }
 .g-where { display: flex; align-items: center; gap: 8px; width: fit-content; font-size: 12.5px; color: var(--lake); background: color-mix(in srgb, var(--lake) 10%, transparent); border-radius: 999px; padding: 3px 4px 3px 11px; margin-bottom: 8px; }
+.g-where[hidden] { display: none; }
 .g-where.warn { color: var(--muted); background: var(--sunk); }
 .g-where button { background: transparent !important; color: inherit !important; padding: 0 6px !important; font-size: 12px; }
 .answer-card .copy { margin-left: auto; flex: none; background: transparent; border: 1px solid var(--rule-strong); border-radius: 999px; padding: 3px 12px; font-size: 12.5px; color: var(--muted); cursor: pointer; }
