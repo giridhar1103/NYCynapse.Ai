@@ -1654,6 +1654,7 @@ def _transit(a: dict, b: dict, when: datetime, arrive_by: bool) -> tuple[list[di
         by_path = []
     if by_path:
         notes.append(
+            "PATH runs 24 hours a day, every day. "
             "PATH lines: on weekdays from about 6 AM to 11 PM all four lines run direct; from "
             "about 11 PM to 6 AM on weeknights, and on weekends outside 10 AM to 9 PM, the "
             "Journal Square-33rd Street line runs via Hoboken. These options already use the "

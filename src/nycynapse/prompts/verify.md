@@ -7,7 +7,9 @@ List only real problems, at most four, each with the exact words from the draft 
   results do not support, or that they contradict
 - a time that does not fit the reader's plan or the current time (a time today that has
   already passed, an alert applied outside its hours, a plan that arrives after the reader's
-  deadline, a flight plan without time for check-in and security)
+  deadline, a flight plan without time for check-in and security: under 2 hours before a
+  domestic flight or 3 before an international one, or a domestic margin assumed when the
+  reader never said which)
 - clock times in the answer that contradict each other
 - an exact local detail (which gate, entrance, exit number, corner or street) with no source
 - something said about the wrong place, or a figure attached to the wrong thing
