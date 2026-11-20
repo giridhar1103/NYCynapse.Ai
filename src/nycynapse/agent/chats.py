@@ -9,6 +9,8 @@ shown to other readers.
 
 from __future__ import annotations
 
+import re
+import secrets
 import time
 import uuid
 from dataclasses import dataclass
@@ -131,6 +133,39 @@ class Chats:
             (rating, note, chat_id, turn, client),
         )
         return done.rowcount == 1
+
+    def share(self, chat_id: str, turn: int, client: str) -> str | None:
+        """A link id for one of the reader's own answers (the same id if shared before)."""
+        try:
+            uuid.UUID(chat_id)
+        except ValueError:
+            return None
+        row = (
+            self._conn()
+            .execute(
+                "UPDATE app.chat_turns t SET share_id = coalesce(t.share_id, %s) "
+                "FROM app.chats c WHERE c.id = t.chat_id AND t.chat_id = %s AND t.turn = %s "
+                "AND c.client_hash = %s AND t.outcome = 'answered' RETURNING t.share_id",
+                (secrets.token_urlsafe(9), chat_id, turn, client),
+            )
+            .fetchone()
+        )
+        return row["share_id"] if row else None
+
+    def shared(self, share_id: str) -> dict | None:
+        """A shared answer, as the page shows it. Nothing about who asked."""
+        if not re.fullmatch(r"[A-Za-z0-9_-]{8,20}", share_id or ""):
+            return None
+        row = (
+            self._conn()
+            .execute(
+                "SELECT question, answer, sources, map, model, asked_at FROM app.chat_turns "
+                "WHERE share_id = %s AND outcome = 'answered'",
+                (share_id,),
+            )
+            .fetchone()
+        )
+        return dict(row) if row else None
 
     def spent_today(self) -> float:
         row = (

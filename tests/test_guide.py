@@ -391,6 +391,13 @@ def test_chat_lifecycle(app_dsn):
         (slot.chat_id,),
     ).fetchone()
     assert (row["rating"], row["rating_note"]) == (-1, "wrong station")
+    # a shared link: only for the reader's own answer, the same id each time, no reader in it
+    sid = chats.share(slot.chat_id, 1, "reader-a")
+    assert sid and chats.share(slot.chat_id, 1, "reader-a") == sid
+    assert chats.share(slot.chat_id, 1, "reader-b") is None
+    row = chats.shared(sid)
+    assert row["question"] == "q1" and row["answer"] == "a1" and "client_hash" not in row
+    assert chats.shared("nope") is None and chats.shared("x' OR 1=1 --") is None
     # being turned away at full capacity does not use up the hourly allowance
     before = chats.asked_recently("reader-c")
     busy = chats.begin(None, "reader-c")

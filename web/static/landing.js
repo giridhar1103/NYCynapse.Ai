@@ -1,7 +1,7 @@
 // Landing page: the live map drawing, the ticker, examples, the lakehouse diagram, and the
 // hand-off to the guide overlay.
 
-import { guide } from "./guide.js?v=21";
+import { guide } from "./guide.js?v=22";
 import { drawHero } from "./hero.js?v=3";
 
 const { el, get } = NY;
@@ -92,6 +92,7 @@ document.querySelectorAll("[data-open]").forEach((n) => n.addEventListener("clic
 
 const params = new URLSearchParams(location.search);
 if (params.get("q")) start(params.get("q"));
+else if (location.hash.startsWith("#a=")) guide.showShared(location.hash.slice(3));
 else if (location.hash === "#guide") guide.open();
 
 // the lakehouse diagram

@@ -218,6 +218,40 @@ def rate(
     return {"ok": ok}
 
 
+@router.get("/api/chat/share")
+def share(request: Request, chat: str, turn: int = Query(ge=1, le=MAX_TURNS)):
+    """A link to one of the reader's own answers, made only when they ask for it."""
+    try:
+        sid = chats().share(chat.strip(), turn, _client(request))
+    except psycopg.Error:
+        log.exception("could not share an answer")
+        sid = None
+    return {"ok": bool(sid), "id": sid}
+
+
+@router.get("/api/shared/{share_id}")
+def shared(share_id: str):
+    from fastapi import HTTPException
+
+    try:
+        row = chats().shared(share_id)
+    except psycopg.Error:
+        row = None
+    if not row:
+        raise HTTPException(404, "That shared answer was not found. Links last 30 days.")
+    layers = row["map"] or []
+    places = next((x.get("items") or [] for x in layers if x.get("type") == "highlight"), [])
+    return {
+        "question": row["question"],
+        "text": row["answer"],
+        "sources": row["sources"] or [],
+        "map": layers,
+        "places": places,
+        "model": row["model"],
+        "asked_at": row["asked_at"].isoformat() if row["asked_at"] else None,
+    }
+
+
 @router.get("/api/chat")
 async def chat(
     request: Request,

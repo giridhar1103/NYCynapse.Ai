@@ -282,6 +282,27 @@ class Guide {
   }
 
   scroll() { this.log.scrollTop = this.log.scrollHeight; }
+
+  // A shared answer, opened from its link: shown as asked, with its map, read only.
+  async showShared(id) {
+    this.open();
+    this.log.querySelector(".welcome")?.remove();
+    let d;
+    try { d = await NY.get("api/shared/" + encodeURIComponent(id)); }
+    catch (e) { this.log.append(el("div", { class: "notice warn" }, e.message || "That shared answer was not found.")); return; }
+    this.log.append(el("div", { class: "msg-q" }, d.question));
+    const view = new TurnView(this.log);
+    await this.map?.ready;
+    this.map?.clear();
+    view.layers = d.map || [];
+    if (view.layers.length) this.map?.show(view.layers);
+    const when = d.asked_at ? new Date(d.asked_at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "";
+    view.answer({ ...d, shared: true, cached: true, follow_ups: [], follow_ups_left: 0 }, (f) => this.ask(f), (i) => this.map?.focus(i), {
+      place: (i) => this.map?.reveal(i), done: () => this.map?.revealAll(), scroll: () => this.scroll(),
+      trip: (trip, sel) => this.map?.showTrip(trip, sel) });
+    view.box.append(el("div", { class: "notice" }, `Shared answer${when ? `, from ${when}` : ""}. Times and conditions may have changed since. Ask your own question below.`));
+    this.scroll();
+  }
 }
 
 
@@ -551,6 +572,21 @@ class TurnView {
         setTimeout(() => { copy.textContent = "Copy"; }, 1800);
       });
       actions.append(copy);
+      if (d.can_rate && d.chat && !d.shared) {
+        const share = el("button", { type: "button", class: "copy", "aria-label": "Share a link to this answer" }, "Share");
+        share.addEventListener("click", async () => {
+          try {
+            const r = await NY.get("api/chat/share?" + new URLSearchParams({ chat: d.chat, turn: d.turn }));
+            if (!r.ok) throw new Error("not shared");
+            const link = new URL(url("./"), location.href);
+            link.hash = "a=" + r.id;
+            if (navigator.share) await navigator.share({ title: "NYCynapse answer", text: d.question || "", url: link.href }).catch(() => {});
+            else { await navigator.clipboard.writeText(link.href); share.textContent = "Link copied"; }
+          } catch (_) { share.textContent = "Could not share"; }
+          setTimeout(() => { share.textContent = "Share"; }, 2200);
+        });
+        actions.append(share);
+      }
       card.append(actions);
     }
     this.box.append(card);
@@ -589,7 +625,7 @@ class TurnView {
     const steps = Object.keys(this.steps).length;
     const secs = ((d.latency_ms || performance.now() - this.started) / 1000).toFixed(1);
     const ago = d.asked_at ? Math.max(1, Math.round((Date.now() / 1000 - d.asked_at) / 60)) : null;
-    const bits = d.cached ? [ago != null ? `Same question answered ${ago} min ago` : "Stored answer from earlier today"]
+    const bits = d.shared ? ["Shared answer"] : d.cached ? [ago != null ? `Same question answered ${ago} min ago` : "Stored answer from earlier today"]
       : [`Worked for ${secs} s`, steps ? `${steps} ${steps === 1 ? "check" : "checks"}` : "",
         d.cost_usd ? `$${Number(d.cost_usd).toFixed(3)}` : "", d.fell_back ? "backup model" : ""];
     this.stop();
