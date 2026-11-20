@@ -619,6 +619,17 @@ def test_fares_add_up_for_common_trips():
         "$11.75 plus the LIRR fare"
     )
     assert _fare(o(("train", "AirTrain"), ("train", "NJ Transit"))) == "plus the NJ Transit fare"
+    # one PATH fare even when changing PATH trains; other agencies' buses are named, not priced
+    assert _fare(o(("train", "PATH"), ("train", "PATH"))) == "$3.25"
+    legs = {
+        "lines": [
+            {"mode": "subway", "name": "1", "agency": "MTA New York City Transit"},
+            {"mode": "bus", "name": "108", "agency": "NJ TRANSIT BUS"},
+        ]
+    }
+    assert _fare(legs) == "$3.00 plus the NJ Transit bus fare"
+    mta = {"lines": [{"mode": "bus", "name": "Q70-SBS", "agency": "MTA New York City Transit"}]}
+    assert _fare(mta) == "$3.00"
 
 
 def test_plans_hours_away_or_glued_to_the_next_morning_are_caught():

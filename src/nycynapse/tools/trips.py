@@ -1403,6 +1403,7 @@ def _line(lg: dict, end: str) -> dict:
     return {
         "mode": mode,
         "name": name or "",
+        "agency": lg.get("agencyName") or "",
         "color": "#" + lg["routeColor"] if lg.get("routeColor") else None,
         "text_color": "#" + lg["routeTextColor"] if lg.get("routeTextColor") else None,
         "from": None if start == "START" else start,
@@ -2699,12 +2700,14 @@ SOONER_S = 45 * 60
 # from Oct 19 2026). Commuter rail is priced by zone and time, so it is named, not added.
 FARES = {"local": 3.00, "express": 7.25, "path": 3.25, "nyc_ferry": 5.00, "airtrain": 8.75}
 _EXPRESS = re.compile(r"^(?:BxM|BM|QM|SIM|X)\d", re.I)
+_MTA = re.compile(r"\bMTA\b|New York City Transit|NYCT|MTA Bus", re.I)
+_BUS_AGENCY = {"NJ TRANSIT BUS": "NJ Transit", "Greyhound-us": "Greyhound", "FlixBus-us": "FlixBus"}
 
 
 def _fare(o: dict) -> str:
     """What one adult pays for an itinerary, as far as fixed fares go: "$3.00", or "$3.00 plus
     the LIRR fare" when a zone-priced train is in it. Empty when it cannot be said."""
-    total, rail, local = 0.0, [], False
+    total, rail, local, path = 0.0, [], False, False
     legs = [x for x in o.get("lines") or [] if x.get("mode") != "walk"]
     names = {x.get("name") or "" for x in legs}
     nj_rail = "NJ Transit" in names
@@ -2714,7 +2717,9 @@ def _fare(o: dict) -> str:
             # Newark's AirTrain fee is part of the NJ Transit ticket to the airport station.
             total += 0 if nj_rail else FARES["airtrain"]
         elif name == "PATH":
-            total += FARES["path"]
+            if not path:  # changing PATH trains is free
+                total += FARES["path"]
+                path = True
         elif mode == "ferry":
             low = name.lower()
             if "staten" in low or "st george" in low or "whitehall" in low:
@@ -2723,6 +2728,9 @@ def _fare(o: dict) -> str:
                 total += FARES["nyc_ferry"]
             else:
                 rail.append(name or "ferry")
+        elif mode == "bus" and x.get("agency") and not _MTA.search(x["agency"]):
+            # NJ Transit, Bee-Line, NICE, intercity coaches: their own fares.
+            rail.append(_BUS_AGENCY.get(x["agency"], x["agency"]) + " bus")
         elif mode == "bus" and _EXPRESS.match(name):
             total += FARES["express"]  # includes the transfer to a local bus or the subway
             local = True
