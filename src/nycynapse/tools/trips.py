@@ -2768,6 +2768,7 @@ def _trip_layer(a: dict, b: dict, t: datetime, arrive_by: bool, mode: str, data:
                     "arrive": o.get("arrive"),
                     "transfers": o["transfers"],
                     "walk_minutes": o["walk_minutes"],
+                    "fare": _fare(o),
                     "live": o.get("live", False),
                     "tags": [
                         t for t, x in (("Arrives first", quick), ("Fewest changes", easy)) if o is x

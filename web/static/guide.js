@@ -396,6 +396,7 @@ function tripPanel(trip, draw) {
           el("div", { class: "row2" }, `${o.leave} – ${o.arrive || ""}`,
             ` · ${o.transfers ? `${o.transfers} change${o.transfers > 1 ? "s" : ""}` : "no changes"}`,
             o.walk_minutes ? ` · ${o.walk_minutes} min walk` : "",
+            o.fare ? ` · ${o.fare}` : "",
             ...(o.tags || []).map((t) => el("span", { class: "tag" }, t))));
         return on ? el("div", { class: "optwrap" }, card, stepList(o.legs, trip)) : card;
       }));
