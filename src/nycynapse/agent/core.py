@@ -24,13 +24,14 @@ import uuid
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from datetime import datetime
 
 from ..llm import client as llm
 from ..llm.client import LLMError, ProviderLimit
 from ..prompts import prompt as load_prompt
 from ..tools import Tool, ToolResult, failed
 from . import places as place_index
+from .citations import _cite, _registry, _source_key, _uncite
+from .grounding import _drop_untraced, _untraced_clocks, _untraced_numbers
 from .host import MCPHost
 from .lake import Lake, now_as_of
 from .lake import tools as lake_tools
@@ -970,131 +971,6 @@ def _usable_fix(draft: str, fixed) -> str | None:
     return text
 
 
-_NUM = re.compile(
-    r"(?<![\w.])(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?(\s*(?:million|billion|thousand)\b)?", re.I
-)
-_SCALE = {"thousand": 1e3, "million": 1e6, "billion": 1e9}
-_SMALL = {str(i) for i in range(0, 13)}
-_CLOCK = re.compile(r"\d{1,2}:\d{2}|\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?)?")
-
-
-# Numbers that are names, not figures: I-278, Route 9A, 14th St, 42 St, Pier 17, Terminal 4.
-_NAMES = re.compile(
-    r"\b[A-Z]{1,3}-\d+[A-Z]?\b|\b\d+(?:st|nd|rd|th)\b"
-    r"|\b\d+ (?:St|Street|Av|Ave|Avenue|Pl|Rd|Dr|Blvd)\b"
-    r"|\b(?:Route|Pier|Terminal|Exit|Exits|Gate|Platform|Track|Hall|PS|P\.S\.|Gates)\s+\d+\w*",
-    re.I,
-)
-
-
-def _numbers(text: str) -> list[tuple[str, float, float]]:
-    """(as written, value, how far a rounded figure may be off) for each number in a text."""
-    out = []
-    for m in _NUM.finditer(_CLOCK.sub(" ", text or "")):
-        whole = m.group(1).replace(",", "")
-        written = whole + (f".{m.group(2)}" if m.group(2) else "")
-        scale = _SCALE.get((m.group(3) or "").strip().lower(), 1.0)
-        value = float(written) * scale
-        step = (10 ** -len(m.group(2)) if m.group(2) else 1.0) * scale
-        out.append((written, value, step))
-    return out
-
-
-_AMPM = re.compile(r"\b(\d{1,2}):(\d{2})\s*([ap])(?:\.\s?m\.|m\b)", re.I)
-_ISO = re.compile(r"\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?")
-
-
-def _minutes_of_day(h: int, m: int, ap: str) -> int:
-    return (h % 12 + (12 if ap.lower() == "p" else 0)) * 60 + m
-
-
-def _untraced_clocks(answer: str, results: list[ToolResult], memory: str = "") -> list[str]:
-    """Clock times in the answer ("the 10:14 PM train") that no tool gave, within a minute.
-    Tools write times as "10:14 PM" or as ISO timestamps, which are read in New York time
-    ("2026-10-24T22:47:00Z" is 6:47 PM). Returns the times as written, so they can be dropped."""
-    from zoneinfo import ZoneInfo
-
-    ny = ZoneInfo("America/New_York")
-    texts = [memory] + [
-        r.summary + " " + json.dumps(r.data, default=str)[:20000] for r in results if r.ok
-    ]
-    known: set[int] = set()
-    for text in texts:
-        for h, m, ap in _AMPM.findall(text):
-            known.add(_minutes_of_day(int(h), int(m), ap))
-        for stamp in _ISO.findall(text):
-            try:
-                t = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
-            except ValueError:
-                continue
-            t = t.astimezone(ny) if t.tzinfo else t
-            known.add(t.hour * 60 + t.minute)
-    out = []
-    for m in _AMPM.finditer(answer):
-        x = _minutes_of_day(int(m.group(1)), int(m.group(2)), m.group(3))
-        if not any(abs(x - k) <= 1 or abs(x - k) >= 1439 for k in known):
-            out.append(m.group(0))
-    return out
-
-
-def _untraced_numbers(answer: str, results: list[ToolResult], memory: str = "") -> list[str]:
-    """Numbers in the answer that cannot be traced to what the tools returned (or to earlier
-    turns), allowing rounding, "4.1 million" style figures, totals, averages, differences and
-    percent changes. Small counts, years and clock times are skipped."""
-    values: list[float] = []
-    texts = [memory]
-    for r in results:
-        if not r.ok:
-            continue
-        texts.append(r.summary + " " + json.dumps(r.data, default=str)[:20000])
-        data = r.data if isinstance(r.data, dict) else {}
-        rows = data.get("rows") or []
-        for i in range(len(data.get("columns") or [])):
-            col = [
-                v
-                for v in (row[i] for row in rows if i < len(row))
-                if isinstance(v, int | float) and not isinstance(v, bool)
-            ]
-            if len(col) > 1:
-                values += [float(sum(col)), float(sum(col)) / len(col)]  # totals and averages
-    for t in texts:
-        values += [v for _, v, _ in _numbers(t)]
-    base = [v for v in values if v][:80]
-    for x in base:
-        for y in base:
-            if x != y:
-                values.append(abs(x - y))
-                values.append(abs(x - y) / abs(y) * 100)
-    out = []
-    for written, x, step in _numbers(_NAMES.sub(" ", answer)):
-        if written in _SMALL or (len(written) == 4 and written.startswith("20")):
-            continue
-        slack = step / 2 + 0.051
-        if any(abs(x - v) <= slack + abs(v) * 0.01 for v in values):
-            continue
-        out.append(written)
-    return out[:8]
-
-
-def _source_key(s: dict) -> str:
-    return (s.get("url") or s.get("title") or "").rstrip("/")
-
-
-def _registry(results: list[dict]) -> list[tuple[int, str, dict]]:
-    """Every source the turn's tools returned, numbered in the order they arrived."""
-    out, seen = [], set()
-    for r in results:
-        res: ToolResult = r["result"]
-        if not res.ok:
-            continue
-        for s in res.sources:
-            key = _source_key(s)
-            if key and key not in seen:
-                seen.add(key)
-                out.append((len(out) + 1, key, s))
-    return out
-
-
 def _reader(history: list[dict]) -> str:
     """The latest note of what the reader said about their plan, from earlier turns."""
     return next((h["reader"] for h in reversed(history) if h.get("reader")), "")
@@ -1128,110 +1004,6 @@ def _result_text(r: dict, numbers: dict[str, int]) -> str:
         if _source_key(s) in numbers
     )
     return f"{head}. Sources: {cite or 'none'}\n{res.summary}"
-
-
-_CITE = re.compile(r"\s?\[(\d{1,2}(?:\s*[,;]\s*\d{1,2})*)\]")
-
-
-def _drop_untraced(answer: str, figures: list[str]) -> str:
-    """Remove the list lines or sentences that hold figures no tool gave, keeping the rest."""
-    bad = [re.compile(rf"(?<![\w.]){re.escape(f)}(?![\w])") for f in figures]
-
-    def holds(text: str) -> bool:
-        clean = _uncite(text)
-        return any(b.search(clean) for b in bad)
-
-    out = []
-    for line in answer.split("\n"):
-        if line.lstrip().startswith(("- ", "* ", "• ")):
-            if not holds(line):
-                out.append(line)
-            continue
-        parts = re.split(r"(?<=[.!?])\s+(?=[A-Z])", line)
-        kept = [x for x in parts if not holds(x)]
-        if kept or not parts:
-            out.append(" ".join(kept))
-    text = "\n".join(out)
-    return re.sub(r"\n{3,}", "\n\n", text).strip() or answer
-
-
-def _uncite(text: str) -> str:
-    return _CITE.sub("", text or "")
-
-
-_GROUP = re.compile(r"(?:\[\d{1,2}\])+")
-
-
-def _tidy_citations(text: str) -> str:
-    """Cite a run of facts from the same source once, at its end: "A [1]. B [1]." becomes
-    "A. B [1].", and a list whose lines all cite the same sources cites them on its last line."""
-
-    def within(line: str) -> str:
-        groups = list(_GROUP.finditer(line))
-        drop = [a for a, b in zip(groups, groups[1:], strict=False) if a.group(0) == b.group(0)]
-        for g in reversed(drop):
-            line = line[: g.start()] + line[g.end() :]
-        return line
-
-    lines = [within(x) for x in text.split("\n")]
-    i = 0
-    while i < len(lines):
-        if not re.match(r"\s*[-•*]\s", lines[i]):
-            i += 1
-            continue
-        j = i
-        while j < len(lines) and re.match(r"\s*[-•*]\s", lines[j]):
-            j += 1
-        run = lines[i:j]
-        tails = [_GROUP.findall(x) for x in run]
-        if len(run) > 1 and all(t and t == tails[0] for t in tails):
-            one = tails[0][-1]
-            for k in range(i, j - 1):
-                lines[k] = lines[k].replace(one, "")
-        i = j
-    return "\n".join(lines)
-
-
-def _cite(answer: str, results: list[dict], declined: bool) -> tuple[str, list[dict]]:
-    """Renumber the answer's citations 1, 2, 3 in reading order and keep only cited sources.
-
-    Numbers that point at nothing are dropped. An answer that cites nothing keeps the city
-    sources it used (and pages it read), unnumbered, so a reader still sees where it came from.
-    """
-    reg = {n: s for n, _, s in _registry(results)}
-    order: list[int] = []
-
-    def renumber(m: re.Match) -> str:
-        nums = []
-        for x in re.split(r"[,;]", m.group(1)):
-            old = int(x)
-            if old not in reg:
-                continue
-            if old not in order:
-                order.append(old)
-            nums.append(order.index(old) + 1)
-        nums = sorted(set(nums))
-        return "".join(f"[{n}]" for n in nums)
-
-    text = _tidy_citations(_CITE.sub(renumber, answer))
-    text = re.sub(r"[ \t]+([.,;:])", r"\1", text)
-    if declined:
-        return _uncite(text), []
-    if order:
-        return text, [{**reg[old], "n": i + 1} for i, old in enumerate(order)]
-    used = [
-        s
-        for r in results
-        if r["result"].ok
-        for s in r["result"].sources
-        if s.get("kind") != "web" or r["tool"] == "read_page"
-    ]
-    out, seen = [], set()
-    for s in used:
-        if _source_key(s) not in seen:
-            seen.add(_source_key(s))
-            out.append(s)
-    return text, out
 
 
 def _short(text: str, n: int = 160) -> str:

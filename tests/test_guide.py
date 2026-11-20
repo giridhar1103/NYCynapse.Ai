@@ -7,7 +7,7 @@ import time
 
 import pytest
 
-from nycynapse.agent import core
+from nycynapse.agent import citations, core
 from nycynapse.agent.chats import MAX_TURNS, ChatError, Chats
 from nycynapse.agent.lake import map_from_rows
 from nycynapse.api.capacity import Full, Gate
@@ -770,7 +770,7 @@ def test_repeated_citations_are_cited_once_at_the_end():
     text = (
         "Low at $1,010[1]. Median $1,821[1].\n- A: 1[1]\n- B: 2[1]\n- C: 3[1]\nMixed[1]. Other[2]."
     )
-    assert core._tidy_citations(text) == (
+    assert citations._tidy_citations(text) == (
         "Low at $1,010. Median $1,821[1].\n- A: 1\n- B: 2\n- C: 3[1]\nMixed[1]. Other[2]."
     )
 
