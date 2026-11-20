@@ -50,6 +50,7 @@ MAX_CALLS = 9
 MAX_PER_TOOL = {"web_search": 3, "read_page": 3, "ask_lake": 3}
 PER_TOOL = 4  # every other tool
 TURN_SECONDS = 150
+LOOK_UNTIL_S = 45  # past this, a usable fix is taken instead of going back to look
 REST_S = 20 * 60  # how long a main model that hit its limit is left alone
 
 STEP_SCHEMA = {
@@ -438,7 +439,10 @@ class Agent:
                 and round_no < MAX_ROUNDS - 1
                 and time.monotonic() - t.started < TURN_SECONDS - 60
             )
-            if answer and not calls and issues and t.fixed and not (t.look and room):
+            # Going back to look for an unanswered part costs two or three more calls; once the
+            # turn has run a while, the corrected answer in hand is the better trade.
+            late = time.monotonic() - t.started > LOOK_UNTIL_S
+            if answer and not calls and issues and t.fixed and not (t.look and room and not late):
                 # The check already wrote the corrected answer from the same tool results:
                 # take it. Only a part still unanswered goes back to the model, with tools.
                 t.steps.append({"note": "fixed in the check: " + "; ".join(issues)})
@@ -582,6 +586,19 @@ class Agent:
             t.timeline.append(_timed("model", "verify", began, True, pid))
             if FIX_IN_CHECK and (found or also):
                 t.fixed = _usable_fix(answer, reply.get("fixed"))
+                if t.fixed is None:
+                    got = str(reply.get("fixed") or "")
+                    t.steps.append(
+                        {
+                            "note": "fix not used: "
+                            + (
+                                "none returned"
+                                if not got.strip()
+                                else f"{len(_uncite(got).split())} words for a "
+                                f"{len(_uncite(answer).split())}-word draft"
+                            )
+                        }
+                    )
         except Exception as e:  # noqa: BLE001 - the check is a safety net, not a gate
             t.timeline.append(_timed("model", "verify", began, False, pid))
             log.warning("fact check failed: %s", str(e)[:200])

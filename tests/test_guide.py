@@ -1225,6 +1225,29 @@ def test_check_hands_back_the_fixed_answer_without_a_rewrite(monkeypatch):
     assert [x["name"] for x in timeline] == ["step", "trip_plan", "step", "verify"]
 
 
+def test_late_in_a_turn_the_fix_beats_going_back_to_look(monkeypatch):
+    agent, seen = _agent(
+        monkeypatch,
+        [
+            _step(calls=[("trip_plan", {})]),
+            _step(answer="PATH then the C is the cheapest way, about 44 minutes door to door [1]."),
+            {
+                "problems": [
+                    {"quote": "the cheapest way", "why": "the NJ Transit fare is unknown"}
+                ],
+                "unfinished": ["look up the NJ Transit fare"],
+                "fixed": "PATH then the C takes about 44 minutes door to door [1].",
+            },
+        ],
+        [_tool("trip_plan", text="PATH, C train, 44 min")],
+    )
+    agent.verify_answers = True
+    monkeypatch.setattr(core, "LOOK_UNTIL_S", -1)  # as if the turn had already run a while
+    out = agent.run("cheapest way from newark penn to jay st tonight?", [], lambda e, d: None)
+    assert out["answer"].startswith("PATH then the C takes about 44 minutes")
+    assert len(seen) == 3
+
+
 def test_a_gutted_or_missing_fix_falls_back_to_a_rewrite(monkeypatch):
     agent, seen = _agent(
         monkeypatch,
