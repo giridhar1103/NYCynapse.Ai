@@ -8,7 +8,7 @@ schema already loaded; a call takes one, sends its prompt as a single message, r
 result and ends the process. A fresh one is started for the next call while this one works.
 
 Only instructions used at least twice in the last quarter hour are kept warm, a small total
-cap keeps memory in check (each waiting process holds about 200 MB), and processes that wait
+cap (four) keeps memory in check (each waiting process holds about 200 MB), and processes that wait
 longer than ten minutes are ended. When none is ready the call starts its own, as before.
 """
 
@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 log = logging.getLogger(__name__)
 
 ENABLED = os.environ.get("NYCYNAPSE_WARM_MODELS", "") == "1"
-MAX_IDLE = int(os.environ.get("NYCYNAPSE_WARM_MAX", "3"))
+MAX_IDLE = int(os.environ.get("NYCYNAPSE_WARM_MAX", "4"))
 MAX_AGE_S = 600
 HOT_WINDOW_S = 900
 STREAM = ["--input-format", "stream-json", "--output-format", "stream-json", "--verbose"]
