@@ -13,7 +13,7 @@ from nycynapse.agent.lake import map_from_rows
 from nycynapse.api.capacity import Full, Gate
 from nycynapse.llm import client as llm
 from nycynapse.llm.client import LLMResult, ProviderLimit
-from nycynapse.tools import Tool, ToolResult, failed, live
+from nycynapse.tools import Tool, ToolResult, failed, live, path_trains
 from nycynapse.tools import http as tools_http
 from nycynapse.tools.live import open_data
 
@@ -1172,16 +1172,16 @@ def test_path_lines_run_by_day_and_hour():
     def line(a, b, via):
         return next(
             p
-            for p in trips.PATH["patterns"]
+            for p in path_trains.PATH["patterns"]
             if p["stops"][0] == a and p["stops"][-1] == b and p["via_hoboken"] == via
         )
 
     sat_night = datetime(2026, 10, 17, 22, tzinfo=trips.NY)
     wed_noon = datetime(2026, 10, 14, 12, tzinfo=trips.NY)
-    assert trips._runs(line("33S", "JSQ", True), sat_night)
-    assert not trips._runs(line("33S", "JSQ", False), sat_night)
-    assert trips._runs(line("33S", "JSQ", False), wed_noon)
-    assert not trips._runs(line("HOB", "WTC", False), sat_night)
+    assert path_trains._runs(line("33S", "JSQ", True), sat_night)
+    assert not path_trains._runs(line("33S", "JSQ", False), sat_night)
+    assert path_trains._runs(line("33S", "JSQ", False), wed_noon)
+    assert not path_trains._runs(line("HOB", "WTC", False), sat_night)
 
 
 def test_unchecked_answer_is_sent_back_once(monkeypatch):
@@ -1559,10 +1559,10 @@ def test_path_changes_lines_when_no_train_runs_through():
     from nycynapse.tools import trips
 
     sun_night = datetime(2026, 10, 25, 1, 30, tzinfo=trips.NY)
-    total, rides, _ = trips._path_rides("HOB", "WTC", sun_night, {}, 1)
+    total, rides, _ = path_trains._path_rides("HOB", "WTC", sun_night, {}, 1)
     assert [r[1:3] for r in rides] == [("HOB", "GRV"), ("GRV", "WTC")]
     wed = datetime(2026, 10, 21, 9, tzinfo=trips.NY)
-    assert len(trips._path_rides("HOB", "WTC", wed, {}, 1)[1]) == 1  # direct by day
+    assert len(path_trains._path_rides("HOB", "WTC", wed, {}, 1)[1]) == 1  # direct by day
 
 
 def test_station_named_with_its_line(monkeypatch):
