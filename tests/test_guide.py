@@ -471,6 +471,32 @@ def test_a_turn_streams_its_events_in_order_and_frees_the_seat(monkeypatch):
     assert chat.gate.stats()["active"] == 0
 
 
+def test_the_same_first_question_soon_after_is_answered_without_a_model(monkeypatch):
+    calls = []
+
+    def run(question, emit):
+        calls.append(question)
+        return {
+            "answer": "The 7 is fine [1].",
+            "steps": [{"tool": "subway_alerts", "kind": "live", "ok": True}],
+            "latency_ms": 5,
+            "model": "main",
+        }
+
+    client, chat = _chat_client(monkeypatch, _Store(), run)
+    monkeypatch.setattr(chat, "_recent", {})
+    client.get("/api/chat", params={"q": "Is the 7 train running?"})
+    again = _events(client.get("/api/chat", params={"q": "is the 7 train running"}).text)[-1][1]
+    assert calls == ["Is the 7 train running?"]
+    assert again["cached"] and again["text"] == "The 7 is fine [1]."
+    # a live answer goes stale after a few minutes
+    k = chat._key("Is the 7 train running?")
+    t, ttl, out = chat._recent[k]
+    chat._recent[k] = (t - ttl - 1, ttl, out)
+    client.get("/api/chat", params={"q": "Is the 7 train running?"})
+    assert len(calls) == 2
+
+
 def test_a_turn_that_crashes_tells_the_reader_and_frees_the_seat(monkeypatch):
     def run(question, emit):
         raise RuntimeError("boom")

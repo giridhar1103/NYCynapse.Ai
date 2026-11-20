@@ -305,6 +305,14 @@ async def security_headers(request: Request, call_next):
 if WEB.exists():
     app.mount("/static", StaticFiles(directory=WEB / "static"), name="static")
 
+    @app.get("/sw.js")
+    def service_worker():
+        return FileResponse(WEB / "sw.js", media_type="text/javascript")
+
+    @app.get("/manifest.webmanifest")
+    def manifest():
+        return FileResponse(WEB / "manifest.webmanifest", media_type="application/manifest+json")
+
     @app.get("/{page:path}")
     def page(page: str):
         if page.startswith("api/"):

@@ -1,7 +1,7 @@
 // Landing page: the live map drawing, the ticker, examples, the lakehouse diagram, and the
 // hand-off to the guide overlay.
 
-import { guide } from "./guide.js?v=19";
+import { guide } from "./guide.js?v=21";
 import { drawHero } from "./hero.js?v=3";
 
 const { el, get } = NY;
@@ -175,3 +175,8 @@ const io = new IntersectionObserver((entries) => {
   for (const e of entries) if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); }
 }, { threshold: 0.12 });
 document.querySelectorAll(".reveal").forEach((n) => io.observe(n));
+
+// Installable, and quick to open again: the site's files are kept on the device.
+if ("serviceWorker" in navigator) {
+  addEventListener("load", () => navigator.serviceWorker.register(NY.url("sw.js")).catch(() => { /* optional */ }));
+}

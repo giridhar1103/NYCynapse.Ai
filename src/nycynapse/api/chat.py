@@ -45,6 +45,48 @@ PAUSED = os.environ.get("NYCYNAPSE_PAUSED", "") == "1"
 TRACE = os.environ.get("NYCYNAPSE_EVAL_TRACE", "") == "1"
 
 gate = Gate(ACTIVE, WAITING)
+
+# The same first question asked again soon gets the answer just given, with no model call:
+# for a few minutes when it used live feeds or the web, for hours when only city records.
+LIVE_TTL_S = 10 * 60
+LAKE_TTL_S = 6 * 3600
+_recent: dict[str, tuple[float, float, dict]] = {}
+_recent_lock = threading.Lock()
+
+
+def _key(question: str) -> str:
+    return re.sub(r"[^a-z0-9 ]+", "", question.lower()).strip()
+
+
+def _keep_answer(question: str, out: dict) -> None:
+    kinds = {s.get("kind") for s in out.get("steps") or [] if "tool" in s}
+    if not kinds or out.get("declined") or out.get("error") or not out.get("answer"):
+        return
+    ttl = LAKE_TTL_S if kinds == {"lake"} else LIVE_TTL_S
+    with _recent_lock:
+        if len(_recent) > 300:
+            for k in sorted(_recent, key=lambda k: _recent[k][0])[:100]:
+                _recent.pop(k, None)
+        _recent[_key(question)] = (time.time(), ttl, out)
+
+
+def _answered_recently(question: str) -> dict | None:
+    with _recent_lock:
+        hit = _recent.get(_key(question))
+    if not hit or time.time() - hit[0] > hit[1]:
+        return None
+    out = hit[2]
+    return {
+        "answer": out["answer"],
+        "sources": out.get("sources") or [],
+        "map": out.get("map") or [],
+        "steps": out.get("steps") or [],
+        "model": out.get("model"),
+        "memory": out.get("memory") or {},
+        "asked_at": hit[0],
+    }
+
+
 _local = threading.local()
 _state: dict = {}
 _setup = threading.Lock()
@@ -247,7 +289,8 @@ async def _turn(
     yield _sse("chat", {"id": slot.chat_id, "turn": slot.turn, "max_turns": MAX_TURNS})
 
     if slot.turn == 1:
-        cached = await asyncio.to_thread(chats().example, question)
+        cached = None if where else _answered_recently(question)
+        cached = cached or await asyncio.to_thread(chats().example, question)
         if cached:
             for chunk in _replay(cached):
                 yield chunk
@@ -261,10 +304,17 @@ async def _turn(
                 "model": cached["model"],
                 "cost_usd": 0,
                 "latency_ms": 0,
-                "memory": {"q": question, "answer": cached["answer"][:900], "facts": ""},
+                "memory": {
+                    "q": question,
+                    "answer": cached["answer"][:900],
+                    "facts": (cached.get("memory") or {}).get("facts", ""),
+                },
             }
             await asyncio.to_thread(chats().record, slot, question, out, "answered")
-            yield _sse("answer", _answer_payload(slot, out, cached=True))
+            yield _sse(
+                "answer",
+                {**_answer_payload(slot, out, cached=True), "asked_at": cached.get("asked_at")},
+            )
             return
 
     a = await asyncio.to_thread(agent)
@@ -311,6 +361,8 @@ async def _turn(
             outcome = "answered" if out.get("answer") and not out.get("error") else "failed"
             if out.get("declined"):
                 outcome = "declined"
+            if slot.turn == 1 and not where:
+                _keep_answer(question, out)
             out["steps"] = (out.get("steps") or []) + [{"queued_ms": queued_ms}]
             _log_turn(slot, out, outcome, queued_ms)
             try:

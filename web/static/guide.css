@@ -447,7 +447,35 @@ a.cite:hover { background: var(--ink); color: var(--bg); border-color: var(--ink
 .fares small { flex-basis: 100%; color: var(--muted); font-size: 11.5px; }
 .trip-start { width: 16px; height: 16px; border-radius: 50%; background: #fff; border: 4px solid #202124; box-shadow: 0 0 0 2px #fff; }
 .trip-end { width: 22px; height: 30px; background: #d93025; clip-path: path("M11 0C4.9 0 0 4.9 0 11c0 8.3 11 19 11 19s11-10.7 11-19C22 4.9 17.1 0 11 0z"); }
-.rate { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--rule); font-size: 13px; color: var(--muted); }
+.actions { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--rule); }
+.rate { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; font-size: 13px; color: var(--muted); }
 .rate button { background: transparent; border: 1px solid var(--rule-strong); border-radius: 999px; padding: 3px 12px; font-size: 13px; color: var(--ink); cursor: pointer; }
 .rate button:hover { background: var(--surface); }
 .rate input { flex: 1; min-width: 0; border: 1px solid var(--rule-strong); border-radius: 999px; padding: 4px 12px; font-size: 13px; background: var(--surface); color: var(--ink); }
+/* location, voice, copy, welcome, skeleton */
+.g-input form { align-items: flex-end; }
+#g-send { height: 44px; flex: none; }
+.g-input .g-ico { background: transparent; color: var(--muted); border: 1px solid var(--rule-strong); width: 42px; height: 44px; padding: 0; display: grid; place-items: center; border-radius: 12px; flex: none; transition: color .15s, background .15s, border-color .15s; }
+.g-input .g-ico svg { width: 20px; height: 20px; fill: currentColor; }
+.g-input .g-ico:hover { color: var(--ink); background: var(--surface); }
+.g-input .g-ico.on { color: #fff; background: var(--lake); border-color: var(--lake); }
+.g-input .g-ico.wait svg { animation: pulse 1s infinite; }
+#g-mic.on { background: #d93025; border-color: #d93025; }
+@keyframes pulse { 50% { opacity: .35; } }
+.g-where { display: flex; align-items: center; gap: 8px; width: fit-content; font-size: 12.5px; color: var(--lake); background: color-mix(in srgb, var(--lake) 10%, transparent); border-radius: 999px; padding: 3px 4px 3px 11px; margin-bottom: 8px; }
+.g-where.warn { color: var(--muted); background: var(--sunk); }
+.g-where button { background: transparent !important; color: inherit !important; padding: 0 6px !important; font-size: 12px; }
+.answer-card .copy { margin-left: auto; flex: none; background: transparent; border: 1px solid var(--rule-strong); border-radius: 999px; padding: 3px 12px; font-size: 12.5px; color: var(--muted); cursor: pointer; }
+.answer-card .copy:hover { color: var(--ink); background: var(--sunk); }
+.welcome { margin: auto 0 0; padding: 6px 2px 4px; }
+.welcome .w-title { font-size: 17px; font-weight: 700; margin: 0 0 6px; color: var(--ink); text-wrap: balance; }
+.welcome .w-sub { font-size: 14px; color: var(--muted); margin: 0 0 16px; text-wrap: pretty; }
+.w-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.w-label { font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+.w-q { text-align: left; background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; padding: 9px 12px; font-size: 14px; color: var(--ink); cursor: pointer; transition: border-color .15s, transform .15s var(--ease); }
+.w-q:hover { border-color: var(--rule-strong); transform: translateX(2px); }
+.skeleton { display: flex; flex-direction: column; gap: 9px; }
+.skeleton i { display: block; height: 12px; border-radius: 6px; background: linear-gradient(90deg, var(--sunk) 0%, var(--rule) 50%, var(--sunk) 100%); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
+.skeleton i:nth-child(1) { width: 92%; } .skeleton i:nth-child(2) { width: 78%; } .skeleton i:nth-child(3) { width: 54%; }
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .skeleton i, .g-input .g-ico.wait svg { animation: none; } }

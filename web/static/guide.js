@@ -29,6 +29,7 @@ class Guide {
     this.turn = 0;
     this.maxTurns = 4;
     this.busy = false;
+    this.where = null;
     this.config = NY.get("api/config").catch(() => ({ max_turns: 4 }));
     this.map = null;
     this.root.querySelectorAll("[data-close]").forEach((b) => b.addEventListener("click", () => this.close()));
@@ -43,7 +44,83 @@ class Guide {
     });
     document.addEventListener("keydown", (e) => { if (e.key === "Escape" && this.isOpen()) this.close(); });
     addEventListener("popstate", () => { if (this.isOpen() && location.hash !== "#guide") this.close(true); });
+    this.setupLocation();
+    this.setupVoice();
+    document.addEventListener("keydown", (e) => {
+      const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || "");
+      if (e.key === "/" && !typing && !e.metaKey && !e.ctrlKey) { e.preventDefault(); this.open(); this.input.focus(); }
+    });
     this.renderTurns();
+    this.welcome();
+  }
+
+  // "Use my location": asked for only when the reader taps the pin, rounded to about 100 m, sent
+  // with each question while it is on, and never stored by the server.
+  setupLocation() {
+    const btn = $("g-loc"), pill = $("g-where");
+    const set = (where, note) => {
+      this.where = where;
+      btn.setAttribute("aria-pressed", String(!!where));
+      btn.classList.toggle("on", !!where);
+      pill.hidden = !where && !note;
+      pill.firstElementChild.textContent = where ? "Using where you are" : note || "";
+      pill.classList.toggle("warn", !where && !!note);
+    };
+    $("g-where-off").addEventListener("click", () => set(null));
+    btn.addEventListener("click", () => {
+      if (this.where) return set(null);
+      if (!navigator.geolocation) return set(null, "This browser cannot share a location.");
+      btn.classList.add("wait");
+      navigator.geolocation.getCurrentPosition((p) => {
+        btn.classList.remove("wait");
+        const lat = +p.coords.latitude.toFixed(3), lon = +p.coords.longitude.toFixed(3);
+        if (lat < 40.0 || lat > 41.8 || lon < -75 || lon > -71.8) return set(null, "You seem to be outside the New York area, so your location is not used.");
+        set(`${lat},${lon}`);
+        this.input.focus();
+      }, () => { btn.classList.remove("wait"); set(null, "Location was not shared. You can name a place instead."); },
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 });
+    });
+  }
+
+  // Ask by voice, where the browser can turn speech into text. The words land in the box to check
+  // before sending.
+  setupVoice() {
+    const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const btn = $("g-mic");
+    if (!Rec) return;
+    btn.hidden = false;
+    let rec = null;
+    btn.addEventListener("click", () => {
+      if (rec) { rec.stop(); return; }
+      rec = new Rec();
+      rec.lang = "en-US"; rec.interimResults = true; rec.maxAlternatives = 1;
+      const before = this.input.value ? this.input.value.trim() + " " : "";
+      rec.onresult = (e) => {
+        this.input.value = before + [...e.results].map((r) => r[0].transcript).join("");
+        this.input.dispatchEvent(new Event("input"));
+      };
+      const end = () => { rec = null; btn.classList.remove("on"); btn.setAttribute("aria-pressed", "false"); this.input.focus(); };
+      rec.onend = end; rec.onerror = end;
+      btn.classList.add("on"); btn.setAttribute("aria-pressed", "true");
+      rec.start();
+    });
+  }
+
+  // An empty chat: what to try, and the reader's own recent questions on this device.
+  welcome() {
+    if (this.log.children.length) return;
+    const recent = recall();
+    const box = el("div", { class: "welcome" },
+      el("p", { class: "w-title" }, "Ask about getting around, the weather, the streets or the city's own records."),
+      el("p", { class: "w-sub" }, "Answers use live feeds and city data, with every source shown. Tap the pin to plan from where you are."));
+    const list = (title, items) => items.length && box.append(el("div", { class: "w-group" }, el("span", { class: "w-label" }, title),
+      ...items.map((q) => el("button", { type: "button", class: "w-q", onclick: () => this.ask(q) }, q))));
+    list("Your recent questions", recent.slice(0, 4));
+    this.config.then((cfg) => {
+      if (this.log.firstElementChild !== box) return;
+      list("Try", (cfg.examples || []).map((x) => x.q).filter((q) => !recent.includes(q)).slice(0, 4));
+    });
+    this.log.append(box);
   }
 
   isOpen() { return !this.root.hidden; }
@@ -78,6 +155,7 @@ class Guide {
     this.log.replaceChildren();
     this.map?.ready.then(() => this.map.clear());
     this.renderTurns();
+    this.welcome();
     if (keepOpen) this.input.focus();
   }
 
@@ -130,6 +208,8 @@ class Guide {
     this.input.style.height = "auto";
     this.busy = true;
     this.renderTurns();
+    this.log.querySelector(".welcome")?.remove();
+    remember(q);
     this.log.append(el("div", { class: "msg-q" }, q));
     const view = new TurnView(this.log);
     this.scroll();
@@ -148,7 +228,7 @@ class Guide {
         return;
       }
     }
-    const qs = new URLSearchParams({ q, chat: this.chat || "", token });
+    const qs = new URLSearchParams({ q, chat: this.chat || "", token, ...(this.where ? { at: this.where } : {}) });
     try {
       const r = await fetch(url("api/chat?" + qs), { headers: { Accept: "text/event-stream" } });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -320,6 +400,20 @@ function tripPanel(trip, draw) {
 
 let uid = 0;
 
+// The reader's last questions, on this device only.
+const RECENT = "nycynapse.recent";
+function recall() {
+  try { return JSON.parse(localStorage.getItem(RECENT) || "[]").filter((x) => typeof x === "string"); } catch (_) { return []; }
+}
+function remember(q) {
+  try { localStorage.setItem(RECENT, JSON.stringify([q, ...recall().filter((x) => x !== q)].slice(0, 8))); } catch (_) { /* private mode */ }
+}
+
+// The answer as plain text, for copying: no citation numbers, no markdown stars.
+function plain(text) {
+  return (text || "").replace(/\s?\[\d{1,2}(?:\s*[,;]\s*\d{1,2})*\]/g, "").replace(/\*\*/g, "").trim();
+}
+
 // "Was this right?" under an answer: one tap, and for a no, an optional line saying what was off.
 function rateRow(d) {
   const row = el("div", { class: "rate" });
@@ -351,6 +445,9 @@ class TurnView {
     this.now = el("div", { class: "now" }, "Reading your question…");
     this.rail.append(this.now);
     this.box.append(this.rail);
+    // Where the answer will appear, so the reader sees the shape of what is coming.
+    this.skeleton = el("div", { class: "answer-card skeleton", "aria-hidden": "true" }, el("i"), el("i"), el("i"));
+    this.box.append(this.skeleton);
     this.steps = {};
     this.layers = [];
     this.started = performance.now();
@@ -370,7 +467,7 @@ class TurnView {
     this.now.textContent = this.text.replace(/…$/, "") + (s >= 4 ? ` · ${s} s${slow}` : "…");
   }
 
-  stop() { clearInterval(this.timer); this.text = null; }
+  stop() { clearInterval(this.timer); this.text = null; this.skeleton?.remove(); this.skeleton = null; }
 
   queue(pos) {
     this.text = null;
@@ -444,7 +541,18 @@ class TurnView {
     if ((d.untraced || []).length) {
       card.append(el("div", { class: "meta warnline" }, `Not matched to the data found: ${d.untraced.join(", ")}`));
     }
-    if (d.can_rate && d.chat) card.append(rateRow(d));
+    if (!d.declined && d.text) {
+      const actions = el("div", { class: "actions" });
+      if (d.can_rate && d.chat) actions.append(rateRow(d));
+      const copy = el("button", { type: "button", class: "copy", "aria-label": "Copy the answer" }, "Copy");
+      copy.addEventListener("click", async () => {
+        try { await navigator.clipboard.writeText(plain(d.text)); copy.textContent = "Copied"; }
+        catch (_) { copy.textContent = "Copy failed"; }
+        setTimeout(() => { copy.textContent = "Copy"; }, 1800);
+      });
+      actions.append(copy);
+      card.append(actions);
+    }
     this.box.append(card);
     let follow = null;
     if (d.follow_ups_left > 0 && (d.follow_ups || []).length) {
@@ -480,7 +588,8 @@ class TurnView {
   fold(d, nSources) {
     const steps = Object.keys(this.steps).length;
     const secs = ((d.latency_ms || performance.now() - this.started) / 1000).toFixed(1);
-    const bits = d.cached ? ["Stored answer from earlier today"]
+    const ago = d.asked_at ? Math.max(1, Math.round((Date.now() / 1000 - d.asked_at) / 60)) : null;
+    const bits = d.cached ? [ago != null ? `Same question answered ${ago} min ago` : "Stored answer from earlier today"]
       : [`Worked for ${secs} s`, steps ? `${steps} ${steps === 1 ? "check" : "checks"}` : "",
         d.cost_usd ? `$${Number(d.cost_usd).toFixed(3)}` : "", d.fell_back ? "backup model" : ""];
     this.stop();
