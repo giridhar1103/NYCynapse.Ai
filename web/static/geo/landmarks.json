@@ -393,5 +393,15 @@
 "name": "Museum of Sex",
 "lat": 40.7441,
 "lon": -73.9874
+},
+"brooklyn navy yard": {
+"name": "Brooklyn Navy Yard (Sands St gate)",
+"lat": 40.69985,
+"lon": -73.97965
+},
+"navy yard": {
+"name": "Brooklyn Navy Yard (Sands St gate)",
+"lat": 40.69985,
+"lon": -73.97965
 }
 }

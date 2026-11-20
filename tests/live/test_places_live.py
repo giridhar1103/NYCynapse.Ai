@@ -75,6 +75,7 @@ TRIPS = [
     ("World Trade Center", "Hoboken Terminal", "transit", "PATH"),
     ("Brooklyn Museum", "Prospect Park", "walk", "Walk"),
     ("Fordham Rd and Jerome Ave, Bronx", "White Plains, NY", "transit", "Metro-North"),
+    ("Newark Penn Station", "Brooklyn Navy Yard", "transit", "door to door"),
 ]
 
 

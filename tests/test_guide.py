@@ -581,6 +581,66 @@ def test_nearby_lists_the_closest_working_places_first(monkeypatch):
     assert not nearby.nearby("x", "jacuzzi").ok
 
 
+def test_a_stroller_makes_every_trip_step_free(monkeypatch):
+    agent, seen = _agent(
+        monkeypatch,
+        [
+            _step(calls=[("trip_plan", {"origin": "Whitehall", "destination": "AMNH"})]),
+            _step(answer="Take the R to 5 Av-59 St, which has elevators [1]."),
+        ],
+        [_tool("trip_plan", text="R train")],
+    )
+    out = agent.run("ferry then subway to the museum? we have a stroller", [], lambda e, d: None)
+    assert out["trace"][0]["args"]["step_free"] is True
+    t = core.Turn(
+        question="and back?",
+        history=[{"q": "x", "reader": "two kids, a stroller"}],
+        emit=lambda e, d: None,
+    )
+    assert core._no_stairs(t)
+    assert not core._no_stairs(core.Turn(question="fastest way uptown?", history=[], emit=None))
+
+
+def test_fares_add_up_for_common_trips():
+    from nycynapse.tools.trips import _fare
+
+    def o(*legs):
+        return {"lines": [{"mode": m, "name": n} for m, n in legs]}
+
+    assert _fare(o(("walk", ""), ("subway", "N"))) == "$3.00"
+    assert _fare(o(("bus", "Q101"), ("subway", "R"), ("subway", "5"))) == "$3.00"
+    assert _fare(o(("bus", "QM15"), ("subway", "7"))) == "$7.25"
+    assert _fare(o(("train", "PATH"), ("subway", "C"))) == "$6.25"
+    assert _fare(o(("ferry", "Staten Island Ferry"), ("subway", "1"))) == "$3.00"
+    assert _fare(o(("ferry", "Staten Island Ferry"))) == "free"
+    assert _fare(o(("ferry", "NYC Ferry"))) == "$5.00"
+    assert _fare(o(("train", "AirTrain"), ("train", "LIRR"), ("subway", "7"))) == (
+        "$11.75 plus the LIRR fare"
+    )
+    assert _fare(o(("train", "AirTrain"), ("train", "NJ Transit"))) == "plus the NJ Transit fare"
+
+
+def test_plans_hours_away_or_glued_to_the_next_morning_are_caught():
+    from datetime import datetime
+
+    from nycynapse.tools import trips
+
+    t = datetime(2026, 11, 21, 22, 0, tzinfo=trips.NY)
+    at = t.timestamp()
+    tonight = {"minutes": (44, 44), "arrive_ts": at + 3000, "leave_ts": at + 480, "lines": []}
+    glued = {"minutes": (675, 685), "arrive_ts": at + 40000, "leave_ts": at, "lines": []}
+    morning = {
+        "minutes": (67, 67),
+        "arrive_ts": at + 40500,
+        "leave_ts": at + 36000,
+        "lines": [{"mode": "train", "depart_ts": at + 36100}],
+    }
+    assert trips._sane([tonight, glued]) == [tonight]
+    assert not trips._hours_away([tonight], t, False)
+    assert trips._hours_away([morning], t, False)
+    assert trips._hours_away([morning], t, True)
+
+
 def test_the_line_moves_first_come_first_served():
     from nycynapse.api.capacity import Full, Gate
 

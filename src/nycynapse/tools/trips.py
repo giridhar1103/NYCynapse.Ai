@@ -1408,6 +1408,11 @@ def _line(lg: dict, end: str) -> dict:
         "from": None if start == "START" else start,
         "to": to,
         "depart": _hm(lg["startTime"]) if lg.get("startTime") and mode != "walk" else None,
+        "depart_ts": (
+            datetime.fromisoformat(lg["startTime"].replace("Z", "+00:00")).timestamp()
+            if lg.get("startTime") and mode != "walk"
+            else None
+        ),
         "minutes": max(1, round(lg.get("duration", 0) / 60)),
         "stops": len(lg.get("intermediateStops") or []) + 1 if mode != "walk" else None,
         "headsign": lg.get("headsign"),
@@ -1525,7 +1530,74 @@ def _newark(a: dict, b: dict, when: datetime, arrive_by: bool) -> tuple[list[dic
     return _for_deadline(options, when, arrive_by), notes
 
 
+def _first_ride_ts(o: dict) -> float:
+    """When the first vehicle of an itinerary leaves (its stated leave time can be a guess)."""
+    for x in o.get("lines") or []:
+        if x.get("mode") != "walk" and x.get("depart_ts"):
+            return x["depart_ts"]
+    return o.get("leave_ts", 0)
+
+
+def _hours_away(options: list[dict], when: datetime, arrive_by: bool) -> bool:
+    """Every option is hours from the time asked: the sign of ends the planner cannot link."""
+    if not options:
+        return False
+    if arrive_by:
+        return min(o["arrive_ts"] for o in options) - when.timestamp() > 2 * 3600
+    return min(_first_ride_ts(o) for o in options) - when.timestamp() > 2.5 * 3600
+
+
+def _sane(options: list[dict]) -> list[dict]:
+    """Drop itineraries that take several times as long as the best one (a ride glued to a
+    connection the next morning)."""
+    if len(options) < 2:
+        return options
+    best = min(o["minutes"][0] for o in options)
+    return [o for o in options if o["minutes"][0] <= max(180, 3 * best)]
+
+
+def _nearest_station(p: dict) -> dict | None:
+    """The subway station nearest a point, within a 20 minute walk."""
+    from .access import _stations
+
+    best = None
+    for s in _stations():
+        try:
+            q = {"lat": float(s["gtfs_latitude"]), "lon": float(s["gtfs_longitude"])}
+        except (KeyError, TypeError, ValueError):
+            continue
+        d = _metres(p, q)
+        if d < 1500 and (best is None or d < best[0]):
+            best = (d, {**q, "name": f"{s['stop_name']} station"})
+    return best[1] if best else None
+
+
 def transit(a: dict, b: dict, when: datetime, arrive_by: bool) -> tuple[list[dict], list[str]]:
+    options, notes = _transit(a, b, when, arrive_by)
+    options = _sane(options)
+    if not _hours_away(options, when, arrive_by) or a.get("airport") or b.get("airport"):
+        return options, notes
+    # Ends the planner cannot reach on foot (inside a gated yard, a pier, a park) send it to
+    # whatever ride reaches them, often a ferry the next morning. From the nearest stations:
+    a2 = (_nearest_station(a) or a) if not a.get("name", "").endswith("station") else a
+    b2 = (_nearest_station(b) or b) if not b.get("name", "").endswith("station") else b
+    if a2 is a and b2 is b:
+        return options, notes
+    try:
+        again, more = _transit(a2, b2, when, arrive_by)
+    except Exception:  # noqa: BLE001 - keep what there is
+        return options, notes
+    again = _sane(again)
+    if again and not _hours_away(again, when, arrive_by):
+        moved = [f"{p['name']} for {q['name']}" for p, q in ((a2, a), (b2, b)) if p is not q]
+        return again, more + [
+            "Planned from or to the nearest station (" + "; ".join(moved) + "), since the "
+            "places themselves could not be linked at that hour; add the walk at that end."
+        ]
+    return options, notes
+
+
+def _transit(a: dict, b: dict, when: datetime, arrive_by: bool) -> tuple[list[dict], list[str]]:
     notes: list[str] = []
     if a.get("airport") == "jfk" or b.get("airport") == "jfk":
         to_airport = b.get("airport") == "jfk"
@@ -2415,9 +2487,7 @@ def trip_plan(
         changes = {id(o): _line_changes(o, t) for o in options}
         options = _affected_last(options, arrive_by)
         data["transit"] = options
-        first = min((o.get("leave_ts", 0) for o in options), default=0)
-        soonest = min((o["arrive_ts"] for o in options), default=0)
-        late = soonest - t.timestamp() > 2 * 3600 if arrive_by else first - t.timestamp() > 3 * 3600
+        late = _hours_away(options, t, arrive_by)
         if options and late:
             notes.append(
                 "Every transit option found is hours away from the time asked. That usually "
@@ -2446,6 +2516,7 @@ def trip_plan(
                     f"arrive {o.get('arrive', '?')}, {o['transfers']} transfer"
                     f"{'s' if o['transfers'] != 1 else ''}, {o['walk_minutes']} min walking: "
                     + "; ".join(o["steps"])
+                    + (f". Fare: {_fare(o)}" if _fare(o) else "")
                 )
                 if step_free and o.get("access") is not None:
                     lines.append("   Step-free check: " + o["access"])
@@ -2614,6 +2685,52 @@ def trip_plan(
 
 
 SOONER_S = 45 * 60
+
+# One-way fares as of November 2026 (MTA from Jan 4 2026, PATH from May 4 2026, NYC Ferry
+# from Oct 19 2026). Commuter rail is priced by zone and time, so it is named, not added.
+FARES = {"local": 3.00, "express": 7.25, "path": 3.25, "nyc_ferry": 5.00, "airtrain": 8.75}
+_EXPRESS = re.compile(r"^(?:BxM|BM|QM|SIM|X)\d", re.I)
+
+
+def _fare(o: dict) -> str:
+    """What one adult pays for an itinerary, as far as fixed fares go: "$3.00", or "$3.00 plus
+    the LIRR fare" when a zone-priced train is in it. Empty when it cannot be said."""
+    total, rail, local = 0.0, [], False
+    legs = [x for x in o.get("lines") or [] if x.get("mode") != "walk"]
+    names = {x.get("name") or "" for x in legs}
+    nj_rail = "NJ Transit" in names
+    for x in legs:
+        mode, name = x.get("mode"), x.get("name") or ""
+        if name == "AirTrain":
+            # Newark's AirTrain fee is part of the NJ Transit ticket to the airport station.
+            total += 0 if nj_rail else FARES["airtrain"]
+        elif name == "PATH":
+            total += FARES["path"]
+        elif mode == "ferry":
+            low = name.lower()
+            if "staten" in low or "st george" in low or "whitehall" in low:
+                continue
+            if name == "NYC Ferry":
+                total += FARES["nyc_ferry"]
+            else:
+                rail.append(name or "ferry")
+        elif mode == "bus" and _EXPRESS.match(name):
+            total += FARES["express"]  # includes the transfer to a local bus or the subway
+            local = True
+        elif mode in ("subway", "bus", "tram"):
+            if not local:  # one fare, with free transfers between subway and local buses
+                total += FARES["local"]
+                local = True
+        elif mode == "train":
+            rail.append(name or "commuter rail")
+    if not legs:
+        return ""
+    if not total and not rail:
+        return "free"
+    named = f"the {' and '.join(dict.fromkeys(rail))} fare"
+    if not rail:
+        return f"${total:.2f}"
+    return f"${total:.2f} plus {named}" if total else f"plus {named}"
 
 
 def _affected_last(options: list[dict], arrive_by: bool) -> list[dict]:

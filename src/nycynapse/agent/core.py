@@ -637,6 +637,10 @@ class Agent:
             if len(t.results) + len(out) >= MAX_CALLS:
                 break
             used[name] = used.get(name, 0) + 1
+            if name == "trip_plan" and not args.get("step_free") and _no_stairs(t):
+                # The reader said they cannot do stairs: every route must say so, whatever the
+                # model remembered to ask for.
+                args = {**args, "step_free": True}
             out.append({"id": uuid.uuid4().hex[:8], "tool": name, "args": args})
         return out
 
@@ -923,6 +927,20 @@ class Agent:
             ]
             + [{"note": s["note"]} for s in t.steps if "note" in s],
         }
+
+
+_STAIRS = re.compile(
+    r"\b(?:stroller|pram|buggy|wheel ?chair|walker|rollator|mobility scooter|crutches|"
+    r"step[- ]free|no stairs|(?:can'?t|cannot|can not|unable to)\s+(?:do|take|use|climb|manage)"
+    r"\s+(?:the\s+)?stairs|elevators?|accessible route)\b",
+    re.I,
+)
+
+
+def _no_stairs(t: Turn) -> bool:
+    """The reader, now or earlier in the conversation, said stairs are out."""
+    said = [t.question] + [h.get("q", "") + " " + h.get("reader", "") for h in t.history]
+    return any(_STAIRS.search(x or "") for x in said)
 
 
 def _verify_model() -> str | None:
