@@ -15,6 +15,7 @@ import contextvars
 import json
 import logging
 import os
+import random
 import re
 import subprocess
 import tempfile
@@ -493,6 +494,10 @@ def complete_with(
                 raise ProviderLimit(str(e)[:300]) from e
             log.warning("model %s failed (attempt %s): %s", pid, attempt + 1, str(e)[:160])
             last = e
+            # A call that ran out of time already used what the turn could give it; trying
+            # again would only make the reader wait twice.
+            if "timed out" in str(e):
+                break
             if attempt < retries:
-                time.sleep(3 * (attempt + 1))
+                time.sleep(0.5 + random.random() * (0.5 + attempt))
     raise LLMError(f"{pid} failed after {retries + 1} attempts: {last}")

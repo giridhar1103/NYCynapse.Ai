@@ -167,6 +167,31 @@ class Chats:
         )
         return dict(row) if row else None
 
+    def limits(self, client: str) -> tuple[int, int, float]:
+        """In one query: the reader's questions in the last hour and the last day, and what
+        the site has spent today."""
+        row = (
+            self._conn()
+            .execute(
+                """
+                SELECT
+                  count(*) FILTER (WHERE c.client_hash = %(c)s
+                      AND t.asked_at > now() - interval '1 hour'
+                      AND t.outcome IS DISTINCT FROM 'busy') AS hour,
+                  count(*) FILTER (WHERE c.client_hash = %(c)s
+                      AND t.outcome IS DISTINCT FROM 'busy') AS day,
+                  coalesce(sum(t.cost_usd) FILTER (WHERE t.asked_at > date_trunc('day', now())), 0)
+                      AS spent
+                FROM app.chat_turns t JOIN app.chats c ON c.id = t.chat_id
+                WHERE c.kind = %(k)s AND t.asked_at > least(now() - interval '1 day',
+                                                          date_trunc('day', now()))
+                """,
+                {"c": client, "k": self.kind},
+            )
+            .fetchone()
+        )
+        return int(row["hour"]), int(row["day"]), float(row["spent"])
+
     def spent_today(self) -> float:
         row = (
             self._conn()

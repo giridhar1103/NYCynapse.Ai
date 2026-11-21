@@ -310,9 +310,7 @@ async def _turn(
         return
     store_ = chats()
     try:
-        recent = await asyncio.to_thread(store_.asked_recently, client)
-        today = await asyncio.to_thread(store_.asked_recently, client, 24 * 60)
-        spent = await asyncio.to_thread(store_.spent_today)
+        recent, today, spent = await asyncio.to_thread(store_.limits, client)
     except psycopg.Error:
         recent, today, spent = 0, 0, 0.0
     if recent >= PER_HOUR or today >= PER_DAY:

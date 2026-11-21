@@ -399,6 +399,8 @@ def test_chat_lifecycle(app_dsn):
     row = chats.shared(sid)
     assert row["question"] == "q1" and row["answer"] == "a1" and "client_hash" not in row
     assert chats.shared("nope") is None and chats.shared("x' OR 1=1 --") is None
+    hour, day, spent = chats.limits("reader-a")
+    assert hour == day == MAX_TURNS and spent >= 0
     # being turned away at full capacity does not use up the hourly allowance
     before = chats.asked_recently("reader-c")
     busy = chats.begin(None, "reader-c")
@@ -417,6 +419,9 @@ class _Store:
 
     def spent_today(self):
         return self.spent
+
+    def limits(self, client):
+        return self.asked, self.asked, self.spent
 
     def begin(self, chat_id, client):
         from nycynapse.agent.chats import Slot
@@ -2143,3 +2148,28 @@ def test_running_answers_count_against_the_daily_budget(monkeypatch):
     last = _events(client.get("/api/chat", params={"q": "Is the 7 train running?"}).text)[-1]
     assert last[1]["code"] == "budget"
     chat.gate._active = 0
+
+
+def test_model_retries_are_quick_and_skip_timeouts(monkeypatch):
+    from nycynapse.llm import client
+
+    calls, naps = [], []
+    monkeypatch.setattr(client, "config", lambda: {"providers": {"p": {"type": "x"}}})
+    monkeypatch.setattr(client.time, "sleep", lambda s: naps.append(s))
+
+    def fail(msg):
+        def impl(*a):
+            calls.append(msg)
+            raise client.LLMError(msg)
+
+        return impl
+
+    monkeypatch.setitem(client._IMPL, "x", fail("unreadable reply"))
+    with pytest.raises(client.LLMError):
+        client.complete_with("p", "s", "q", retries=2)
+    assert len(calls) == 3 and all(n < 2.5 for n in naps)
+    calls.clear()
+    monkeypatch.setitem(client._IMPL, "x", fail("model call timed out"))
+    with pytest.raises(client.LLMError):
+        client.complete_with("p", "s", "q", retries=2)
+    assert len(calls) == 1  # no second wait after a timeout
