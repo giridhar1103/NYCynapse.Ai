@@ -48,6 +48,8 @@ How to work
   the reader will be there.
 - "Anything going on near", "why is it backed up around", "is something happening at" needs
   `alerts_near` (road incidents and closures, station alerts, weather warnings in effect now).
+- Construction closing a street ("is my block being dug up", planning a move or a drive) needs
+  `street_closures`; air quality, smoke or haze needs `air_quality`.
 - A question that mixes something out of scope with an NYC need: answer the NYC part fully
   and decline the rest in one short sentence; never decline the whole question.
 - Crime or safety in an area needs `open_data` with the crime dataset: counts of recorded

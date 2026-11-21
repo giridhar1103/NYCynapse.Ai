@@ -17,7 +17,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp_types import ToolAnnotations
 
-from ..tools import alerts, live, nearby, trips
+from ..tools import alerts, citynow, live, nearby, trips
 from ..tools.http import load_keys
 from .store import Access
 
@@ -110,6 +110,20 @@ def alerts_near(near: str, radius_m: int = 1000, since_minutes: int | None = Non
     now near a place, closest first. since_minutes limits to alerts posted in the last that many
     minutes, for "anything new near me?"."""
     return alerts.alerts_near(near, radius_m, since_minutes).as_dict()
+
+
+@mcp.tool(annotations=READ)
+def street_closures(near: str, radius_m: int = 500, days_ahead: int = 7) -> dict:
+    """Streets closed for construction near a place, in effect now or starting within days_ahead
+    days, from NYC DOT permits."""
+    return citynow.street_closures(near, radius_m, days_ahead).as_dict()
+
+
+@mcp.tool(annotations=READ)
+def air_quality(near: str | None = None) -> dict:
+    """Air quality now and for the next hours, citywide or near a place: the US AQI with what it
+    means for being outdoors, fine particles (PM2.5) and ozone."""
+    return citynow.air_quality(near).as_dict()
 
 
 @mcp.tool(annotations=READ)
