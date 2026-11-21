@@ -39,6 +39,7 @@ PER_HOUR = int(os.environ.get("NYCYNAPSE_CHAT_PER_HOUR", "16"))
 PER_DAY = int(os.environ.get("NYCYNAPSE_CHAT_PER_DAY", "48"))
 DAILY_USD = float(os.environ.get("NYCYNAPSE_CHAT_DAILY_USD", "10"))
 WAIT_S = 150
+RUNNING_USD = 0.30  # a typical answer's cost, for answers still running
 KEEPALIVE_S = 8
 PAUSED = os.environ.get("NYCYNAPSE_PAUSED", "") == "1"
 # The test server returns what each tool said with the answer, for the evaluation judge.
@@ -162,7 +163,9 @@ def _client(request: Request) -> str:
     return client_hash(_address(request) or "?")
 
 
-def verify_turnstile(token: str, ip: str | None) -> bool:
+def verify_turnstile(token: str, ip: str | None, strict: bool = False) -> bool:
+    """Cloudflare's bot check. If the check itself cannot run, the question goes through, unless
+    `strict` (the day's budget is already half spent): then it is refused."""
     secret = os.environ.get("TURNSTILE_SECRET_KEY", "").strip()
     if not secret or os.environ.get("NYCYNAPSE_TURNSTILE", "") == "off":
         return True
@@ -179,8 +182,11 @@ def verify_turnstile(token: str, ip: str | None) -> bool:
             log.warning("bot check refused: %s", result.get("error-codes"))
         return bool(result.get("success"))
     except (httpx.HTTPError, ValueError):
-        log.warning("turnstile check failed to run; letting the question through")
-        return True
+        log.warning(
+            "bot check failed to run; %s",
+            "refusing (budget half spent)" if strict else "letting the question through",
+        )
+        return not strict
 
 
 @router.get("/api/config")
@@ -312,10 +318,13 @@ async def _turn(
     if recent >= PER_HOUR or today >= PER_DAY:
         yield err("rate")
         return
-    if spent >= DAILY_USD:
+    # Answers already running will add to today's spend: count them at a typical cost, so several
+    # at once cannot carry the day past its budget.
+    if spent + gate.stats()["active"] * RUNNING_USD >= DAILY_USD:
         yield err("budget")
         return
-    if chat_id is None and not await asyncio.to_thread(verify_turnstile, token, ip):
+    strict = spent >= DAILY_USD / 2
+    if chat_id is None and not await asyncio.to_thread(verify_turnstile, token, ip, strict):
         yield err("verify")
         return
     try:

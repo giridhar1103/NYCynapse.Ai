@@ -2074,3 +2074,32 @@ def test_push_goes_to_watches_near_fresh_alerts_with_limits(app_dsn, monkeypatch
     assert sent == ["Water main break (near your watched spot)"]
     assert push.notify(["test:near"]) == 0  # at most one every 15 minutes
     conn.execute("DELETE FROM app.push_watch; DELETE FROM app.city_alerts WHERE id LIKE 'test:%'")
+
+
+def test_the_bot_check_fails_closed_once_half_the_budget_is_spent(monkeypatch):
+    import httpx
+
+    from nycynapse.api import chat
+
+    monkeypatch.setenv("TURNSTILE_SECRET_KEY", "secret")
+    monkeypatch.delenv("NYCYNAPSE_TURNSTILE", raising=False)
+
+    def down(*a, **k):
+        raise httpx.ConnectError("no route")
+
+    monkeypatch.setattr(chat.httpx, "post", down)
+    assert chat.verify_turnstile("tok", None) is True
+    assert chat.verify_turnstile("tok", None, strict=True) is False
+
+
+def test_running_answers_count_against_the_daily_budget(monkeypatch):
+    def run(question, emit):
+        raise AssertionError("no model once the budget would be passed")
+
+    store = _Store(spent=9.80)
+    client, chat = _chat_client(monkeypatch, store, run)
+    monkeypatch.setattr(chat, "DAILY_USD", 10.0)
+    chat.gate._active = 1  # one answer already running
+    last = _events(client.get("/api/chat", params={"q": "Is the 7 train running?"}).text)[-1]
+    assert last[1]["code"] == "budget"
+    chat.gate._active = 0

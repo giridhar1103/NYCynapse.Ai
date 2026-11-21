@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import html
 import json
+import os
 import re
 import threading
 import time
@@ -492,13 +493,44 @@ def _ny511_fetch() -> None:
         rows = [e for e in r.json() if set(e.get("counties") or []) & NY511_COUNTIES.keys()]
         with _ny511_lock:
             _ny511.update(at=time.time(), rows=rows)
+        _ny511_save(rows)
     finally:
         with _ny511_lock:
             _ny511["busy"] = False
         _ny511_done.set()
 
 
+# Every process that reads 511NY (the guide's tools, the public MCP server, the alerts poller)
+# shares the last download through this file, so one starting cold answers at once instead of
+# waiting most of a minute for the 9 MB feed.
+NY511_SHARED = os.environ.get("NYCYNAPSE_511_CACHE", "/var/cache/nycynapse/ny511.json")
+
+
+def _ny511_save(rows: list[dict]) -> None:
+    try:
+        tmp = NY511_SHARED + f".{os.getpid()}.tmp"
+        with open(tmp, "w") as fh:
+            json.dump({"at": time.time(), "rows": rows}, fh)
+        os.replace(tmp, NY511_SHARED)
+    except OSError:
+        pass  # sharing is a speed-up only
+
+
+def _ny511_load() -> None:
+    """Take the shared copy when this process has nothing newer."""
+    try:
+        with open(NY511_SHARED) as fh:
+            d = json.load(fh)
+    except (OSError, ValueError):
+        return
+    with _ny511_lock:
+        if d.get("rows") is not None and d.get("at", 0) > _ny511["at"]:
+            _ny511.update(at=d["at"], rows=d["rows"])
+
+
 def _ny511_events() -> tuple[list[dict], float]:
+    if _ny511["rows"] is None or time.time() - _ny511["at"] > 300:
+        _ny511_load()
     with _ny511_lock:
         age = time.time() - _ny511["at"]
         start = (_ny511["rows"] is None or age > 300) and not _ny511["busy"]
