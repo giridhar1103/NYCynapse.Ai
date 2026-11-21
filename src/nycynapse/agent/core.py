@@ -426,6 +426,9 @@ class Agent:
             ):
                 t.verified += 1
                 emit("status", {"text": "Checking the answer against its sources"})
+                # The reader sees the draft while it is checked, marked as a draft; the checked
+                # answer replaces it.
+                emit("draft", {"text": _uncite(answer)})
                 found = self._verify(t, answer, style + factual)
                 if found == [UNFINISHED] and (
                     self._calls(t) >= MAX_CALLS or round_no >= MAX_ROUNDS - 1
@@ -1004,7 +1007,7 @@ _WHEN = re.compile(
     r"(?:mon|tues|wednes|thurs|fri|satur|sun)day)\b|"
     r"\b(?:(?:tomorrow|tonight|today|this (?:morning|afternoon|evening)|"
     r"(?:mon|tues|wednes|thurs|fri|satur|sun)day)(?:\s+(?:morning|afternoon|evening|night))?"
-    r"(?:\s+(?:at|around|by)?\s*\d{1,2}(?::\d\d)?\s*(?:am|pm))?"
+    r"(?:\s+(?:at|around|by)?\s*(?:\d{1,2}(?::\d\d)?\s*(?:am|pm)|noon|midnight))?"
     r"|\d{1,2}(?::\d\d)?\s*(?:am|pm))\b",
     re.I,
 )
@@ -1038,8 +1041,13 @@ def _trip_prefetch(question: str, where: tuple[float, float] | None) -> dict | N
             return None
     except Exception:  # noqa: BLE001 - the model will plan it itself
         return None
+    from ..tools.trips import parse_when
+
     w = _WHEN.search(question)
-    args = {"origin": a, "destination": b, "mode": "all", "when": w.group(0) if w else "now"}
+    when = w.group(0) if w else "now"
+    if parse_when(when) is None:
+        return None  # a time the tool cannot read: the model words it itself
+    args = {"origin": a, "destination": b, "mode": "all", "when": when}
     if w and _DEADLINE.search(question):
         args["arrive_by"] = True
     return {"tool": "trip_plan", "args": json.dumps(args)}

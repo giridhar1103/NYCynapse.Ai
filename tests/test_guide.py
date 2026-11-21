@@ -697,6 +697,8 @@ def test_a_plain_trip_question_is_planned_before_the_first_model_call(monkeypatc
     a = args("fastest way to get to JFK Terminal 4 from Columbia University by 6pm")
     assert a["destination"] == "JFK Terminal 4" and a["arrive_by"] is True
     assert args("from Penn Station to the Met by 7am monday")["when"] == "7am monday"
+    assert args("from Penn Station to the Met tomorrow at noon")["when"] == "tomorrow at noon"
+    assert args("from Penn Station to the Met sometime tomorrow") is None  # "tomorrow" alone
     assert args("from here to the Met?", (40.7527, -73.9772))["origin"] == "40.7527,-73.9772"
     assert args("from here to the Met?") is None  # no shared location
     assert args("from Narnia to the Met") is None  # not a real place
@@ -1270,6 +1272,8 @@ def test_check_hands_back_the_fixed_answer_without_a_rewrite(monkeypatch):
     assert len(seen) == 3  # no rewrite call, no second check
     assert any("fixed in the check" in s.get("note", "") for s in out["steps"])
     assert ("status", {"text": "Checking the answer against its sources"}) in said
+    drafts = [d for e, d in said if e == "draft"]
+    assert drafts and "[1]" not in drafts[0]["text"]  # shown without citation numbers
     timeline = out["steps"][-1]["timeline"]
     assert [x["name"] for x in timeline] == ["step", "trip_plan", "step", "verify"]
 

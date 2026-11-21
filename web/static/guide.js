@@ -340,6 +340,7 @@ class Guide {
           if (ev === "chat") { this.chat = d.id; this.maxTurns = d.max_turns || 6; }
           else if (ev === "queue") view.queue(d.position);
           else if (ev === "status") view.status(d.text);
+          else if (ev === "draft") view.draft(d.text);
           else if (ev === "tool") view.tool(d);
           else if (ev === "lake") view.lake(d);
           else if (ev === "map") { view.layers.push(...(d.layers || [])); this.map?.show(d.layers); }
@@ -594,7 +595,22 @@ class TurnView {
     this.now.textContent = this.text.replace(/…$/, "") + (s >= 4 ? ` · ${s} s${slow}` : "…");
   }
 
-  stop() { clearInterval(this.timer); this.text = null; this.skeleton?.remove(); this.skeleton = null; }
+  stop() {
+    clearInterval(this.timer); this.text = null;
+    this.skeleton?.remove(); this.skeleton = null;
+    this.draftEl?.remove(); this.draftEl = null;
+  }
+
+  // The answer as first written, shown faded while it is checked against the sources. The
+  // checked answer takes its place.
+  draft(text) {
+    this.skeleton?.remove(); this.skeleton = null;
+    const card = el("div", { class: "answer-card draft", "aria-hidden": "true" },
+      el("div", { class: "draft-label" }, "Draft · checking it against the sources"),
+      ...renderText(text || "", {}));
+    if (this.draftEl) this.draftEl.replaceWith(card); else this.box.append(card);
+    this.draftEl = card;
+  }
 
   queue(pos) {
     this.text = null;
