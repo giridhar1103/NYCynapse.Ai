@@ -333,8 +333,60 @@ async def admin(request: Request):
             _cookie(resp, "", 0)
             return resp
         return RedirectResponse(f"{PREFIX}/connect/admin", status_code=303)
+    if request.query_params.get("view") == "ratings":
+        return page(
+            "NYCynapse admin", _tabs("ratings") + _ratings(await asyncio.to_thread(access.ratings))
+        )
     rows = await asyncio.to_thread(access.all)
-    return page("NYCynapse admin", _dashboard(rows))
+    return page("NYCynapse admin", _tabs("access") + _dashboard(rows))
+
+
+def _tabs(on: str) -> str:
+    def tab(key: str, label: str, href: str) -> str:
+        style = (
+            "background:#fff;color:#0b0b0b"
+            if key == on
+            else "background:transparent;color:var(--ink);border:1px solid #3d3d39"
+        )
+        return f"<a class='btn' style='{style};margin-right:8px;padding:6px 14px' href='{href}'>{label}</a>"
+
+    base = f"{PREFIX}/connect/admin"
+    return (
+        "<div style='margin-bottom:18px'>"
+        + tab("access", "Access requests", base)
+        + tab("ratings", "Answer ratings", base + "?view=ratings")
+        + "</div>"
+    )
+
+
+def _ratings(rows: list[dict]) -> str:
+    down = sum(1 for r in rows if r["rating"] < 0)
+    up = len(rows) - down
+    head = (
+        "<h1>Answer ratings</h1><p class='muted'>What readers said about the guide's answers, "
+        '"wrong" first. Kept with the conversation for 30 days.</p>'
+        f"<div class='card'><span class='stat'><b>{down}</b>marked wrong</span>"
+        f"<span class='stat'><b>{up}</b>marked right</span></div>"
+    )
+    items = []
+    for r in rows:
+        tools = ", ".join(
+            s["tool"] for s in (r["steps"] or []) if isinstance(s, dict) and s.get("tool")
+        )
+        verdict = (
+            "<span class='pill denied'>wrong</span>"
+            if r["rating"] < 0
+            else "<span class='pill approved'>right</span>"
+        )
+        note = f"<p><b>Reader's note:</b> {e(r['rating_note'])}</p>" if r.get("rating_note") else ""
+        secs = f"{round((r['latency_ms'] or 0) / 1000)} s" if r.get("latency_ms") else ""
+        items.append(
+            f"<div class='card'>{verdict} <span class='muted'>{_when(r['rated_at'])} · {e(r['kind'])} · "
+            f"{e(r['model'] or '')} · {secs}</span><p><b>Q:</b> {e(r['question'])}</p>{note}"
+            f"<details><summary class='muted'>Answer and tools</summary><p style='white-space:pre-wrap'>"
+            f"{e(r['answer'] or '')}</p><p class='muted'>Tools: {e(tools) or 'none'}</p></details></div>"
+        )
+    return head + ("".join(items) or "<div class='card muted'>No ratings yet.</div>")
 
 
 def _login(error: str = "") -> str:

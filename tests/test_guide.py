@@ -1259,7 +1259,9 @@ def test_a_fix_that_talks_about_the_tools_is_written_again(monkeypatch):
     )
     agent.verify_answers = True
     out = agent.run("train to cold spring tomorrow morning?", [], lambda e, d: None)
-    assert out["answer"].replace(" [", "[") == "Take the 9:56 AM direct train, arriving 11:17 AM[1]."
+    assert (
+        out["answer"].replace(" [", "[") == "Take the 9:56 AM direct train, arriving 11:17 AM[1]."
+    )
     assert "planner" in seen[3][1]  # the rewrite was told what to fix
 
 

@@ -126,6 +126,22 @@ class Access:
             self._c().execute("DELETE FROM app.access_requests WHERE id = %s", (rid,)).rowcount == 1
         )
 
+    # readers' verdicts on the guide's answers
+
+    def ratings(self, limit: int = 200) -> list[dict]:
+        rows = (
+            self._c()
+            .execute(
+                "SELECT t.question, t.answer, t.rating, t.rating_note, t.rated_at, t.latency_ms, "
+                "t.model, t.steps, c.kind FROM app.chat_turns t "
+                "JOIN app.chats c ON c.id = t.chat_id "
+                "WHERE t.rating IS NOT NULL ORDER BY (t.rating < 0) DESC, t.rated_at DESC LIMIT %s",
+                (limit,),
+            )
+            .fetchall()
+        )
+        return [dict(r) for r in rows]
+
     # tokens
 
     def grant(self, token: str) -> Grant | None:

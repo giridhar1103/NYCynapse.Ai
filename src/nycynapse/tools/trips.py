@@ -420,14 +420,18 @@ def _corner(raw: str) -> dict | None:
         return None
 
     def search(a: set[str], b: set[str]) -> list[dict]:
-        try:
-            hits = get_json(
-                GEOCODE,
-                {"text": f"{_said(a)}/{_said(b)}", "type": "STOP", "place": _bias(raw)},
-                ttl_s=86400,
-            )
-        except Exception:  # noqa: BLE001
-            hits = []
+        # Stops are named either way round ("5 AV/W 32 ST"): ask both.
+        hits = []
+        for text in (f"{_said(a)}/{_said(b)}", f"{_said(b)}/{_said(a)}"):
+            try:
+                hits += (
+                    get_json(
+                        GEOCODE, {"text": text, "type": "STOP", "place": _bias(raw)}, ttl_s=86400
+                    )
+                    or []
+                )
+            except Exception:  # noqa: BLE001
+                continue
         return [
             h
             for h in hits or []
@@ -450,7 +454,9 @@ def _corner(raw: str) -> dict | None:
     if boro and not any(borough(h) == boro for h in found):
         # No stop at that very corner in the borough named: a block or two along the
         # numbered street is close enough, and the name says so.
-        num = next((x for x in (b, a) if any(w.isdigit() for w in x)), None)
+        # Move along a numbered street, never an avenue: from "W 32 St & 5 Av" the nearby
+        # corners are on 32nd Street (31st, 33rd), not on 4th or 6th Avenue.
+        num = next((x for x in (b, a) if any(w.isdigit() for w in x) and "st" in x), None)
         if num is not None:
             n = int(next(w for w in num if w.isdigit()))
             other = a if num is b else b

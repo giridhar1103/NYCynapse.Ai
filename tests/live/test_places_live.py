@@ -28,6 +28,7 @@ PLACES = [
     ("5th Ave and 42nd St", 40.7531, -73.9810, 250),
     ("5th Ave and 59th St, Brooklyn", 40.6397, -74.0159, 400),
     ("Ludlow Street and Stanton Street, Manhattan", 40.7213, -73.9879, 200),
+    ("W 32nd St & 5th Ave, Koreatown, Manhattan", 40.7476, -73.9858, 200),
     ("Main St and 41st Ave Flushing NY", 40.7578, -73.8294, 250),
     ("233 5th Ave", 40.7440, -73.9874, 200),
     ("233 5th Ave, Brooklyn", 40.6754, -73.9809, 200),
