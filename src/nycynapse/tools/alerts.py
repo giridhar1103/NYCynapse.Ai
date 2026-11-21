@@ -185,12 +185,65 @@ def _subway() -> list[dict]:
     return out
 
 
+def _elevators() -> list[dict]:
+    """Subway elevators out of service now, placed at their station (matched by name and line,
+    as the step-free checks do)."""
+    from .access import _norm, _outages, _stations
+
+    stations = _stations()
+    out = []
+    for o in _outages():
+        lines = set((o.get("trainno") or "").replace("/", " ").split())
+        match = [
+            s
+            for s in stations
+            if _norm(s.get("stop_name")) == _norm(o.get("station"))
+            and lines & set((s.get("daytime_routes") or "").split())
+        ]
+        if not match:
+            continue
+        s = match[0]
+        try:
+            lat, lon = float(s["gtfs_latitude"]), float(s["gtfs_longitude"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        back = None
+        try:
+            back = datetime.strptime(o["estimatedreturntoservice"], "%m/%d/%Y %I:%M:%S %p").replace(
+                tzinfo=NY
+            )
+        except (KeyError, TypeError, ValueError):
+            pass
+        out.append(
+            {
+                "id": f"mta-el:{o.get('equipment')}",
+                "source": "mta-elevators",
+                "kind": "elevator",
+                "title": f"Elevator out at {s['stop_name']} ({' '.join(sorted(lines))})",
+                "detail": f"{o.get('serving', '').strip()}; "
+                f"reason: {o.get('reason') or 'not given'}",
+                "lat": lat,
+                "lon": lon,
+                "area": s["stop_name"],
+                "severity": 2,
+                "starts": None,
+                "ends": back,
+            }
+        )
+    return out
+
+
 def poll() -> dict:
     """Read every feed once and bring app.city_alerts up to date. Returns counts per source, and
     the ids of alerts seen for the first time (for push notifications)."""
     c = _db()
     counts, new = {}, []
-    for source, fn in (("511ny", _road), ("nws", _weather), ("mta", _subway)):
+    for source, fn in (
+        ("511ny", _road),
+        ("nws", _weather),
+        ("mta", _subway),
+        ("mta-elevators", _elevators),
+    ):
         try:
             rows = fn()
         except Exception as e:  # noqa: BLE001 - one feed down must not stop the others
@@ -235,6 +288,7 @@ KIND_WORD = {
     "event": "Event on the road",
     "weather": "Weather alert",
     "subway": "Subway",
+    "elevator": "Elevator outage",
 }
 
 
@@ -327,9 +381,10 @@ TOOLS = [
     Tool(
         "alerts_near",
         "live",
-        "Road incidents and closures, subway station alerts and weather warnings in effect right "
-        "now near a place, closest first. Use for 'anything going on near', 'is something "
-        "happening around', 'why is traffic stopped near' questions. since_minutes limits to "
+        "Road incidents and closures, subway station alerts, elevator outages and weather warnings "
+        "in effect right now near a place, closest first. Use for 'anything going on near', "
+        "'is something happening around', 'why is traffic stopped near' questions. "
+        "since_minutes limits to "
         "alerts posted in the last that many minutes.",
         {
             "type": "object",
