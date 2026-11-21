@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-title" content="NYCynapse">
 <link rel="stylesheet" href="static/style.css?v=8">
 <link rel="stylesheet" href="static/vendor/maplibre-gl.css">
-<link rel="stylesheet" href="static/guide.css?v=18">
+<link rel="stylesheet" href="static/guide.css?v=19">
 </head>
 <body>
 <header class="band on-night">
@@ -34,7 +34,7 @@
       <div>
         <div class="eyebrow"><span class="live-dot"></span><span id="eyebrow">Live from the city's own data</span></div>
         <h1>Ask New York<br><span class="soft">anything.</span></h1>
-        <p class="lede">A guide to the city that answers from New York's own data: the subway, the streets, the weather, Citi Bike, 311 and a billion rows of history. It checks the cheapest trustworthy source first, reaches for live feeds and the web only when it needs to, and shows you where every fact came from.</p>
+        <p class="lede">Ask the way you'd ask a friend who knows the city. One answer joins what map apps keep apart: the route, the delay on your line, the broken elevator, the street closed for construction, the weather and the city's own records, with every source shown. It can also tell you when something happens near you.</p>
         <form class="askbox" id="hero-form" autocomplete="off">
           <input id="hero-q" name="q" maxlength="400" aria-label="Your question about New York City" placeholder="Is the 7 train running normally right now?">
           <button type="submit">Ask</button>
@@ -58,7 +58,7 @@
         <div class="stop lake"><span class="dot"></span><h3>The city's data lake</h3><div class="cost">Cheapest · governed</div><p>Subway ridership and delays, taxi and app rides, Citi Bike, 311, crashes, road speeds and weather since 2024, as SQL you can read.</p><p class="ex">"Busiest stations in August?"</p></div>
         <div class="stop live"><span class="dot"></span><h3>Live city feeds</h3><div class="cost">Free · right now</div><p>MTA service alerts, DOT road sensors, National Weather Service, NYC Open Data and the city's address search.</p><p class="ex">"Is the 7 running normally?"</p></div>
         <div class="stop web"><span class="dot"></span><h3>The web</h3><div class="cost">Last resort · cited</div><p>Google results and the pages behind them, read as information only and always named in the answer.</p><p class="ex">"New restaurants in Astoria?"</p></div>
-        <div class="stop"><span class="dot"></span><h3>One answer</h3><div class="cost">With sources</div><p>Short and direct, with the time of every reading, a map of the places involved, and up to three follow-ups.</p><p class="ex">"And how about traffic there?"</p></div>
+        <div class="stop"><span class="dot"></span><h3>One answer</h3><div class="cost">With sources</div><p>Short and direct, with the time of every reading, a map of the places involved, and up to five follow-ups.</p><p class="ex">"And how about traffic there?"</p></div>
       </div>
     </div>
   </section>
@@ -153,7 +153,7 @@
   <div class="panel" role="dialog" aria-modal="true" aria-label="NYC guide chat">
     <div class="g-head">
       <span class="bullet b1">N</span><span class="title">NYC Guide</span><span class="model" id="g-model">Claude Sonnet 5.5</span>
-      <span class="turns" id="g-turns" title="A question and up to three follow-ups"></span>
+      <span class="turns" id="g-turns" title="A question and up to five follow-ups"></span>
       <button class="newchat" id="g-new" type="button">＋ <span>New chat</span></button>
       <button class="close" type="button" data-close aria-label="Close">✕</button>
     </div>
@@ -168,7 +168,7 @@
           <button id="g-send" type="submit">Send</button>
         </form>
         <div class="ts-box" id="ts-box"></div>
-        <div class="hint"><span id="g-left">A question and up to 3 follow-ups</span><span class="beta" title="Answers come from live city data, but feeds can lag and plans change. Check the MTA or the venue before you travel.">Beta: check times before you travel · Private, deleted after 30 days</span></div>
+        <div class="hint"><span id="g-left">A question and up to 5 follow-ups</span><span class="beta" title="Answers come from live city data, but feeds can lag and plans change. Check the MTA or the venue before you travel.">Beta: check times before you travel · Private, deleted after 30 days</span></div>
       </div>
     </div>
     <div class="g-map" id="g-mapwrap">
@@ -181,6 +181,6 @@
 </div>
 
 <script src="static/app.js?v=6"></script>
-<script type="module" src="static/landing.js?v=29"></script>
+<script type="module" src="static/landing.js?v=30"></script>
 </body>
 </html>

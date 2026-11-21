@@ -2195,7 +2195,7 @@ def trip_plan(
         + f"{t:%a %b %-d %-I:%M %p}."
     ]
     lines += notes_placed
-    data: dict = {"from": a, "to": b, "when": t.isoformat()}
+    data: dict = {"from": a, "to": b, "when": t.isoformat(), "step_free": step_free}
     sources: list[dict] = []
     layers: list[dict] = []
     # Walking, biking and the two car lookups do not depend on transit: start them now, so they
@@ -2574,6 +2574,7 @@ def _trip_layer(a: dict, b: dict, t: datetime, arrive_by: bool, mode: str, data:
         "when": ("Arrive by " if arrive_by else "Leave ") + t.strftime("%a %-I:%M %p"),
         "modes": modes,
         "default": default,
+        "step_free": bool(data.get("step_free")),
     }
 
 

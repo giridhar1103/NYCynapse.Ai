@@ -1,6 +1,6 @@
 // The guide overlay: opens over the landing page, streams one turn at a time from /api/chat,
 // draws each tool call as it runs (with errors and recoveries), renders the answer and its
-// sources as plain text, and keeps the conversation to a question and three follow-ups.
+// sources as plain text, and keeps the conversation to a question and five follow-ups.
 
 import { GuideMap, wxIcon } from "./map.js?v=11";
 
@@ -27,10 +27,10 @@ class Guide {
     this.send = $("g-send");
     this.chat = null;
     this.turn = 0;
-    this.maxTurns = 4;
+    this.maxTurns = 6;
     this.busy = false;
     this.where = null;
-    this.config = NY.get("api/config").catch(() => ({ max_turns: 4 }));
+    this.config = NY.get("api/config").catch(() => ({ max_turns: 6 }));
     this.map = null;
     this.root.querySelectorAll("[data-close]").forEach((b) => b.addEventListener("click", () => this.close()));
     $("g-new").addEventListener("click", () => this.reset(true));
@@ -229,8 +229,8 @@ class Guide {
     const box = $("g-turns");
     box.replaceChildren("Follow-ups ", ...Array.from({ length: this.maxTurns - 1 }, (_, i) =>
       el("i", { class: i < Math.max(0, this.turn - 1) ? "used" : "" })));
-    const left = this.turn === 0 ? "A question and up to 3 follow-ups"
-      : this.turn >= this.maxTurns ? "That's the last follow-up in this demo. Start a new chat to keep going."
+    const left = this.turn === 0 ? "A question and up to 5 follow-ups"
+      : this.turn >= this.maxTurns ? "That's the last follow-up for this chat during the beta. Start a new chat to keep going."
       : `${this.maxTurns - this.turn} follow-up${this.maxTurns - this.turn === 1 ? "" : "s"} left`;
     $("g-left").textContent = left;
     const done = this.turn >= this.maxTurns;
@@ -314,7 +314,7 @@ class Guide {
           const data = (chunk.match(/^data: (.*)$/m) || [])[1];
           if (!ev || !data) continue;
           const d = JSON.parse(data);
-          if (ev === "chat") { this.chat = d.id; this.maxTurns = d.max_turns || 4; }
+          if (ev === "chat") { this.chat = d.id; this.maxTurns = d.max_turns || 6; }
           else if (ev === "queue") view.queue(d.position);
           else if (ev === "status") view.status(d.text);
           else if (ev === "tool") view.tool(d);
@@ -449,6 +449,9 @@ function tripPanel(trip, draw) {
   const tabs = el("div", { class: "trip-modes", role: "tablist" });
   const body = el("div", { class: "trip-body" });
   box.append(head, tabs, body);
+  if (trip.step_free) {
+    box.append(el("div", { class: "trip-note" }, "Step-free checks cover subway stations and their elevators. LIRR, Metro-North, NJ Transit and PATH stations aren't checked."));
+  }
 
   const render = () => {
     tabs.replaceChildren(...modes.map((m) => el("button", {

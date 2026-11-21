@@ -98,7 +98,7 @@ MESSAGES = {
     "in a minute.",
     "models": "Our models are at full capacity right now. Please wait a few minutes and try again.",
     "rate": "That's a lot of questions in an hour. Take a short break and come back soon.",
-    "budget": "Today's question allowance for the demo is used up. Please come back tomorrow.",
+    "budget": "Today's question allowance is used up during the beta. Please come back tomorrow.",
     "paused": "The guide is paused for maintenance. Please check back shortly.",
     "verify": "We couldn't confirm you're not a bot. Reload the page and try again.",
     "length": "Questions need between 3 and 400 characters.",

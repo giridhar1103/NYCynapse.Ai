@@ -1,7 +1,7 @@
 """Conversations with the guide agent: short-lived memory for follow-ups, and a private record
 kept for 30 days to review how the models answer.
 
-A conversation is a first question and at most three follow-ups. It ends after 30 minutes
+A conversation is a first question and at most five follow-ups. It ends after 30 minutes
 without a message. Each follow-up is given a compact memory of the earlier turns (the question,
 the answer and the key facts found), not the whole transcript, to keep it cheap. Nothing here is
 shown to other readers.
@@ -18,7 +18,7 @@ from dataclasses import dataclass
 import psycopg
 from psycopg.types.json import Jsonb
 
-MAX_TURNS = 4  # the first question and three follow-ups
+MAX_TURNS = 6  # the first question and five follow-ups
 IDLE_MINUTES = 30
 KEEP_DAYS = 30
 EXAMPLE_HOURS = 30
@@ -74,8 +74,8 @@ class Chats:
         if row["turns"] >= MAX_TURNS:
             raise ChatError(
                 "full",
-                "This demo allows three follow-up questions per "
-                "conversation. Start a new one to keep going.",
+                "Conversations are limited to five follow-ups during the beta. "
+                "Start a new one to keep going.",
             )
         hist = conn.execute(
             "SELECT memory FROM app.chat_turns WHERE chat_id = %s AND memory IS NOT NULL "
