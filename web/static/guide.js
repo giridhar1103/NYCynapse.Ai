@@ -100,10 +100,33 @@ class Guide {
         this.input.dispatchEvent(new Event("input"));
       };
       const end = () => { rec = null; btn.classList.remove("on"); btn.setAttribute("aria-pressed", "false"); this.input.focus(); };
-      rec.onend = end; rec.onerror = end;
+      rec.onend = end;
+      // Say why voice did not work, instead of a button that seems to do nothing.
+      rec.onerror = (e) => {
+        const why = {
+          "not-allowed": "Microphone access is blocked for this site. Allow it in the browser's site settings.",
+          "service-not-allowed": "This browser doesn't allow voice input here. Try Chrome or Safari.",
+          "no-speech": "Didn't catch anything. Tap the mic and speak.",
+          "audio-capture": "No microphone was found.",
+          "network": "Voice input needs a connection to the browser's speech service.",
+        }[e.error];
+        if (why) this.note(why);
+        end();
+      };
       btn.classList.add("on"); btn.setAttribute("aria-pressed", "true");
-      rec.start();
+      try { rec.start(); } catch (_) { this.note("Voice input couldn't start. Try again."); end(); }
     });
+  }
+
+  // A short note above the input (voice or location problems), gone after a few seconds.
+  note(text) {
+    const pill = $("g-where");
+    if (this.where) return;  // the location pill is in use
+    pill.firstElementChild.textContent = text;
+    pill.classList.add("warn");
+    pill.hidden = false;
+    clearTimeout(this.noteTimer);
+    this.noteTimer = setTimeout(() => { if (!this.where) pill.hidden = true; }, 6000);
   }
 
   // An empty chat: what to try, and the reader's own recent questions on this device.
