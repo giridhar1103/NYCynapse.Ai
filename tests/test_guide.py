@@ -13,7 +13,7 @@ from nycynapse.agent.lake import map_from_rows
 from nycynapse.api.capacity import Full, Gate
 from nycynapse.llm import client as llm
 from nycynapse.llm.client import LLMResult, ProviderLimit
-from nycynapse.tools import Tool, ToolResult, failed, live, path_trains
+from nycynapse.tools import Tool, ToolResult, failed, live, path_trains, placenames
 from nycynapse.tools import http as tools_http
 from nycynapse.tools.live import open_data
 
@@ -1358,7 +1358,6 @@ def test_unfinished_draft_goes_back_to_look(monkeypatch):
 
 
 def test_same_address_in_two_boroughs_goes_to_the_one_named_or_manhattan():
-    from nycynapse.tools import trips
 
     def f(label, boro):
         return {"properties": {"label": label, "borough": boro}}
@@ -1367,15 +1366,15 @@ def test_same_address_in_two_boroughs_goes_to_the_one_named_or_manhattan():
         f("233 5 AVENUE, Brooklyn, NY", "Brooklyn"),
         f("233 5 AVENUE, New York, NY", "Manhattan"),
     ]
-    assert trips._same_address(hits, None)["properties"]["borough"] == "Manhattan"
-    assert trips._same_address(hits, "brooklyn")["properties"]["borough"] == "Brooklyn"
+    assert placenames._same_address(hits, None)["properties"]["borough"] == "Manhattan"
+    assert placenames._same_address(hits, "brooklyn")["properties"]["borough"] == "Brooklyn"
     # a different address further down the list is not "the same place elsewhere"
     other = [
         f("12 OAK STREET, Queens, NY", "Queens"),
         f("12 OAK AVENUE, New York, NY", "Manhattan"),
     ]
-    assert trips._same_address(other, None)["properties"]["borough"] == "Queens"
-    assert trips._same_address([], None) is None
+    assert placenames._same_address(other, None)["properties"]["borough"] == "Queens"
+    assert placenames._same_address([], None) is None
 
 
 def test_sites_that_refuse_readers_are_not_tried_again(monkeypatch):
@@ -1551,8 +1550,9 @@ def test_regional_rail_stops_by_name(monkeypatch):
         {"name": "Ronkonkoma LIRR", "type": "STOP", "lat": 40.808, "lon": -73.107},
     ]
     monkeypatch.setattr(trips, "get_json", lambda *a, **k: hits)
-    assert trips._rail_stop("Ronkonkoma station")["name"] == "Ronkonkoma LIRR"
-    assert trips._rail_stop("Roma Street") is None  # Brisbane is not in the region
+    monkeypatch.setattr(placenames, "get_json", lambda *a, **k: hits)
+    assert placenames._rail_stop("Ronkonkoma station")["name"] == "Ronkonkoma LIRR"
+    assert placenames._rail_stop("Roma Street") is None  # Brisbane is not in the region
 
 
 def test_last_round_draft_is_answered_not_busy(monkeypatch):
@@ -1571,10 +1571,9 @@ def test_last_round_draft_is_answered_not_busy(monkeypatch):
 
 
 def test_corner_words_keep_spoken_order():
-    from nycynapse.tools import trips
 
-    assert trips._said({"av", "8"}) == "8 av"
-    assert trips._said({"st", "lexington", "w"}) == "lexington w st"
+    assert placenames._said({"av", "8"}) == "8 av"
+    assert placenames._said({"st", "lexington", "w"}) == "lexington w st"
 
 
 def test_path_changes_lines_when_no_train_runs_through():
@@ -1628,10 +1627,11 @@ def test_station_named_with_its_line(monkeypatch):
 
 
 def test_place_word_after_a_landmark_is_another_place():
-    from nycynapse.tools import trips
 
-    assert trips._landmark(trips._norm("Brooklyn Bridge Park")) is None
-    assert trips._landmark(trips._norm("the Brooklyn Bridge"))["name"] == "Brooklyn Bridge"
+    assert placenames._landmark(placenames._norm("Brooklyn Bridge Park")) is None
+    assert (
+        placenames._landmark(placenames._norm("the Brooklyn Bridge"))["name"] == "Brooklyn Bridge"
+    )
 
 
 def test_line_letter_before_station_and_borough_named(monkeypatch):
@@ -1655,8 +1655,8 @@ def test_line_letter_before_station_and_borough_named(monkeypatch):
     ]
     monkeypatch.setattr(access, "_stations", lambda: rows)
     assert trips.locate("Nostrand Av C station, Brooklyn")["name"] == "Nostrand Av (A C)"
-    assert trips._line_station("Avenue", {"J"}) is None  # "Avenue J" is not Norwood Av
-    assert trips._borough_named("59 St, 4th Ave, Sunset Park") == "brooklyn"
+    assert placenames._line_station("Avenue", {"J"}) is None  # "Avenue J" is not Norwood Av
+    assert placenames._borough_named("59 St, 4th Ave, Sunset Park") == "brooklyn"
 
 
 def test_deadline_keeps_trains_near_the_last_one_that_makes_it():
@@ -1702,7 +1702,7 @@ def test_named_entrance_of_a_big_place(monkeypatch):
         "New York Botanical Garden": {"name": "NYBG", "lat": 40.8664, "lon": -73.8808},
         "Mosholu": {"name": "Mosholu Pkwy", "lat": 40.8797, "lon": -73.8847},
     }
-    monkeypatch.setattr(trips, "_locate", lambda t: spots.get(t))
+    monkeypatch.setattr(placenames, "_locate", lambda t: spots.get(t))
     got = trips.locate("Central Park, Conservatory Garden entrance")
     assert got["lat"] == 40.7937 and "entrance" in got["name"]
     assert trips.locate("New York Botanical Garden, Mosholu entrance")["lat"] == 40.8664
@@ -1728,10 +1728,11 @@ def test_stop_names_keep_numbers_and_towns(monkeypatch):
         {"name": "Rockaway Av", "lat": 40.663, "lon": -73.909, "modes": ["SUBWAY"]},
     ]
     monkeypatch.setattr(trips, "get_json", lambda *a, **k: hits)
-    assert trips._stop("Beach 108th Street station") is None
-    assert trips._stop("Montclair") is None
-    assert trips._stop("Bloomfield Ave, Montclair") is None  # a town outside the city
-    assert trips._ferry_stop("Rockaway")["name"] == "Rockaway ferry landing"
+    monkeypatch.setattr(placenames, "get_json", lambda *a, **k: hits)
+    assert placenames._stop("Beach 108th Street station") is None
+    assert placenames._stop("Montclair") is None
+    assert placenames._stop("Bloomfield Ave, Montclair") is None  # a town outside the city
+    assert placenames._ferry_stop("Rockaway")["name"] == "Rockaway ferry landing"
 
 
 def test_today_is_kept_and_a_past_time_is_said(monkeypatch):
@@ -1751,10 +1752,9 @@ def test_today_is_kept_and_a_past_time_is_said(monkeypatch):
 
 
 def test_path_station_only_when_nothing_else_is_named():
-    from nycynapse.tools import trips
 
-    assert trips._path_station(trips._norm("Grove Street PATH station, Jersey City"))
-    assert trips._path_station(trips._norm("Red Bull Arena, Harrison, NJ")) is None
+    assert placenames._path_station(placenames._norm("Grove Street PATH station, Jersey City"))
+    assert placenames._path_station(placenames._norm("Red Bull Arena, Harrison, NJ")) is None
 
 
 def test_ferry_terminal_over_the_landing_next_to_it(monkeypatch):
@@ -1765,7 +1765,8 @@ def test_ferry_terminal_over_the_landing_next_to_it(monkeypatch):
         {"name": "St. George Ferry Terminal", "lat": 40.6442, "lon": -74.0722, "modes": ["FERRY"]},
     ]
     monkeypatch.setattr(trips, "get_json", lambda *a, **k: hits)
-    got = trips._ferry_stop("St. George", "St. George Ferry Terminal")
+    monkeypatch.setattr(placenames, "get_json", lambda *a, **k: hits)
+    got = placenames._ferry_stop("St. George", "St. George Ferry Terminal")
     assert got["name"] == "St. George Ferry Terminal"
 
 
@@ -1869,6 +1870,7 @@ def test_service_change_naming_a_station_of_the_ride(monkeypatch):
         ]
     }
     monkeypatch.setattr(trips, "get_json", lambda *a, **k: feed)
+    monkeypatch.setattr(placenames, "get_json", lambda *a, **k: feed)
     opt = {
         "lines": [
             {
@@ -1910,6 +1912,7 @@ def test_rides_with_cancelled_stops_are_dropped(monkeypatch):
 
     plans = {"itineraries": [it("2026-10-24T18:05:00Z", True), it("2026-10-24T18:20:00Z", False)]}
     monkeypatch.setattr(trips, "get_json", lambda *a, **k: plans)
+    monkeypatch.setattr(placenames, "get_json", lambda *a, **k: plans)
     got = trips._plan(
         {"lat": 40.7, "lon": -74.0},
         {"lat": 40.75, "lon": -73.99},
