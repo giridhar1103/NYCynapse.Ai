@@ -1,0 +1,225 @@
+"""The guide's tools as an MCP server over HTTP, for approved people only.
+
+Each approved person has a token, written into the connector URL (`/mcp/<token>`), since that is
+what Claude, ChatGPT and Cursor all accept. The token is checked on every request, and each tool
+call counts against its hourly and daily limit before it runs. Only tools that answer from data
+are offered: nothing here calls a language model or a paid search.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import time
+
+from mcp.server.mcpserver import MCPServer
+from mcp.server.transport_security import TransportSecuritySettings
+from mcp_types import ToolAnnotations
+
+from ..tools import live, nearby, trips
+from ..tools.http import load_keys
+from .store import Access
+
+log = logging.getLogger(__name__)
+load_keys()
+
+READ = ToolAnnotations(read_only_hint=True, destructive_hint=False, open_world_hint=True)
+mcp = MCPServer(
+    name="nycynapse",
+    title="NYCynapse: New York City, live",
+    instructions=(
+        "Live New York City data: subway and rail service changes, routes and travel times "
+        "(transit with step-free checks and fares, car, bike, walk), road closures and events, "
+        "weather and alerts, Citi Bike, public restrooms and fountains, place lookup and a few "
+        "NYC Open Data datasets. Times are New York time. Usage limits apply during the beta."
+    ),
+)
+
+
+@mcp.tool(annotations=READ)
+def trip_plan(
+    origin: str,
+    destination: str,
+    mode: str = "all",
+    when: str | None = None,
+    arrive_by: bool = False,
+    step_free: bool = False,
+) -> dict:
+    """Routes and travel times between two places in and around NYC: transit itineraries from
+    the agencies' schedules (subway, bus, LIRR, Metro-North, NJ Transit, PATH, ferries, the
+    AirTrains) with fares, live times where published, step-free checks against MTA elevator
+    outages when step_free is set, plus car (live traffic), bike and walking. `when` is New York
+    time like 2026-10-16T17:30 or words like "tomorrow 8am"; arrive_by makes it a deadline."""
+    return trips.trip_plan(origin, destination, mode, when, arrive_by, step_free).as_dict()
+
+
+@mcp.tool(annotations=READ)
+def subway_alerts(line: str | None = None) -> dict:
+    """MTA subway alerts in effect now, with the hours each applies, and planned changes in the
+    next 12 hours. `line` narrows to one line (A, 7, L...)."""
+    return live.subway_alerts(line).as_dict()
+
+
+@mcp.tool(annotations=READ)
+def transit_changes(system: str | None = None, route: str | None = None) -> dict:
+    """Service changes on the subway, buses, LIRR, Metro-North, NJ Transit and PATH, ongoing or
+    starting in the next 7 days. `system` is subway, bus, lirr, metro-north, nj-transit or path."""
+    return live.transit_changes(system, route).as_dict()
+
+
+@mcp.tool(annotations=READ)
+def road_events(
+    borough: str | None = None, kind: str | None = None, road: str | None = None
+) -> dict:
+    """Road closures, roadwork, incidents and planned events on NYC roads, active now or in the
+    next 7 days. `kind` is closure, roadwork, incident or event; `road` narrows to one road,
+    bridge or tunnel (GWB, BQE, I-95)."""
+    return live.road_events(borough, kind, road).as_dict()
+
+
+@mcp.tool(annotations=READ)
+def road_speeds(borough: str | None = None) -> dict:
+    """Latest road speeds from city sensors by borough, and the slowest segments."""
+    return live.road_speeds(borough).as_dict()
+
+
+@mcp.tool(annotations=READ)
+def weather(hours: int = 6, days: int = 0, near: str | None = None) -> dict:
+    """Weather now and for the next hours in each borough (and near a place), a daily forecast
+    up to 7 days ahead when `days` is set, and National Weather Service alerts."""
+    return live.weather(hours, days, near).as_dict()
+
+
+@mcp.tool(annotations=READ)
+def citibike_now(near: str, n: int = 5) -> dict:
+    """Bikes, e-bikes and open docks right now at the Citi Bike stations nearest a place."""
+    return trips.citibike_now(near, n).as_dict()
+
+
+@mcp.tool(annotations=READ)
+def nearby_amenities(near: str, what: str = "restroom", n: int = 5) -> dict:
+    """The nearest public restrooms (with hours, access and baby changing tables) or drinking
+    fountains to a place, from city data. `what` is restroom or drinking_fountain."""
+    return nearby.nearby(near, what, n).as_dict()
+
+
+@mcp.tool(annotations=READ)
+def find_place(text: str) -> dict:
+    """Find an NYC address, landmark, station or intersection: coordinates, borough and
+    neighborhood."""
+    return live.find_place(text).as_dict()
+
+
+@mcp.tool(annotations=READ)
+def open_data(
+    dataset: str,
+    select: str = "",
+    where: str = "",
+    group: str = "",
+    order: str = "",
+    limit: int = 20,
+) -> dict:
+    """Query one NYC Open Data dataset with SoQL clauses: 311, collisions, events, film_permits,
+    restaurant_inspections, crime, farmers_markets."""
+    return live.open_data(dataset, select, where, group, order, limit).as_dict()
+
+
+def build(access: Access, hosts: list[str]):
+    inner = mcp.streamable_http_app(
+        streamable_http_path="/mcp",
+        stateless_http=True,
+        json_response=True,
+        transport_security=TransportSecuritySettings(
+            enable_dns_rebinding_protection=True, allowed_hosts=hosts, allowed_origins=[]
+        ),
+    )
+    return TokenGate(inner, access), inner
+
+
+class TokenGate:
+    """In front of the MCP app: `/mcp/<token>` must carry an approved token, and every tool call
+    in a request is counted against that token's limits before the request goes in."""
+
+    def __init__(self, inner, access: Access):
+        self.inner = inner
+        self.access = access
+        self._seen: dict[str, tuple[float, object]] = {}
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.inner(scope, receive, send)
+        parts = scope["path"].split("/")
+        if len(parts) < 3 or parts[1] != "mcp" or not parts[2]:
+            return await _json(send, 404, {"error": "use /mcp/<your token>"})
+        token = parts[2]
+        grant = await self._grant(token)
+        if grant is None:
+            return await _json(send, 401, {"error": "unknown or revoked token"})
+        body = b""
+        more = True
+        while more:
+            msg = await receive()
+            body += msg.get("body", b"")
+            more = msg.get("more_body", False)
+            if len(body) > 1_000_000:
+                return await _json(send, 413, {"error": "request too large"})
+        refused = await self._count(grant, body) if scope["method"] == "POST" else None
+        if refused:
+            return await _json(send, 200, refused)
+        sent = False
+
+        async def replay():
+            nonlocal sent
+            if sent:
+                return {"type": "http.disconnect"}
+            sent = True
+            return {"type": "http.request", "body": body, "more_body": False}
+
+        inner_scope = {**scope, "path": "/mcp", "raw_path": b"/mcp"}
+        await self.inner(inner_scope, replay, send)
+
+    async def _grant(self, token: str):
+        hit = self._seen.get(token)
+        if hit and time.monotonic() - hit[0] < 60:
+            return hit[1]
+        g = await asyncio.to_thread(self.access.grant, token)
+        self._seen[token] = (time.monotonic(), g)
+        if len(self._seen) > 2000:
+            self._seen.clear()
+        return g
+
+    async def _count(self, grant, body: bytes):
+        try:
+            msg = json.loads(body or b"null")
+        except ValueError:
+            return None
+        calls = [m for m in (msg if isinstance(msg, list) else [msg]) if isinstance(m, dict)]
+        for m in calls:
+            if m.get("method") != "tools/call":
+                continue
+            why = await asyncio.to_thread(self.access.spend, grant)
+            if why:
+                log.info("refused a call for token %s: %s", grant.request_id[:8], why)
+                text = f"Usage limits apply during the beta: {why}."
+                return {
+                    "jsonrpc": "2.0",
+                    "id": m.get("id"),
+                    "result": {"content": [{"type": "text", "text": text}], "isError": True},
+                }
+        return None
+
+
+async def _json(send, status: int, payload: dict):
+    data = json.dumps(payload).encode()
+    await send(
+        {
+            "type": "http.response.start",
+            "status": status,
+            "headers": [
+                (b"content-type", b"application/json"),
+                (b"content-length", str(len(data)).encode()),
+            ],
+        }
+    )
+    await send({"type": "http.response.body", "body": data})

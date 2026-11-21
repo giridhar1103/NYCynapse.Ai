@@ -1970,3 +1970,26 @@ def test_leaked_thinking_and_field_dumps_are_never_answers():
     assert core._embedded_calls('declined: false\ncalls: [{"tool": "web_search"}]') == []
     assert llm.parse_json('<ctrl94>thought\nhmm<ctrl95>{"a": 1} trailing words') == {"a": 1}
     assert core._embedded_calls("Take the 2 train to Eastern Pkwy.") is None
+
+
+def test_access_requests_tokens_and_limits(app_dsn):
+    from nycynapse.catalog import store
+    from nycynapse.connect.store import Access
+
+    conn = store.connect(app_dsn)
+    store.migrate(conn)
+    access = Access(lambda: conn)
+    rid, key = access.ask("Test", "t@example.com", "trying it out from Claude", "client-x")
+    assert access.status(key)["status"] == "pending"
+    assert access.status("wrong-key") is None
+    assert access.approve(rid, per_hour=2, per_day=10)
+    once = access.status(key)["token_once"]
+    assert once and once.startswith("nyc_")
+    assert access.status(key)["token_once"] is None  # shown once
+    g = access.grant(once)
+    assert g and access.grant("nyc_nope") is None
+    assert access.spend(g) is None and access.spend(g) is None
+    assert "an hour" in access.spend(g)  # third call in the hour
+    assert access.set_status(rid, "revoked")
+    assert access.grant(once) is None
+    assert access.delete(rid)

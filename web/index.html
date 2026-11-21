@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-title" content="NYCynapse">
 <link rel="stylesheet" href="static/style.css?v=8">
 <link rel="stylesheet" href="static/vendor/maplibre-gl.css">
-<link rel="stylesheet" href="static/guide.css?v=16">
+<link rel="stylesheet" href="static/guide.css?v=17">
 </head>
 <body>
 <header class="band on-night">
@@ -99,14 +99,12 @@
       <p class="kicker">Open by design</p>
       <h2 class="big reveal">Every tool is an MCP server.</h2>
       <p class="intro reveal">The guide is an MCP host: it reaches the lake, the live city feeds and the web through Model Context Protocol servers. The same servers work in Claude Desktop or any MCP client, so you can bring New York into your own assistant.</p>
+      <p class="reveal" style="margin:-24px 0 36px"><a class="cta-link" href="https://api.giriworks.com/nycynapse/connect">Connect Claude, ChatGPT or Cursor to live NYC data: request access →</a></p>
       <div class="mcp-grid">
         <pre class="code reveal">{
   "mcpServers": {
     "nycynapse": {
-      "command": "nycynapse-mcp"
-    },
-    "nyc-live": {
-      "command": "nycynapse-tools"
+      "url": "https://api.giriworks.com/nycynapse/mcp/&lt;your token&gt;"
     }
   }
 }</pre>

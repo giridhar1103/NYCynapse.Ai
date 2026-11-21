@@ -1,0 +1,25 @@
+[Unit]
+Description=NYCynapse public MCP server, access requests and admin
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+WorkingDirectory=/root/NYCynapse
+EnvironmentFile=/root/.secrets/nycynapse-web.env
+EnvironmentFile=/root/.secrets/nycynapse-connect.env
+Environment=HOME=/root
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/root/NYCynapse/.venv/bin/python -m nycynapse.connect.app
+Restart=on-failure
+RestartSec=5
+MemoryMax=768M
+CPUQuota=100%
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+[Install]
+WantedBy=multi-user.target
