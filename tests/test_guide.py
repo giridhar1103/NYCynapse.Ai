@@ -696,9 +696,17 @@ def test_a_plain_trip_question_is_planned_before_the_first_model_call(monkeypatc
     )
     a = args("fastest way to get to JFK Terminal 4 from Columbia University by 6pm")
     assert a["destination"] == "JFK Terminal 4" and a["arrive_by"] is True
+    assert args("from Penn Station to the Met by 7am monday")["when"] == "7am monday"
     assert args("from here to the Met?", (40.7527, -73.9772))["origin"] == "40.7527,-73.9772"
     assert args("from here to the Met?") is None  # no shared location
     assert args("from Narnia to the Met") is None  # not a real place
+    here = (40.7527, -73.9772)
+    tools = [c["tool"] for c in core._prefetch("need a bathroom near me asap", here)]
+    assert tools == ["nearby"]
+    assert [c["tool"] for c in core._prefetch("anything going on around here?", here)] == [
+        "alerts_near"
+    ]
+    assert core._prefetch("need a bathroom near me asap") == []  # no location shared
     assert args("Is the 7 train running?") is None
 
 

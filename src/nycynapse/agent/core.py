@@ -999,6 +999,9 @@ _TO_FROM = re.compile(
     re.I,
 )
 _WHEN = re.compile(
+    # "7am monday", "6:30 pm tomorrow": a time with its day after it
+    r"\b\d{1,2}(?::\d\d)?\s*(?:am|pm)\s+(?:tomorrow|tonight|today|"
+    r"(?:mon|tues|wednes|thurs|fri|satur|sun)day)\b|"
     r"\b(?:(?:tomorrow|tonight|today|this (?:morning|afternoon|evening)|"
     r"(?:mon|tues|wednes|thurs|fri|satur|sun)day)(?:\s+(?:morning|afternoon|evening|night))?"
     r"(?:\s+(?:at|around|by)?\s*\d{1,2}(?::\d\d)?\s*(?:am|pm))?"
@@ -1007,6 +1010,12 @@ _WHEN = re.compile(
 )
 _DEADLINE = re.compile(r"\b(?:by|before|no later than|arrive by|be there by)\s+\d", re.I)
 _HERE = re.compile(r"^(?:here|my location|where i am|me)$", re.I)
+_RESTROOM = re.compile(r"\b(?:restrooms?|bathrooms?|toilets?|washrooms?|loos?)\b", re.I)
+_HAPPENING = re.compile(
+    r"\b(?:anything (?:going on|happening)|what'?s (?:going on|happening)|any (?:incidents?|"
+    r"closures?|accidents?|problems?))\b",
+    re.I,
+)
 
 
 def _trip_prefetch(question: str, where: tuple[float, float] | None) -> dict | None:
@@ -1044,6 +1053,14 @@ def _prefetch(question: str, where: tuple[float, float] | None = None) -> list[d
     trip = _trip_prefetch(question, where)
     if trip:
         calls.append(trip)
+    # With the reader's own location, "a bathroom near me" or "anything going on around here"
+    # names both the tool and the place.
+    if where and not trip:
+        spot = f"{where[0]:.4f},{where[1]:.4f}"
+        if _RESTROOM.search(question):
+            calls.append({"tool": "nearby", "args": json.dumps({"near": spot, "what": "restroom"})})
+        elif _HAPPENING.search(question):
+            calls.append({"tool": "alerts_near", "args": json.dumps({"near": spot})})
     m = _LINE.search(question)
     if m and _STATUS.search(question):
         calls.append({"tool": "subway_alerts", "args": json.dumps({"line": m.group(1)})})
