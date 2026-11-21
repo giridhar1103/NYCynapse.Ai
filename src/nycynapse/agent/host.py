@@ -17,6 +17,7 @@ import threading
 from pathlib import Path
 
 from ..tools import Tool, ToolResult, failed
+from ..tools import alerts as alert_tools
 from ..tools import live as live_tools
 from ..tools import nearby as nearby_tools
 from ..tools import trips as trip_tools
@@ -32,7 +33,7 @@ def _server_params():
 
     src = str(Path(__file__).resolve().parents[2])
     # The trip planner reads typical car trip times from the lake, read only.
-    keep = ("HOME", "PATH", "LANG", "TZ", "NYC_LAKE_PG_DSN", "NYC_LAKE_DATA_PATH")
+    keep = ("HOME", "PATH", "LANG", "TZ", "NYC_LAKE_PG_DSN", "NYC_LAKE_DATA_PATH", "NYC_APP_PG_DSN")
     env = {k: v for k, v in os.environ.items() if k in keep}
     env["PYTHONPATH"] = src
     return StdioServerParameters(
@@ -44,7 +45,11 @@ class MCPHost:
     def __init__(self):
         self.local = {
             t.name: t
-            for t in live_tools.TOOLS + trip_tools.TOOLS + nearby_tools.TOOLS + web_tools.TOOLS
+            for t in live_tools.TOOLS
+            + trip_tools.TOOLS
+            + nearby_tools.TOOLS
+            + alert_tools.TOOLS
+            + web_tools.TOOLS
         }
         self._loop = asyncio.new_event_loop()
         self._thread = threading.Thread(target=self._loop.run_forever, daemon=True, name="mcp-host")

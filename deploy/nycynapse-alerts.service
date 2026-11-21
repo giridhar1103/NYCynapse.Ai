@@ -1,0 +1,22 @@
+[Unit]
+Description=NYCynapse alerts poller: road, weather and subway alerts every three minutes
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/NYCynapse
+EnvironmentFile=/root/.secrets/nycynapse-web.env
+Environment=HOME=/root
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/root/NYCynapse/.venv/bin/python -m nycynapse.tools.alerts
+Restart=always
+RestartSec=30
+MemoryMax=384M
+Nice=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

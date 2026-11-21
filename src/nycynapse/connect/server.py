@@ -17,7 +17,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp_types import ToolAnnotations
 
-from ..tools import live, nearby, trips
+from ..tools import alerts, live, nearby, trips
 from ..tools.http import load_keys
 from .store import Access
 
@@ -102,6 +102,14 @@ def nearby_amenities(near: str, what: str = "restroom", n: int = 5) -> dict:
     """The nearest public restrooms (with hours, access and baby changing tables) or drinking
     fountains to a place, from city data. `what` is restroom or drinking_fountain."""
     return nearby.nearby(near, what, n).as_dict()
+
+
+@mcp.tool(annotations=READ)
+def alerts_near(near: str, radius_m: int = 1000, since_minutes: int | None = None) -> dict:
+    """Road incidents and closures, subway station alerts and weather warnings in effect right
+    now near a place, closest first. since_minutes limits to alerts posted in the last that many
+    minutes, for "anything new near me?"."""
+    return alerts.alerts_near(near, radius_m, since_minutes).as_dict()
 
 
 @mcp.tool(annotations=READ)

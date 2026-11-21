@@ -10,6 +10,7 @@ import threading
 from mcp.server.mcpserver import MCPServer
 from mcp_types import ToolAnnotations
 
+from .tools import alerts as city_alerts
 from .tools import live, trips, web
 from .tools import nearby as amenities
 from .tools.http import load_keys
@@ -122,6 +123,13 @@ def nearby(near: str, what: str = "restroom", n: int = 5) -> dict:
     """The nearest public restrooms (hours, access, changing tables) or drinking fountains to
     a place, from NYC Open Data. `what` is restroom or drinking_fountain."""
     return amenities.nearby(near, what, n).as_dict()
+
+
+@server.tool(annotations=LIVE)
+def alerts_near(near: str, radius_m: int = 1000, since_minutes: int | None = None) -> dict:
+    """Road incidents and closures, subway station alerts and weather warnings in effect right
+    now near a place, closest first; since_minutes limits to recently posted ones."""
+    return city_alerts.alerts_near(near, radius_m, since_minutes).as_dict()
 
 
 @server.tool(annotations=LIVE)

@@ -1993,3 +1993,33 @@ def test_access_requests_tokens_and_limits(app_dsn):
     assert access.set_status(rid, "revoked")
     assert access.grant(once) is None
     assert access.delete(rid)
+
+
+def test_alerts_near_lists_close_and_area_wide_alerts_only(app_dsn, monkeypatch):
+    from nycynapse.catalog import store
+    from nycynapse.tools import alerts
+
+    conn = store.connect(app_dsn)
+    store.migrate(conn)
+    conn.execute("DELETE FROM app.city_alerts WHERE id LIKE 'test:%'")
+    for i, (lat, lon, kind, title) in enumerate(
+        [
+            (40.7590, -73.9850, "closure", "W 47 St closed"),
+            (40.70, -73.80, "incident", "Far away"),
+            (None, None, "weather", "Wind advisory"),
+        ]
+    ):
+        conn.execute(
+            "INSERT INTO app.city_alerts (id, source, kind, title, lat, lon, area) VALUES "
+            "(%s, 'test', %s, %s, %s, %s, %s)",
+            (f"test:{i}", kind, title, lat, lon, "Manhattan" if lat is None else None),
+        )
+    monkeypatch.setattr(alerts, "_db", lambda: conn)
+    monkeypatch.setattr(
+        "nycynapse.tools.trips.locate",
+        lambda t: {"name": "Times Square", "lat": 40.7580, "lon": -73.9855},
+    )
+    out = alerts.alerts_near("Times Square", 500).summary
+    assert "W 47 St closed" in out and "Wind advisory" in out and "Far away" not in out
+    assert out.index("W 47 St closed") < out.index("Wind advisory")  # close ones first
+    conn.execute("DELETE FROM app.city_alerts WHERE id LIKE 'test:%'")
