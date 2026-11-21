@@ -45,6 +45,8 @@ fixing, write the whole answer again in `fixed`, corrected, ready for the reader
 - never add a time, price, distance or count that is not in the tool results, and never add
   advice the draft did not have
 - if it has to get shorter, drop side notes first and keep the best option and its times
-- do not mention the check, the draft or the tools
+- do not mention the check, the draft or the tools, and never say what a tool, planner, page
+  or search shows or could not confirm: say what is true of the city ("no earlier direct train
+  leaves before 9:56"), or leave the point out
 
 When nothing had to change, `fixed` is null.

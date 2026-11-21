@@ -443,6 +443,15 @@ class Agent:
             # Going back to look for an unanswered part costs two or three more calls; once the
             # turn has run a while, the corrected answer in hand is the better trade.
             late = time.monotonic() - t.started > LOOK_UNTIL_S
+            # The check's own rewrite can bring back talk about tools or what was not checked
+            # ("the planner shows", "I can't confirm"): that one is written again, once, by the
+            # answering model, if there is time.
+            if t.fixed and t.redrafts == 0 and room:
+                smells = [i for i in _draft_issues(t.fixed) if not i.startswith("it runs past")]
+                if smells:
+                    t.steps.append({"note": "the check's rewrite " + "; ".join(smells)})
+                    answer, issues, found, loose = t.fixed, smells, [], []
+                    t.fixed = None
             if answer and not calls and issues and t.fixed and not (t.look and room and not late):
                 # The check already wrote the corrected answer from the same tool results:
                 # take it. Only a part still unanswered goes back to the model, with tools.

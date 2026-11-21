@@ -1241,6 +1241,28 @@ def test_check_hands_back_the_fixed_answer_without_a_rewrite(monkeypatch):
     assert [x["name"] for x in timeline] == ["step", "trip_plan", "step", "verify"]
 
 
+def test_a_fix_that_talks_about_the_tools_is_written_again(monkeypatch):
+    agent, seen = _agent(
+        monkeypatch,
+        [
+            _step(calls=[("trip_plan", {})]),
+            _step(answer="Take the 9:56 AM direct train, arriving 11:17 AM [1], and plan to hike."),
+            {
+                "problems": [{"quote": "and plan to hike", "why": "not supported"}],
+                "unfinished": [],
+                "fixed": "Take the 9:56 AM direct train, arriving 11:17 AM [1]. The planner shows "
+                "no earlier train, so I can't promise there isn't one.",
+            },
+            _step(answer="Take the 9:56 AM direct train, arriving 11:17 AM [1]."),
+        ],
+        [_tool("trip_plan", text="9:56 AM to Cold Spring, arrive 11:17 AM")],
+    )
+    agent.verify_answers = True
+    out = agent.run("train to cold spring tomorrow morning?", [], lambda e, d: None)
+    assert out["answer"].replace(" [", "[") == "Take the 9:56 AM direct train, arriving 11:17 AM[1]."
+    assert "planner" in seen[3][1]  # the rewrite was told what to fix
+
+
 def test_late_in_a_turn_the_fix_beats_going_back_to_look(monkeypatch):
     agent, seen = _agent(
         monkeypatch,
