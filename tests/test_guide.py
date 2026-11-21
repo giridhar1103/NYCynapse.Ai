@@ -677,6 +677,31 @@ def test_talking_about_what_was_not_checked_is_sent_back():
     assert not core._draft_issues("The 9:56 AM runs direct to Cold Spring.")
 
 
+def test_a_plain_trip_question_is_planned_before_the_first_model_call(monkeypatch):
+    real = {"penn station", "the met", "jfk terminal 4", "columbia university"}
+    monkeypatch.setattr(
+        "nycynapse.tools.trips.locate",
+        lambda t: {"name": t, "lat": 40.7, "lon": -74.0} if t.lower() in real or "," in t else None,
+    )
+
+    def args(q, where=None):
+        got = [c for c in core._prefetch(q, where) if c["tool"] == "trip_plan"]
+        return json.loads(got[0]["args"]) if got else None
+
+    a = args("How do I get from Penn Station to the Met tomorrow at 10am?")
+    assert (a["origin"], a["destination"], a["when"]) == (
+        "Penn Station",
+        "the Met",
+        "tomorrow at 10am",
+    )
+    a = args("fastest way to get to JFK Terminal 4 from Columbia University by 6pm")
+    assert a["destination"] == "JFK Terminal 4" and a["arrive_by"] is True
+    assert args("from here to the Met?", (40.7527, -73.9772))["origin"] == "40.7527,-73.9772"
+    assert args("from here to the Met?") is None  # no shared location
+    assert args("from Narnia to the Met") is None  # not a real place
+    assert args("Is the 7 train running?") is None
+
+
 def test_the_line_moves_first_come_first_served():
     from nycynapse.api.capacity import Full, Gate
 

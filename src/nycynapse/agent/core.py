@@ -329,7 +329,7 @@ class Agent:
         )
         force = False
         last: tuple[str, dict] | None = None  # the latest draft, in case the rounds run out
-        early = self._valid_calls(t, _prefetch(question)) if PREFETCH else []
+        early = self._valid_calls(t, _prefetch(question, where)) if PREFETCH else []
         if early:
             # The obvious live check for this kind of question, made before the first model
             # call, so that call can answer instead of only asking for it.
@@ -986,10 +986,64 @@ _LATER = re.compile(
 )
 
 
-def _prefetch(question: str) -> list[dict]:
+_STOP = (
+    r"(?=\s+(?:at|by|on|around|before|after|tomorrow|tonight|today|this|next|leaving|"
+    r"arriving|for|with|and|so|because|asap|now|right now)\b|\s*[?.!,;]|\s*$)"
+)
+_FROM_TO = re.compile(
+    rf"\bfrom\s+(?P<a>[^?.!,;]{{2,60}}?)\s+to\s+(?P<b>[^?.!,;]{{2,60}}?){_STOP}", re.I
+)
+_TO_FROM = re.compile(
+    rf"\b(?:get|go|getting|going|head|heading|travel|commute)\s+to\s+(?P<b>[^?.!,;]{{2,60}}?)"
+    rf"\s+from\s+(?P<a>[^?.!,;]{{2,60}}?){_STOP}",
+    re.I,
+)
+_WHEN = re.compile(
+    r"\b(?:(?:tomorrow|tonight|today|this (?:morning|afternoon|evening)|"
+    r"(?:mon|tues|wednes|thurs|fri|satur|sun)day)(?:\s+(?:morning|afternoon|evening|night))?"
+    r"(?:\s+(?:at|around|by)?\s*\d{1,2}(?::\d\d)?\s*(?:am|pm))?"
+    r"|\d{1,2}(?::\d\d)?\s*(?:am|pm))\b",
+    re.I,
+)
+_DEADLINE = re.compile(r"\b(?:by|before|no later than|arrive by|be there by)\s+\d", re.I)
+_HERE = re.compile(r"^(?:here|my location|where i am|me)$", re.I)
+
+
+def _trip_prefetch(question: str, where: tuple[float, float] | None) -> dict | None:
+    """A trip_plan call for a plain "from A to B" question, only when both ends are real
+    places. The model still reads the question and can plan again with other details."""
+    from ..tools.trips import locate
+
+    m = _FROM_TO.search(question) or _TO_FROM.search(question)
+    if not m:
+        return None
+    a, b = m.group("a").strip(), m.group("b").strip()
+    if _HERE.match(a):
+        if not where:
+            return None
+        a = f"{where[0]:.4f},{where[1]:.4f}"
+    if _HERE.match(b):
+        return None
+    try:
+        if not (locate(a) and locate(b)):
+            return None
+    except Exception:  # noqa: BLE001 - the model will plan it itself
+        return None
+    w = _WHEN.search(question)
+    args = {"origin": a, "destination": b, "mode": "all", "when": w.group(0) if w else "now"}
+    if w and _DEADLINE.search(question):
+        args["arrive_by"] = True
+    return {"tool": "trip_plan", "args": json.dumps(args)}
+
+
+def _prefetch(question: str, where: tuple[float, float] | None = None) -> list[dict]:
     """Tool calls a question plainly needs, whatever else it asks: the alerts for a subway line
-    asked about, the weather when it asks about rain. Nothing when in doubt."""
+    asked about, the weather when it asks about rain, the trip for a plain "from A to B".
+    Nothing when in doubt."""
     calls = []
+    trip = _trip_prefetch(question, where)
+    if trip:
+        calls.append(trip)
     m = _LINE.search(question)
     if m and _STATUS.search(question):
         calls.append({"tool": "subway_alerts", "args": json.dumps({"line": m.group(1)})})
