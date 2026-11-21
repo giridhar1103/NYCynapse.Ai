@@ -485,3 +485,7 @@ a.cite:hover { background: var(--ink); color: var(--bg); border-color: var(--ink
 .notice .retry { margin-left: 6px; background: var(--ink); color: var(--bg); border: 0; border-radius: 999px; padding: 4px 12px; font-size: 13px; font-weight: 700; cursor: pointer; }
 .cta-link { display: inline-block; font-weight: 700; color: var(--line); text-decoration: none; border-bottom: 2px solid currentColor; padding-bottom: 2px; }
 .cta-link:hover { opacity: .8; }
+.w-alerts { display: flex; flex-direction: column; gap: 4px; margin: 0 0 16px; }
+.w-alert-btn { align-self: flex-start; background: var(--lake); color: #fff; border: 0; border-radius: 999px; padding: 8px 16px; font-weight: 700; font-size: 14px; cursor: pointer; }
+.w-alert-btn:disabled { opacity: .6; }
+.w-alerts .muted-note { font-size: 13px; color: var(--muted); }

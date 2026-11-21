@@ -2023,3 +2023,30 @@ def test_alerts_near_lists_close_and_area_wide_alerts_only(app_dsn, monkeypatch)
     assert "W 47 St closed" in out and "Wind advisory" in out and "Far away" not in out
     assert out.index("W 47 St closed") < out.index("Wind advisory")  # close ones first
     conn.execute("DELETE FROM app.city_alerts WHERE id LIKE 'test:%'")
+
+
+def test_push_goes_to_watches_near_fresh_alerts_with_limits(app_dsn, monkeypatch):
+    from nycynapse.catalog import store
+    from nycynapse.connect import push
+
+    conn = store.connect(app_dsn)
+    store.migrate(conn)
+    conn.execute("DELETE FROM app.push_watch; DELETE FROM app.city_alerts WHERE id LIKE 'test:%'")
+    monkeypatch.setattr(push, "_db", lambda: conn)
+    monkeypatch.setenv("NYCYNAPSE_VAPID_PRIVATE", "/dev/null")
+    sub = {"endpoint": "https://push.example.com/abc", "keys": {"p256dh": "k", "auth": "a"}}
+    assert push.watch(sub, 40.7580, -73.9855, 1000)
+    assert not push.watch(sub, 51.5, -0.1, 1000)  # outside the city
+    conn.execute(
+        "INSERT INTO app.city_alerts (id, source, kind, title, lat, lon, severity, starts) VALUES "
+        "('test:near', 'test', 'incident', 'Water main break', 40.7590, -73.9850, 3, now()), "
+        "('test:old', 'test', 'closure', 'Long closure', 40.7590, -73.9850, 3, "
+        "now() - interval '3 days'), "
+        "('test:far', 'test', 'incident', 'Far crash', 40.65, -73.95, 3, now())"
+    )
+    sent = []
+    monkeypatch.setattr(push, "_send", lambda w, p: sent.append(p["body"]) or True)
+    assert push.notify(["test:near", "test:old", "test:far"]) == 1
+    assert sent == ["Water main break (near your watched spot)"]
+    assert push.notify(["test:near"]) == 0  # at most one every 15 minutes
+    conn.execute("DELETE FROM app.push_watch; DELETE FROM app.city_alerts WHERE id LIKE 'test:%'")

@@ -1,6 +1,6 @@
 // Keeps the site's own files on the device so a second visit opens fast, even on a slow
 // connection. Questions and live data (anything under api/) always go to the network.
-const CACHE = "nycynapse-v1";
+const CACHE = "nycynapse-v2";
 
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (e) => {
@@ -41,5 +41,27 @@ self.addEventListener("fetch", (e) => {
       }
       throw err;
     }
+  })());
+});
+
+// Alerts near a watched spot, pushed by the guide's alerts poller.
+self.addEventListener("push", (e) => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch (_) { d = { body: e.data && e.data.text() }; }
+  e.waitUntil(self.registration.showNotification(d.title || "NYCynapse alert", {
+    body: d.body || "Something new near your watched spot.",
+    tag: d.tag, icon: "static/icons/icon-192.png", badge: "static/icons/icon-192.png",
+    data: { url: d.url || "./#guide" },
+  }));
+});
+
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  const url = new URL((e.notification.data && e.notification.data.url) || "./#guide", self.registration.scope).href;
+  e.waitUntil((async () => {
+    for (const c of await self.clients.matchAll({ type: "window", includeUncontrolled: true })) {
+      if (c.url.startsWith(self.registration.scope)) { await c.focus(); return c.navigate(url); }
+    }
+    return self.clients.openWindow(url);
   })());
 });

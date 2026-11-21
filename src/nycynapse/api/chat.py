@@ -193,6 +193,9 @@ def config():
         "examples": [{"q": e["q"], "tag": e["tag"]} for e in EXAMPLES],
         "idle_minutes": IDLE_MINUTES,
         "capacity": gate.stats(),
+        "connect_base": os.environ.get(
+            "NYCYNAPSE_CONNECT_BASE", "https://api.giriworks.com/nycynapse"
+        ).rstrip("/"),
     }
 
 

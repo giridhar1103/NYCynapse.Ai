@@ -24,7 +24,7 @@ from zoneinfo import ZoneInfo
 
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, RedirectResponse, Response
+from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from starlette.routing import Route
 
 from ..catalog import store as catalog_store
@@ -407,6 +407,58 @@ def _dashboard(rows: list[dict]) -> str:
     return out + stats + f"<div class='card'>{table}</div>"
 
 
+# ------------------------------------------------------------------------- alerts near a spot
+
+WATCH_ORIGINS = {"https://giriworks.com", "https://www.giriworks.com"}
+_watch_hits: dict[str, list[float]] = {}
+
+
+async def watch_api(request: Request):
+    """The guide's page subscribes a browser to push alerts near a spot (or stops them)."""
+    origin = request.headers.get("origin", "")
+    cors = (
+        {
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+            "Access-Control-Allow-Headers": "content-type",
+            "Access-Control-Max-Age": "600",
+            "Vary": "Origin",
+        }
+        if origin in WATCH_ORIGINS
+        else {}
+    )
+    if request.method == "OPTIONS":
+        return Response(status_code=204, headers=cors)
+    if request.method == "GET":
+        return JSONResponse({"key": os.environ.get("NYCYNAPSE_VAPID_PUBLIC", "")}, headers=cors)
+    if not cors:
+        return JSONResponse({"ok": False}, status_code=403)
+    client = _client(request)
+    recent = [t for t in _watch_hits.get(client, []) if time.time() - t < 3600]
+    if len(recent) >= 20:
+        return JSONResponse(
+            {"ok": False, "error": "too many changes"}, status_code=429, headers=cors
+        )
+    _watch_hits[client] = recent + [time.time()]
+    try:
+        data = await request.json()
+    except ValueError:
+        return JSONResponse({"ok": False}, status_code=400, headers=cors)
+    from . import push
+
+    sub = data.get("subscription") or {}
+    if data.get("action") == "stop":
+        await asyncio.to_thread(push.unwatch, str(sub.get("endpoint", "")))
+        return JSONResponse({"ok": True}, headers=cors)
+    try:
+        lat, lon = float(data.get("lat")), float(data.get("lon"))
+        radius = int(data.get("radius_m") or 1000)
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False}, status_code=400, headers=cors)
+    ok = await asyncio.to_thread(push.watch, sub, lat, lon, radius)
+    return JSONResponse({"ok": ok}, status_code=200 if ok else 400, headers=cors)
+
+
 # ------------------------------------------------------------------------------------- the app
 
 
@@ -426,6 +478,7 @@ pages = Starlette(
         Route("/connect/status/{key}", status_page),
         Route("/connect/admin", admin, methods=["GET", "POST"]),
         Route("/connect/admin/login", admin, methods=["POST"]),
+        Route("/connect/watch", watch_api, methods=["GET", "POST", "OPTIONS"]),
     ],
     lifespan=lifespan,
 )

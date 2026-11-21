@@ -115,12 +115,78 @@ class Guide {
       el("p", { class: "w-sub" }, "Answers use live feeds and city data, with every source shown. Tap the pin to plan from where you are."));
     const list = (title, items) => items.length && box.append(el("div", { class: "w-group" }, el("span", { class: "w-label" }, title),
       ...items.map((q) => el("button", { type: "button", class: "w-q", onclick: () => this.ask(q) }, q))));
+    box.append(this.alertsButton());
     list("Your recent questions", recent.slice(0, 4));
     this.config.then((cfg) => {
       if (this.log.firstElementChild !== box) return;
       list("Try", (cfg.examples || []).map((x) => x.q).filter((q) => !recent.includes(q)).slice(0, 4));
     });
     this.log.append(box);
+  }
+
+  // "Get alerts near you": a push notification when a road incident, closure, station alert or
+  // weather warning appears near the reader's spot. Asked for only on a tap; renewed on visits.
+  alertsButton() {
+    const can = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+    const wrap = el("div", { class: "w-alerts" });
+    if (!can) return wrap;
+    const btn = el("button", { type: "button", class: "w-alert-btn" });
+    const note = el("span", { class: "muted-note" });
+    const draw = () => {
+      const on = !!watching();
+      btn.textContent = on ? "Stop alerts near me" : "Get alerts near you";
+      note.textContent = on ? "You'll get a notification when something new happens near your spot." : "Road closures, incidents, station alerts and weather warnings, as they happen.";
+    };
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      try { if (watching()) await this.stopAlerts(); else await this.startAlerts(); }
+      catch (e) { note.textContent = e.message || "Alerts couldn't be turned on in this browser."; btn.disabled = false; return; }
+      btn.disabled = false; draw();
+    });
+    draw();
+    this.renewAlerts();
+    wrap.append(btn, note);
+    return wrap;
+  }
+
+  async connectBase() { return (await this.config).connect_base || "https://api.giriworks.com/nycynapse"; }
+
+  async startAlerts() {
+    if ((await Notification.requestPermission()) !== "granted") throw new Error("Notifications are blocked for this site.");
+    const spot = this.where ? this.where.split(",").map(Number) : await new Promise((res, rej) =>
+      navigator.geolocation.getCurrentPosition((p) => res([p.coords.latitude, p.coords.longitude]),
+        () => rej(new Error("Location is needed to know what's near you.")), { timeout: 10000, maximumAge: 300000 }));
+    const base = await this.connectBase();
+    const { key } = await (await fetch(base + "/connect/watch")).json();
+    const reg = await navigator.serviceWorker.ready;
+    const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64(key) });
+    const r = await fetch(base + "/connect/watch", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ subscription: sub.toJSON(), lat: +spot[0].toFixed(3), lon: +spot[1].toFixed(3), radius_m: 1000 }) });
+    if (!r.ok) throw new Error("That spot is outside the area NYCynapse covers.");
+    try { localStorage.setItem(WATCH, JSON.stringify({ lat: +spot[0].toFixed(3), lon: +spot[1].toFixed(3) })); } catch (_) { /* private mode */ }
+  }
+
+  async stopAlerts() {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if (sub) {
+      await fetch((await this.connectBase()) + "/connect/watch", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "stop", subscription: sub.toJSON() }) }).catch(() => {});
+      await sub.unsubscribe().catch(() => {});
+    }
+    try { localStorage.removeItem(WATCH); } catch (_) { /* private mode */ }
+  }
+
+  async renewAlerts() {
+    const spot = watching();
+    if (!spot || this.renewed) return;
+    this.renewed = true;
+    try {
+      const sub = await (await navigator.serviceWorker.ready).pushManager.getSubscription();
+      if (!sub) return;
+      await fetch((await this.connectBase()) + "/connect/watch", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subscription: sub.toJSON(), lat: spot.lat, lon: spot.lon, radius_m: 1000 }) });
+    } catch (_) { /* tried again next visit */ }
   }
 
   isOpen() { return !this.root.hidden; }
@@ -424,6 +490,16 @@ function tripPanel(trip, draw) {
 }
 
 let uid = 0;
+
+const WATCH = "nycynapse.watch";
+function watching() {
+  try { return JSON.parse(localStorage.getItem(WATCH) || "null"); } catch (_) { return null; }
+}
+function b64(s) {
+  const pad = "=".repeat((4 - (s.length % 4)) % 4);
+  const raw = atob((s + pad).replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from(raw, (c) => c.charCodeAt(0));
+}
 
 // The reader's last questions, on this device only.
 const RECENT = "nycynapse.recent";

@@ -21,6 +21,7 @@ dependencies = [
     "uvicorn>=0.30",
     "trafilatura>=2",
     "pypdf>=5",
+    "pywebpush>=2.0,<3",
 ]
 
 [project.optional-dependencies]
