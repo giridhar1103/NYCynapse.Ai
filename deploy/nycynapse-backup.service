@@ -1,0 +1,10 @@
+[Unit]
+Description=NYCynapse app database backup
+After=postgresql.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/root/.secrets/nycynapse-web.env
+ExecStart=/root/NYCynapse/deploy/backup.sh
+Nice=10
+IOSchedulingClass=idle

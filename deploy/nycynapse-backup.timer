@@ -1,0 +1,10 @@
+[Unit]
+Description=NYCynapse app database backup, nightly
+
+[Timer]
+OnCalendar=*-*-* 04:40:00
+RandomizedDelaySec=600
+Persistent=true
+
+[Install]
+WantedBy=timers.target
