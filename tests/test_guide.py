@@ -2228,3 +2228,24 @@ def test_next_trains_reads_the_live_feed_by_direction(monkeypatch):
     assert "L toward Canarsie-Rockaway Pkwy: 7 min" in r.summary
     assert "500 min" not in r.summary  # predictions hours away are left out
     assert not arrivals.next_trains("Bedford Av", "G").ok
+
+
+def test_saved_home_and_work_feed_the_trip_and_stay_out_of_the_trace(monkeypatch):
+    from nycynapse.agent import core
+
+    monkeypatch.setattr(
+        "nycynapse.tools.trips.locate", lambda t: {"name": t, "lat": 40.7, "lon": -74.0}
+    )
+    places = {"home": (40.712, -73.951), "work": (40.754, -73.984)}
+    call = core._trip_prefetch("How do I get from home to work?", None, places)
+    args = json.loads(call["args"])
+    assert (args["origin"], args["destination"]) == (
+        "40.7120,-73.9510 (home)",
+        "40.7540,-73.9840 (work)",
+    )
+    assert core._trip_prefetch("How do I get from home to work?", None, None) is None
+    kept = core._hide_where({"origin": args["origin"], "destination": "Times Square"}, None, places)
+    assert kept == {"origin": "(reader's home) (home)", "destination": "Times Square"}
+    from nycynapse.tools.placenames import _locate
+
+    assert _locate("40.7120,-73.9510 (home)")["name"] == "Home"

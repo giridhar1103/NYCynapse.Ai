@@ -268,12 +268,17 @@ async def chat(
     chat: str = "",
     token: str = "",
     at: str = Query("", max_length=40),
+    home: str = Query("", max_length=40),
+    work: str = Query("", max_length=40),
 ):
     client = _client(request)
     ip = _address(request)
     question = _clean(q)
+    # Home and work are saved on the reader's device and sent only with a question that names
+    # them; like the location, they are never stored.
+    places = {k: v for k, v in (("home", _where(home)), ("work", _where(work))) if v}
     return StreamingResponse(
-        _turn(question, chat.strip() or None, token, client, ip, _where(at)),
+        _turn(question, chat.strip() or None, token, client, ip, _where(at), places),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
     )
@@ -296,8 +301,10 @@ async def _turn(
     client: str,
     ip: str | None,
     where: tuple[float, float] | None = None,
+    places: dict[str, tuple[float, float]] | None = None,
 ):
     loop = asyncio.get_running_loop()
+    personal = bool(where or places)  # never cached or replayed to anyone else
 
     def err(code: str, message: str | None = None) -> bytes:
         return _sse("error", {"code": code, "message": message or MESSAGES[code]})
@@ -333,7 +340,7 @@ async def _turn(
     yield _sse("chat", {"id": slot.chat_id, "turn": slot.turn, "max_turns": MAX_TURNS})
 
     if slot.turn == 1:
-        cached = None if where else _answered_recently(question)
+        cached = None if personal else _answered_recently(question)
         cached = cached or await asyncio.to_thread(chats().example, question)
         if cached:
             for chunk in _replay(cached):
@@ -398,14 +405,14 @@ async def _turn(
         # Owns the seat: gives it back when the answer is done, even if the reader has left.
         try:
             out = (
-                a.run(question, slot.history, emit, where)
-                if where
+                a.run(question, slot.history, emit, where, places or None)
+                if personal
                 else a.run(question, slot.history, emit)
             )
             outcome = "answered" if out.get("answer") and not out.get("error") else "failed"
             if out.get("declined"):
                 outcome = "declined"
-            if slot.turn == 1 and not where:
+            if slot.turn == 1 and not personal:
                 _keep_answer(question, out)
             out["steps"] = (out.get("steps") or []) + [{"queued_ms": queued_ms}]
             _log_turn(slot, out, outcome, queued_ms)

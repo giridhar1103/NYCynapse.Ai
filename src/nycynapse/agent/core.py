@@ -237,6 +237,7 @@ class Turn:
     fixed: str | None = None  # the corrected answer the last fact check handed back
     timeline: list[dict] = field(default_factory=list)  # every model and tool call, timed
     where: tuple[float, float] | None = None  # the reader's location, if they shared it
+    places: dict[str, tuple[float, float]] | None = None  # home and work saved on their device
 
 
 class Agent:
@@ -320,8 +321,9 @@ class Agent:
         history: list[dict],
         emit: Callable[[str, dict], None],
         where: tuple[float, float] | None = None,
+        places: dict[str, tuple[float, float]] | None = None,
     ) -> dict:
-        t = Turn(question=question, history=history, emit=emit, where=where)
+        t = Turn(question=question, history=history, emit=emit, where=where, places=places)
         system = load_prompt("agent")
         static = (
             f"Now: {now_as_of()} (New York).\n\nTools:\n{self._tool_text()}\n\n"
@@ -329,7 +331,7 @@ class Agent:
         )
         force = False
         last: tuple[str, dict] | None = None  # the latest draft, in case the rounds run out
-        early = self._valid_calls(t, _prefetch(question, where)) if PREFETCH else []
+        early = self._valid_calls(t, _prefetch(question, where, places)) if PREFETCH else []
         if early:
             # The obvious live check for this kind of question, made before the first model
             # call, so that call can answer instead of only asking for it.
@@ -780,6 +782,13 @@ class Agent:
                 "find_place). Never write the coordinates in the answer; call it "
                 '"where you are".'
             )
+        for name, (lat, lon) in (t.places or {}).items():
+            parts.append(
+                f"The reader saved their {name} on their device: {lat:.4f},{lon:.4f}. When they "
+                f"say {name} (from {name}, to {name}, near {name}), use exactly "
+                f'"{lat:.4f},{lon:.4f} ({name})" as the place. Never write the coordinates or '
+                f'guess the street; call it "{name}".'
+            )
         parts.append(f"Reader's question: {t.question}")
         if t.results:
             numbers = {key: n for n, key, _ in _registry(t.results)}
@@ -936,7 +945,7 @@ class Agent:
                 {
                     "tool": r["tool"],
                     "kind": kinds.get(r["tool"]),
-                    "args": _hide_where(_public_args(r["args"]), t.where),
+                    "args": _hide_where(_public_args(r["args"]), t.where, t.places),
                     "ok": r["result"].ok,
                     "error": r["result"].error,
                     "ms": r.get("ms"),
@@ -961,7 +970,7 @@ class Agent:
             "trace": [
                 {
                     "tool": r["tool"],
-                    "args": _hide_where(r["args"], t.where),
+                    "args": _hide_where(r["args"], t.where, t.places),
                     "ok": r["result"].ok,
                     "summary": (r["result"].summary or "")[:6000],
                 }
@@ -1013,6 +1022,17 @@ _WHEN = re.compile(
 )
 _DEADLINE = re.compile(r"\b(?:by|before|no later than|arrive by|be there by)\s+\d", re.I)
 _HERE = re.compile(r"^(?:here|my location|where i am|me)$", re.I)
+_SAVED = {
+    "home": "home",
+    "my home": "home",
+    "my place": "home",
+    "my apartment": "home",
+    "work": "work",
+    "my work": "work",
+    "the office": "work",
+    "my office": "work",
+    "office": "work",
+}
 _RESTROOM = re.compile(r"\b(?:restrooms?|bathrooms?|toilets?|washrooms?|loos?)\b", re.I)
 _HAPPENING = re.compile(
     r"\b(?:anything (?:going on|happening)|what'?s (?:going on|happening)|any (?:incidents?|"
@@ -1021,7 +1041,9 @@ _HAPPENING = re.compile(
 )
 
 
-def _trip_prefetch(question: str, where: tuple[float, float] | None) -> dict | None:
+def _trip_prefetch(
+    question: str, where: tuple[float, float] | None, places: dict | None = None
+) -> dict | None:
     """A trip_plan call for a plain "from A to B" question, only when both ends are real
     places. The model still reads the question and can plan again with other details."""
     from ..tools.trips import locate
@@ -1036,6 +1058,14 @@ def _trip_prefetch(question: str, where: tuple[float, float] | None) -> dict | N
         a = f"{where[0]:.4f},{where[1]:.4f}"
     if _HERE.match(b):
         return None
+    ends = []
+    for x in (a, b):
+        saved = (places or {}).get(_SAVED.get(x.lower(), ""))
+        if x.lower() in _SAVED and not saved:
+            return None  # "home" without a saved home: the model asks
+        kind = _SAVED.get(x.lower())
+        ends.append(f"{saved[0]:.4f},{saved[1]:.4f} ({kind})" if saved else x)
+    a, b = ends
     try:
         if not (locate(a) and locate(b)):
             return None
@@ -1053,12 +1083,14 @@ def _trip_prefetch(question: str, where: tuple[float, float] | None) -> dict | N
     return {"tool": "trip_plan", "args": json.dumps(args)}
 
 
-def _prefetch(question: str, where: tuple[float, float] | None = None) -> list[dict]:
+def _prefetch(
+    question: str, where: tuple[float, float] | None = None, places: dict | None = None
+) -> list[dict]:
     """Tool calls a question plainly needs, whatever else it asks: the alerts for a subway line
     asked about, the weather when it asks about rain, the trip for a plain "from A to B".
     Nothing when in doubt."""
     calls = []
-    trip = _trip_prefetch(question, where)
+    trip = _trip_prefetch(question, where, places)
     if trip:
         calls.append(trip)
     # With the reader's own location, "a bathroom near me" or "anything going on around here"
@@ -1163,15 +1195,19 @@ def _short(text: str, n: int = 160) -> str:
     return text if len(text) <= n else text[: n - 1] + "…"
 
 
-def _hide_where(args: dict, where: tuple[float, float] | None) -> dict:
-    """What is kept of a turn never holds the reader's own location."""
-    if not where:
+def _hide_where(args: dict, where: tuple[float, float] | None, places: dict | None = None) -> dict:
+    """What is kept of a turn never holds the reader's own location, home or work."""
+    spots = {"(reader location)": where} if where else {}
+    spots.update({f"(reader's {k})": v for k, v in (places or {}).items()})
+    if not spots:
         return args
 
     def hide(m: re.Match) -> str:
         lat, lon = float(m.group(1)), float(m.group(2))
-        near = abs(lat - where[0]) < 0.01 and abs(lon - where[1]) < 0.01
-        return "(reader location)" if near else m.group(0)
+        for label, (y, x) in spots.items():
+            if abs(lat - y) < 0.01 and abs(lon - x) < 0.01:
+                return label
+        return m.group(0)
 
     def clean(v):
         return _COORDS.sub(hide, v) if isinstance(v, str) else v

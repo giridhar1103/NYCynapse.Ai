@@ -494,3 +494,8 @@ a.cite:hover { background: var(--ink); color: var(--bg); border-color: var(--ink
 .answer-card.draft > :not(.draft-label) { opacity: .55; }
 .answer-card.draft .draft-label { display: inline-block; font-size: 12px; font-weight: 700; color: var(--line); background: var(--line-soft); border-radius: 999px; padding: 2px 10px; margin-bottom: 8px; animation: pulse 1.6s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .answer-card.draft .draft-label { animation: none; } }
+.g-save { display: inline-flex; gap: 2px; }
+.g-where .g-keep { border-left: 1px solid color-mix(in srgb, var(--lake) 30%, transparent) !important; border-radius: 0 !important; padding: 0 8px !important; font-weight: 500; }
+.g-where .g-keep:disabled { opacity: .7; cursor: default; }
+.w-forget { background: none; border: 0; padding: 0 0 0 4px; color: var(--muted); font: inherit; text-decoration: underline; cursor: pointer; }
+

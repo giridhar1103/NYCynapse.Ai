@@ -826,11 +826,14 @@ def _locate(text: str) -> dict | None:
     raw = (text or "").strip()[:120]
     if not raw:
         return None
-    m = re.fullmatch(r"\s*(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)\s*", raw)
+    m = re.fullmatch(
+        r"\s*(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)\s*(?:\((home|work)\))?\s*", raw, re.I
+    )
     if m:
         lat, lon = float(m.group(1)), float(m.group(2))
-        # Coordinates come from a reader who shared their location.
-        return {"name": "Your location", "lat": lat, "lon": lon} if _inside(lat, lon) else None
+        # Coordinates come from a reader who shared their location or saved home or work.
+        name = m.group(3).capitalize() if m.group(3) else "Your location"
+        return {"name": name, "lat": lat, "lon": lon} if _inside(lat, lon) else None
     n = _norm(raw)
     low = " ".join(re.sub(r"[^a-z0-9 ]+", " ", raw.lower()).split())
     term = re.search(r"\bterminal\s*([a-c1-8])\b|\bt([1-8])\b", low)

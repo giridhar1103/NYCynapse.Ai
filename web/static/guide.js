@@ -58,6 +58,7 @@ class Guide {
   // with each question while it is on, and never stored by the server.
   setupLocation() {
     const btn = $("g-loc"), pill = $("g-where");
+    const save = $("g-save");
     const set = (where, note) => {
       this.where = where;
       btn.setAttribute("aria-pressed", String(!!where));
@@ -65,6 +66,12 @@ class Guide {
       pill.hidden = !where && !note;
       pill.firstElementChild.textContent = where ? "Using where you are" : note || "";
       pill.classList.toggle("warn", !where && !!note);
+      // While the location is on, it can be kept on this device as home or work.
+      save.replaceChildren(...(where ? ["home", "work"].map((kind) => {
+        const b = el("button", { type: "button", class: "g-keep", title: `Remember this spot as ${kind}, on this device only` }, `Save as ${kind}`);
+        b.addEventListener("click", () => { keepPlace(kind, where); b.textContent = `Saved as ${kind}`; b.disabled = true; });
+        return b;
+      }) : []));
     };
     $("g-where-off").addEventListener("click", () => set(null));
     btn.addEventListener("click", () => {
@@ -135,7 +142,19 @@ class Guide {
     const recent = recall();
     const box = el("div", { class: "welcome" },
       el("p", { class: "w-title" }, "Ask about getting around, the weather, the streets or the city's own records."),
-      el("p", { class: "w-sub" }, "Answers use live feeds and city data, with every source shown. Tap the pin to plan from where you are."));
+      el("p", { class: "w-sub" }, "Answers use live feeds and city data, with every source shown. Tap the pin to plan from where you are, or to save it as home or work."));
+    const kept = places();
+    if (kept.home || kept.work) {
+      const forget = el("button", { type: "button", class: "w-forget" }, "Forget");
+      forget.addEventListener("click", () => { keepPlace("home", null); keepPlace("work", null); group.remove(); });
+      const qs = kept.home && kept.work
+        ? ["How do I get from home to work?", "How do I get from work to home?"]
+        : [kept.home ? "What's the weather like near home?" : "Anything going on near work?"];
+      const group = el("div", { class: "w-group" },
+        el("span", { class: "w-label" }, `Saved on this device: ${["home", "work"].filter((k) => kept[k]).join(" and ")} `, forget),
+        ...qs.map((q) => el("button", { type: "button", class: "w-q", onclick: () => this.ask(q) }, q)));
+      box.append(group);
+    }
     const list = (title, items) => items.length && box.append(el("div", { class: "w-group" }, el("span", { class: "w-label" }, title),
       ...items.map((q) => el("button", { type: "button", class: "w-q", onclick: () => this.ask(q) }, q))));
     box.append(this.alertsButton());
@@ -320,7 +339,11 @@ class Guide {
         return;
       }
     }
-    const qs = new URLSearchParams({ q, chat: this.chat || "", token, ...(this.where ? { at: this.where } : {}) });
+    // Saved home and work go only with a question that names them.
+    const kept = places(), named = {};
+    for (const kind of ["home", "work"]) if (kept[kind] && NAMES[kind].test(q)) named[kind] = kept[kind];
+    this.personal = !!this.where || Object.keys(named).length > 0;
+    const qs = new URLSearchParams({ q, chat: this.chat || "", token, ...(this.where ? { at: this.where } : {}), ...named });
     try {
       const r = await fetch(url("api/chat?" + qs), { headers: { Accept: "text/event-stream" } });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -347,6 +370,7 @@ class Guide {
           else if (ev === "answer") {
             ended = true;
             this.turn = d.turn;
+            d.personal = this.personal;
             // Only the answer's own places stay highlighted, not what a tool drew on the way.
             if (!(d.places || []).length) this.map?.clearHighlight();
             view.answer(d, (f) => this.ask(f), (i) => this.map?.focus(i), {
@@ -528,6 +552,21 @@ function b64(s) {
   return Uint8Array.from(raw, (c) => c.charCodeAt(0));
 }
 
+// Home and work, kept on this device only, as rounded coordinates ("40.712,-74.006").
+const PLACES = "nycynapse.places";
+const NAMES = { home: /\b(home|my place|my apartment)\b/i, work: /\b(work|office)\b/i };
+function places() {
+  try {
+    const p = JSON.parse(localStorage.getItem(PLACES) || "{}");
+    return Object.fromEntries(["home", "work"].filter((k) => typeof p?.[k] === "string" && /^-?\d+\.\d+,-?\d+\.\d+$/.test(p[k])).map((k) => [k, p[k]]));
+  } catch (_) { return {}; }
+}
+function keepPlace(kind, spot) {
+  const p = places();
+  if (spot) p[kind] = spot; else delete p[kind];
+  try { localStorage.setItem(PLACES, JSON.stringify(p)); } catch (_) { /* private mode */ }
+}
+
 // The reader's last questions, on this device only.
 const RECENT = "nycynapse.recent";
 function recall() {
@@ -697,6 +736,7 @@ class TurnView {
       if (d.can_rate && d.chat && !d.shared) {
         const share = el("button", { type: "button", class: "copy", "aria-label": "Share a link to this answer" }, "Share");
         share.addEventListener("click", async () => {
+          if (d.personal && !window.confirm("This answer was planned from your location or a saved place, and its map shows that spot. Share it anyway?")) return;
           try {
             const r = await NY.get("api/chat/share?" + new URLSearchParams({ chat: d.chat, turn: d.turn }));
             if (!r.ok) throw new Error("not shared");

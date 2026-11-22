@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-title" content="NYCynapse">
 <link rel="stylesheet" href="static/style.css?v=8">
 <link rel="stylesheet" href="static/vendor/maplibre-gl.css">
-<link rel="stylesheet" href="static/guide.css?v=21">
+<link rel="stylesheet" href="static/guide.css?v=22">
 </head>
 <body>
 <header class="band on-night">
@@ -160,7 +160,7 @@
     <div class="g-chat">
       <div class="g-log" id="g-log" aria-live="polite"></div>
       <div class="g-input">
-        <div class="g-where" id="g-where" hidden><span>Using where you are</span><button type="button" id="g-where-off" aria-label="Stop using my location">✕</button></div>
+        <div class="g-where" id="g-where" hidden><span>Using where you are</span><span class="g-save" id="g-save"></span><button type="button" id="g-where-off" aria-label="Stop using my location">✕</button></div>
         <form id="g-form" autocomplete="off">
           <button class="g-ico" id="g-loc" type="button" aria-pressed="false" aria-label="Use my location" title="Use my location"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/></svg></button>
           <textarea id="g-q" rows="1" maxlength="400" placeholder="Ask about New York…" aria-label="Your question"></textarea>
@@ -181,6 +181,6 @@
 </div>
 
 <script src="static/app.js?v=6"></script>
-<script type="module" src="static/landing.js?v=33"></script>
+<script type="module" src="static/landing.js?v=34"></script>
 </body>
 </html>
