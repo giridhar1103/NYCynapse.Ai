@@ -19,6 +19,7 @@ From E3 the model plans instead of writing SQL, and code compiles the plan:
 
 import json
 import time
+from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, TypedDict
@@ -308,7 +309,11 @@ def build(ctx: Context, *, grounding: bool, planning: bool = False, examples: bo
                     "abstain": gap.message,
                     "log": _log(state, "coverage", ok=False, reason=gap.message),
                 }
-        ex = run(ctx.lake, sql, timeout_s=120)
+        # Only the query itself is limited (it is what takes memory); the model calls of
+        # several questions can run side by side.
+        gate = getattr(ctx, "sql_gate", None)
+        with gate if gate is not None else nullcontext():
+            ex = run(ctx.lake, sql, timeout_s=120)
         problem = None
         if not ex.ok:
             problem = f"execution error: {ex.error}"

@@ -66,7 +66,7 @@ class Lake:
         self._lock = threading.Lock()
         self._coverage_at = 0.0
         self._places: dict[str, dict] | None = None
-        self._run_lock = threading.BoundedSemaphore(2)  # lake queries at once
+        self._run_lock = threading.BoundedSemaphore(2)  # lake SQL queries running at once
 
     def fork(self) -> Context:
         with self._lock:
@@ -273,23 +273,23 @@ def ask_lake(
     if not question:
         return failed("empty question")
     ctx = lake.fork()
+    ctx.sql_gate = lake._run_lock
     try:
         graph = build(ctx, grounding=True, planning=True, examples=True)
         state: dict = {"question": question, "as_of": as_of, "repairs": 0}
         t0 = time.monotonic()
-        with lake._run_lock:
-            for update in graph.stream(state, stream_mode="updates"):
-                for node, change in update.items():
-                    state.update(change or {})
-                    if emit:
-                        emit(
-                            {
-                                "stage": node,
-                                "label": STAGES.get(node, node),
-                                "ms": int((time.monotonic() - t0) * 1000),
-                                "problem": (change or {}).get("problem"),
-                            }
-                        )
+        for update in graph.stream(state, stream_mode="updates"):
+            for node, change in update.items():
+                state.update(change or {})
+                if emit:
+                    emit(
+                        {
+                            "stage": node,
+                            "label": STAGES.get(node, node),
+                            "ms": int((time.monotonic() - t0) * 1000),
+                            "problem": (change or {}).get("problem"),
+                        }
+                    )
     finally:
         try:
             ctx.lake.close()
