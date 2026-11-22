@@ -18,6 +18,7 @@ from pathlib import Path
 
 from ..tools import Tool, ToolResult, failed
 from ..tools import alerts as alert_tools
+from ..tools import arrivals as arrival_tools
 from ..tools import citynow as now_tools
 from ..tools import live as live_tools
 from ..tools import nearby as nearby_tools
@@ -51,6 +52,7 @@ class MCPHost:
             + nearby_tools.TOOLS
             + alert_tools.TOOLS
             + now_tools.TOOLS
+            + arrival_tools.TOOLS
             + web_tools.TOOLS
         }
         self._loop = asyncio.new_event_loop()

@@ -11,7 +11,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp_types import ToolAnnotations
 
 from .tools import alerts as city_alerts
-from .tools import citynow, live, trips, web
+from .tools import arrivals, citynow, live, trips, web
 from .tools import nearby as amenities
 from .tools.http import load_keys
 
@@ -143,6 +143,12 @@ def street_closures(near: str, radius_m: int = 500, days_ahead: int = 7) -> dict
 def air_quality(near: str | None = None) -> dict:
     """Air quality now and for the next hours: US AQI with what it means outdoors, PM2.5, ozone."""
     return citynow.air_quality(near).as_dict()
+
+
+@server.tool(annotations=LIVE)
+def next_trains(station: str, line: str | None = None, n: int = 3) -> dict:
+    """The next trains at a subway station right now, by line and direction, live from the MTA."""
+    return arrivals.next_trains(station, line, n).as_dict()
 
 
 @server.tool(annotations=LIVE)

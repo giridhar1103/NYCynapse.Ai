@@ -17,7 +17,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp_types import ToolAnnotations
 
-from ..tools import alerts, citynow, live, nearby, trips
+from ..tools import alerts, arrivals, citynow, live, nearby, trips
 from ..tools.http import load_keys
 from .store import Access
 
@@ -124,6 +124,13 @@ def air_quality(near: str | None = None) -> dict:
     """Air quality now and for the next hours, citywide or near a place: the US AQI with what it
     means for being outdoors, fine particles (PM2.5) and ozone."""
     return citynow.air_quality(near).as_dict()
+
+
+@mcp.tool(annotations=READ)
+def next_trains(station: str, line: str | None = None, n: int = 3) -> dict:
+    """The next trains at a subway station right now, by line and direction (where each train is
+    headed), with minutes away and clock times, live from the MTA's real-time feeds."""
+    return arrivals.next_trains(station, line, n).as_dict()
 
 
 @mcp.tool(annotations=READ)

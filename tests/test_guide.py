@@ -2173,3 +2173,58 @@ def test_model_retries_are_quick_and_skip_timeouts(monkeypatch):
     with pytest.raises(client.LLMError):
         client.complete_with("p", "s", "q", retries=2)
     assert len(calls) == 1  # no second wait after a timeout
+
+
+def test_next_trains_reads_the_live_feed_by_direction(monkeypatch):
+    import time as _t
+
+    from google.transit import gtfs_realtime_pb2
+
+    from nycynapse.tools import arrivals
+
+    now = int(_t.time())
+    feed = gtfs_realtime_pb2.FeedMessage()
+    feed.header.gtfs_realtime_version = "2.0"
+    feed.header.timestamp = now
+    for i, (route, stops, mins) in enumerate(
+        [("L", ["L08N", "L01N"], 3), ("L", ["L08S", "L29S"], 7), ("L", ["L08N", "L01N"], 500)]
+    ):
+        e = feed.entity.add(id=str(i))
+        e.trip_update.trip.route_id = route
+        for k, sid in enumerate(stops):
+            st = e.trip_update.stop_time_update.add(stop_id=sid)
+            st.arrival.time = now + mins * 60 + k * 600
+    stations = [
+        {
+            "gtfs_stop_id": "L08",
+            "stop_name": "Bedford Av",
+            "daytime_routes": "L",
+            "gtfs_latitude": "40.7172",
+            "gtfs_longitude": "-73.9567",
+        },
+        {
+            "gtfs_stop_id": "L01",
+            "stop_name": "8 Av",
+            "daytime_routes": "L",
+            "gtfs_latitude": "40.7398",
+            "gtfs_longitude": "-74.0025",
+        },
+        {
+            "gtfs_stop_id": "L29",
+            "stop_name": "Canarsie-Rockaway Pkwy",
+            "daytime_routes": "L",
+            "gtfs_latitude": "40.6468",
+            "gtfs_longitude": "-73.9020",
+        },
+    ]
+    monkeypatch.setattr(arrivals, "_feed", lambda key: feed)
+    monkeypatch.setattr("nycynapse.tools.access._stations", lambda: stations)
+    monkeypatch.setattr(
+        "nycynapse.tools.trips.locate",
+        lambda t: {"name": "Bedford Av", "lat": 40.7172, "lon": -73.9567},
+    )
+    r = arrivals.next_trains("Bedford Av", "L")
+    assert "L toward 8 Av: 3 min" in r.summary
+    assert "L toward Canarsie-Rockaway Pkwy: 7 min" in r.summary
+    assert "500 min" not in r.summary  # predictions hours away are left out
+    assert not arrivals.next_trains("Bedford Av", "G").ok
