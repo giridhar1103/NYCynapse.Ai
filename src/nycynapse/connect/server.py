@@ -55,10 +55,11 @@ def trip_plan(
 
 
 @mcp.tool(annotations=READ)
-def subway_alerts(line: str | None = None) -> dict:
+def subway_alerts(line: str | None = None, days: int = 0) -> dict:
     """MTA subway alerts in effect now, with the hours each applies, and planned changes in the
-    next 12 hours. `line` narrows to one line (A, 7, L...)."""
-    return live.subway_alerts(line).as_dict()
+    next 12 hours, or the next `days` days (up to 7) for the weekend or later this week. `line`
+    narrows to one line (A, 7, L...)."""
+    return live.subway_alerts(line, days).as_dict()
 
 
 @mcp.tool(annotations=READ)

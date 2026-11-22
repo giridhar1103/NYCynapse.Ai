@@ -24,6 +24,8 @@ import uuid
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from ..llm import client as llm
 from ..llm.client import LLMError, ProviderLimit
@@ -980,7 +982,10 @@ class Agent:
         }
 
 
-_LINE = re.compile(r"\b(?:the\s+)?([1-7ACEBDFGJLMNQRWZ]|SIR)\s*(?:train|trains|line)\b")
+_LINE = re.compile(
+    r"\b(?:the\s+)?([1-7ACEBDFGJLMNQRWZ]|SIR)\s*(?:train|trains|line)\b"
+    r"|\bthe\s+([1-7ACEBDFGJLMNQRWZ])\s+(?=(?:be\s+)?(?:running|working|delayed|suspended|down)\b)"
+)
 _STATUS = re.compile(
     r"\b(?:running|run|delays?|delayed|service|working|suspended|status|normal|normally|"
     r"on time|problems?|issues?|down)\b",
@@ -1022,6 +1027,11 @@ _WHEN = re.compile(
 )
 _DEADLINE = re.compile(r"\b(?:by|before|no later than|arrive by|be there by)\s+\d", re.I)
 _HERE = re.compile(r"^(?:here|my location|where i am|me)$", re.I)
+_AHEAD = re.compile(
+    r"\b(?:weekend|tomorrow|tonight|next week|this week|later this week|"
+    r"monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b",
+    re.I,
+)
 _SAVED = {
     "home": "home",
     "my home": "home",
@@ -1083,6 +1093,18 @@ def _trip_prefetch(
     return {"tool": "trip_plan", "args": json.dumps(args)}
 
 
+def _days_ahead(question: str) -> int:
+    """How many days of planned work a question about later reaches: tonight or tomorrow 2,
+    the weekend up to Sunday night, anything else the week."""
+    q = question.lower()
+    if re.search(r"\b(?:tonight|tomorrow)\b", q):
+        return 2
+    if "weekend" in q and "next weekend" not in q:
+        wd = datetime.now(ZoneInfo("America/New_York")).weekday()
+        return 7 - wd if wd < 6 else 1
+    return 7
+
+
 def _prefetch(
     question: str, where: tuple[float, float] | None = None, places: dict | None = None
 ) -> list[dict]:
@@ -1103,7 +1125,10 @@ def _prefetch(
             calls.append({"tool": "alerts_near", "args": json.dumps({"near": spot})})
     m = _LINE.search(question)
     if m and _STATUS.search(question):
-        calls.append({"tool": "subway_alerts", "args": json.dumps({"line": m.group(1)})})
+        args = {"line": m.group(1) or m.group(2)}
+        if _AHEAD.search(question):
+            args["days"] = _days_ahead(question)
+        calls.append({"tool": "subway_alerts", "args": json.dumps(args)})
     if _WEATHER.search(question):
         args = {"days": 3} if _LATER.search(question) else {"hours": 12}
         calls.append({"tool": "weather", "args": json.dumps(args)})

@@ -2249,3 +2249,16 @@ def test_saved_home_and_work_feed_the_trip_and_stay_out_of_the_trace(monkeypatch
     from nycynapse.tools.placenames import _locate
 
     assert _locate("40.7120,-73.9510 (home)")["name"] == "Home"
+
+
+def test_weekend_line_questions_fetch_the_planned_work_ahead():
+    from nycynapse.agent import core
+
+    calls = core._prefetch("Is the L running this weekend?")
+    assert calls[0]["tool"] == "subway_alerts"
+    assert 1 <= json.loads(calls[0]["args"])["days"] <= 7
+    assert (
+        json.loads(core._prefetch("will the A be running tomorrow night")[0]["args"])["days"] == 2
+    )
+    assert "days" not in json.loads(core._prefetch("is the 7 train delayed")[0]["args"])
+    assert core._prefetch("what is the A list") == []

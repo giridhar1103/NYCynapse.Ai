@@ -935,18 +935,25 @@ def _alert_hours(periods: list[dict], now: float) -> tuple[str, float | None]:
     return "; ".join(bits), (later[0][0] if later and not current else None)
 
 
-def subway_alerts(line: str | None = None) -> ToolResult:
+def subway_alerts(line: str | None = None, days: int = 0) -> ToolResult:
     """Subway service alerts in effect right now, from the MTA, with the hours each one
-    applies, plus planned changes starting in the next 12 hours."""
+    applies, plus planned changes starting in the next 12 hours, or in the next `days` days
+    (up to 7) for questions about the weekend or later in the week."""
     d = get_json(MTA_ALERTS, ttl_s=120)
     now = time.time()
+    try:
+        days = max(0, min(int(days or 0), 7))
+    except (TypeError, ValueError):
+        days = 0
+    window = days * 86400 if days else 12 * 3600
+    ahead = f"{days} day{'s' if days > 1 else ''}" if days else "12 hours"
     items = []
     for ent in d.get("entity", []):
         a = ent.get("alert", {})
         periods = a.get("active_period") or [{}]
         hours, starts = _alert_hours(periods, now)
         active = starts is None and hours != ""
-        if not active and not (starts and starts < now + 12 * 3600):
+        if not active and not (starts and starts < now + window):
             continue
         routes = sorted(
             {e.get("route_id") for e in a.get("informed_entity", []) if e.get("route_id")}
@@ -968,9 +975,10 @@ def subway_alerts(line: str | None = None) -> ToolResult:
                 ).isoformat(),
             }
         )
+        items[-1]["starts"] = starts
     items.sort(key=lambda x: x["updated_at"], reverse=True)
     now_items = [i for i in items if i["active"]]
-    soon = [i for i in items if not i["active"]]
+    soon = sorted((i for i in items if not i["active"]), key=lambda i: i["starts"] or 0)
     delays = [i for i in now_items if (i["type"] or "").lower() in ("delays", "severe delays")]
 
     def row(i: dict, detail_chars: int = 140) -> str:
@@ -1007,8 +1015,12 @@ def subway_alerts(line: str | None = None) -> ToolResult:
         + ":\n"
         + "\n".join(lines_out)
         + (
-            "\nPlanned changes starting in the next 12 hours:\n"
-            + "\n".join(row(i, 0)[:200] for i in soon[:5])
+            f"\nPlanned changes starting in the next {ahead}:\n"
+            + "\n".join(
+                row(i, 120 if days else 0)[: 320 if days else 200]
+                for i in soon[: 12 if days else 5]
+            )
+            + (f"\n- and {len(soon) - 12} more planned changes" if days and len(soon) > 12 else "")
             if soon
             else ""
         )
@@ -1476,8 +1488,15 @@ TOOLS = [
         "live",
         "MTA subway service alerts in effect right now (delays, suspensions, reroutes) with the "
         "hours each applies, plus planned changes starting in the next 12 hours, optionally for "
-        "one line such as A or 7. Also carries the JFK AirTrain's alerts.",
-        {"type": "object", "properties": {"line": {"type": "string"}}},
+        "one line such as A or 7. For the weekend or later this week, set days (1 to 7) to list "
+        "the planned work starting within that many days. Also carries the JFK AirTrain's alerts.",
+        {
+            "type": "object",
+            "properties": {
+                "line": {"type": "string"},
+                "days": {"type": "integer", "minimum": 0, "maximum": 7},
+            },
+        },
         subway_alerts,
     ),
     Tool(
