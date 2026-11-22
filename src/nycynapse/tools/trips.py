@@ -408,6 +408,8 @@ def _line(lg: dict, end: str) -> dict:
         "mode": mode,
         "name": name or "",
         "agency": lg.get("agencyName") or "",
+        "fare_url": lg.get("agencyFareUrl")
+        or FARE_PAGES.get(_AGENCY.get(lg.get("agencyName") or "", "")),
         "color": "#" + lg["routeColor"] if lg.get("routeColor") else None,
         "text_color": "#" + lg["routeTextColor"] if lg.get("routeTextColor") else None,
         "from": None if start == "START" else start,
@@ -1285,6 +1287,19 @@ def trip_plan(
                     lines.append("   Step-free check: " + o["access"])
                 for warn in changes[id(o)]:
                     lines.append("   " + warn)
+            # Commuter rail is priced by zone, peak or off-peak: point to each agency's own fare
+            # page instead of guessing a price.
+            pages = {}
+            for o in options:
+                for x in o.get("lines") or []:
+                    if x.get("mode") in ("train", "bus") and x.get("fare_url") and x.get("name"):
+                        if x["name"] not in ("PATH", "AirTrain") and not _MTA.search(
+                            x.get("agency", "")
+                        ):
+                            pages.setdefault(x["name"], x["fare_url"])
+            for name, page in list(pages.items())[:3]:
+                lines.append(f"{name} fares depend on zones and time of day: {page}")
+                sources.append({"kind": "official", "title": f"{name} fares", "url": page})
             if step_free:
                 lines.append(
                     "Step-free checks use the MTA's list of accessible subway stations and its "
@@ -1449,6 +1464,12 @@ SOONER_S = 45 * 60
 
 # One-way fares as of November 2026 (MTA from Jan 4 2026, PATH from May 4 2026, NYC Ferry
 # from Oct 19 2026). Commuter rail is priced by zone and time, so it is named, not added.
+# The agencies' own fare pages, for the rides priced by zone and time of day.
+FARE_PAGES = {
+    "LIRR": "https://www.mta.info/fares-tolls/lirr-metro-north",
+    "Metro-North": "https://www.mta.info/fares-tolls/lirr-metro-north",
+    "NJ Transit": "https://www.njtransit.com/fares",
+}
 FARES = {"local": 3.00, "express": 7.25, "path": 3.25, "nyc_ferry": 5.00, "airtrain": 8.75}
 _EXPRESS = re.compile(r"^(?:BxM|BM|QM|SIM|X)\d", re.I)
 _MTA = re.compile(r"\bMTA\b|New York City Transit|NYCT|MTA Bus", re.I)
