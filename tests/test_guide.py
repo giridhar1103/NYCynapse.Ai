@@ -2343,13 +2343,22 @@ def test_next_trains_uses_whole_station_complexes_and_the_right_shuttle(monkeypa
     assert "several stations" in arrivals.next_trains("86th Street").error
 
 
-def test_the_connector_guide_lists_every_public_tool():
+def test_the_connector_page_lists_every_public_tool():
     import asyncio
+    from pathlib import Path
 
+    from nycynapse.api.app import connector_tools
     from nycynapse.connect import app as connect
     from nycynapse.connect.server import mcp
 
-    html = asyncio.run(connect.docs_page(None)).body.decode()
-    names = [t.name for t in asyncio.run(mcp.list_tools())]
-    assert "next_trains" in names and all(f"<code>{n}</code>" in html for n in names)
-    assert "Usage limits apply during the beta" in html and "YOUR-TOKEN" in html
+    names = {t.name for t in asyncio.run(mcp.list_tools())}
+    listed = asyncio.run(connector_tools())["tools"]
+    assert {t["name"] for t in listed} == names and "next_trains" in names
+    assert all(t["summary"] and t["description"] for t in listed)
+    script = Path("web/static/developers.js").read_text()
+    assert all(f'"{n}"' in script for n in names)  # each tool has its place on the page
+    page = Path("web/developers.html").read_text()
+    assert "Usage limits apply during the beta" in page and "demo" not in page.lower()
+    assert asyncio.run(connect.docs_page(None)).headers["location"] == connect.GUIDE
+    how = connect._howto("https://x.test/mcp/<a>")
+    assert "&lt;a&gt;" in how and "<a>" not in how

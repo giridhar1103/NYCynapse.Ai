@@ -1,0 +1,30 @@
+.dev .steps { margin: 0; padding-left: 20px; display: grid; gap: 10px; max-width: 70ch; }
+.dev .steps li::marker { font-weight: 700; color: var(--muted); }
+.dev .addr { display: grid; gap: 6px; max-width: 720px; font-weight: 600; font-size: 14px; }
+.dev .addr input { width: 100%; box-sizing: border-box; padding: 11px 13px; border: 1px solid var(--rule-strong); border-radius: 10px; background: var(--surface); color: var(--ink); font: 14px var(--mono, ui-monospace, monospace); }
+.dev .addr input:focus-visible { outline: 2px solid var(--line); outline-offset: 1px; }
+.dev .hint.warn { color: var(--warn); }
+.dev .tabs { display: flex; gap: 4px; overflow-x: auto; margin: 18px 0 0; border-bottom: 1px solid var(--rule); scrollbar-width: none; }
+.dev .tabs button { flex: none; background: none; border: 0; border-bottom: 2px solid transparent; padding: 9px 12px; font: inherit; font-size: 14.5px; color: var(--ink-2); cursor: pointer; border-radius: 0; }
+.dev .tabs button:hover { color: var(--ink); }
+.dev .tabs button[aria-selected="true"] { color: var(--ink); font-weight: 650; border-bottom-color: var(--line); }
+.dev #panel { max-width: 760px; padding-top: 4px; min-height: 190px; }
+.dev #panel p { margin: 14px 0 8px; }
+.dev .snip { position: relative; }
+.dev .snip pre { margin: 0; padding: 14px 76px 14px 14px; background: #0f0f0e; color: #e8e7df; border: 1px solid var(--rule); border-radius: 12px; overflow-x: auto; font: 13px/1.6 var(--mono, ui-monospace, monospace); }
+.dev .snip code { background: none; padding: 0; color: inherit; font: inherit; }
+.dev .snip .copy { position: absolute; top: 8px; right: 8px; background: #262624; color: #e8e7df; border: 1px solid #3d3d39; border-radius: 8px; padding: 4px 10px; font-size: 12.5px; cursor: pointer; }
+.dev .snip .copy:hover { background: #3d3d39; }
+.dev .asks { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.dev .asks li { border: 1px solid var(--rule); border-radius: 12px; padding: 8px 12px; font-size: 14.5px; background: var(--surface); }
+.dev .tg h3 { font-size: 15px; margin: 22px 0 6px; }
+.dev .tg details { border-bottom: 1px solid var(--rule); padding: 9px 0; }
+.dev .tg summary { cursor: pointer; display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
+.dev .tg summary span { color: var(--ink-2); font-size: 14.5px; }
+.dev .tg details p { margin: 8px 0 0; max-width: 75ch; font-size: 14.5px; }
+.dev code { font: 13px var(--mono, ui-monospace, monospace); background: var(--sunk); border-radius: 6px; padding: 2px 6px; }
+.dev .plain { margin: 0; padding-left: 18px; display: grid; gap: 8px; max-width: 75ch; }
+.dev .faq { margin: 0; display: grid; gap: 4px; max-width: 75ch; }
+.dev .faq dt { font-weight: 650; margin-top: 10px; }
+.dev .faq dd { margin: 0; color: var(--ink-2); }
+@media (max-width: 560px) { .dev .snip pre { padding: 44px 14px 14px; } }

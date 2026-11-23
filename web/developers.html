@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Connect your app · NYCynapse</title>
+<meta name="description" content="Add live New York City data to Claude, ChatGPT, Cursor, VS Code or any MCP client.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%232a78d6'/%3E%3Ctext x='16' y='22' font-family='Helvetica,Arial' font-weight='700' font-size='17' fill='white' text-anchor='middle'%3EN%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="static/style.css?v=10">
+<link rel="stylesheet" href="static/developers.css?v=1">
+</head>
+<body>
+<main class="wrap dev">
+  <section class="hero">
+    <h1>Connect your app.</h1>
+    <p class="lede">NYCynapse is also an MCP server. Add it to Claude, ChatGPT, Cursor, VS Code or anything that speaks the Model Context Protocol, and your own model can look up New York as it is right now. Every tool is read-only.</p>
+  </section>
+
+  <section class="block" id="access">
+    <h2 class="rule">1. Get access</h2>
+    <ol class="steps">
+      <li><b>Ask.</b> Send your name, email and what you will use it for on the <a data-connect href="https://api.giriworks.com/nycynapse/connect">request page</a>. You get a private status link. Save it.</li>
+      <li><b>Wait for review.</b> Requests are read by a person. Nothing is emailed; the status link shows the answer.</li>
+      <li><b>Copy your address.</b> Once approved, the status link shows your personal server address, one time. Treat it like a password.</li>
+    </ol>
+  </section>
+
+  <section class="block" id="setup">
+    <h2 class="rule">2. Add it to your app</h2>
+    <label class="addr" for="addr"><span>Your address</span>
+      <input id="addr" type="text" autocomplete="off" spellcheck="false" placeholder="https://api.giriworks.com/nycynapse/mcp/YOUR-TOKEN">
+    </label>
+    <p class="hint" id="addr-note">Paste it to fill in the steps below. It stays on this page and is not sent or saved.</p>
+    <div class="tabs" id="tabs" role="tablist" aria-label="Your app"></div>
+    <div id="panel" role="tabpanel" tabindex="0"></div>
+  </section>
+
+  <section class="block" id="try">
+    <h2 class="rule">3. Ask something</h2>
+    <p class="hint">Good first questions once it is connected:</p>
+    <ul class="asks">
+      <li>When is the next L at Bedford Av?</li>
+      <li>Step-free way from Penn Station to the Met tomorrow at 10?</li>
+      <li>Anything going on near Union Square?</li>
+      <li>Is the G running normally this weekend?</li>
+    </ul>
+  </section>
+
+  <section class="block" id="tools"><h2 class="rule">Tools</h2><div id="toollist"><span class="hint">Loading…</span></div></section>
+
+  <section class="block" id="limits">
+    <h2 class="rule">Limits and safety</h2>
+    <ul class="plain">
+      <li>Usage limits apply during the beta, by the hour and by the day. Yours are on your status page. A call past the limit returns an error that says so.</li>
+      <li>Every tool is read-only. There is nothing to send, buy, change or delete.</li>
+      <li>Results carry a short summary, the data, and the sources with the time of the reading. Feeds lag and plans change, so show that time to your readers.</li>
+      <li>Times are New York time.</li>
+      <li>Anyone who has your address uses your limits. If it leaks, send a new request and say so.</li>
+    </ul>
+  </section>
+
+  <section class="block" id="help">
+    <h2 class="rule">If it does not work</h2>
+    <dl class="faq">
+      <dt>401, unknown or revoked token</dt><dd>The address is incomplete or no longer active. Copy all of it, including the part after <code>/mcp/</code>.</dd>
+      <dt>The app asks you to sign in</dt><dd>There is no sign-in. The address is the key. Choose no authentication, or leave those fields empty.</dd>
+      <dt>The app only runs local servers</dt><dd>Use the Other tab. <code>mcp-remote</code> runs on your machine and passes calls on.</dd>
+      <dt>Connected, but the model does not use it</dt><dd>Turn the connector on in that chat, or say "use NYCynapse".</dd>
+    </dl>
+  </section>
+</main>
+<script src="static/app.js?v=7"></script>
+<script src="static/developers.js?v=1"></script>
+</body>
+</html>

@@ -355,15 +355,16 @@ def freshness(lake: Lake) -> ToolResult:
     cur.execute("USE lake")
     rows = cur.execute(
         "SELECT table_name, domain, cadence, coverage_start, coverage_end, is_stale, "
-        "hours_since_latest_event FROM gold.ops_source_freshness ORDER BY domain, table_name"
+        "is_source_late FROM gold.ops_source_freshness ORDER BY domain, table_name"
     ).fetchall()
     lines = []
-    for t, d, cad, start, end, stale, _hrs in rows:
+    for t, d, cad, start, end, stale, late in rows:
         if start is None:
             continue
         end_ny = end.astimezone(NY).strftime("%Y-%m-%d %H:%M") if end else "?"
         lines.append(
-            f"{d}/{t}: {str(start)[:10]} to {end_ny} NY ({cad})" + (" STALE" if stale else "")
+            f"{d}/{t}: {str(start)[:10]} to {end_ny} NY ({cad})"
+            + (" STALE" if stale else " (the source itself has stopped publishing)" if late else "")
         )
     return ToolResult(
         summary="What the lake holds, by table (first to latest event, New York time):\n"

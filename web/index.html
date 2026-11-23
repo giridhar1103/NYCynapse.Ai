@@ -10,7 +10,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="static/icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-title" content="NYCynapse">
-<link rel="stylesheet" href="static/style.css?v=9">
+<link rel="stylesheet" href="static/style.css?v=10">
 <link rel="stylesheet" href="static/vendor/maplibre-gl.css">
 <link rel="stylesheet" href="static/guide.css?v=26">
 </head>
@@ -21,7 +21,7 @@
     <nav class="nav">
       <a href="#how">How it works</a>
       <a href="#lake">The data</a>
-      <a href="#mcp">MCP</a>
+      <a href="developers">Connect</a>
       <a href="evals">Evals</a>
       <a class="cta" href="#ask" data-open>Ask</a>
     </nav>
@@ -96,25 +96,10 @@
 
   <section class="section sunk" id="mcp">
     <div class="wrap">
-      <p class="kicker">Open by design</p>
-      <h2 class="big reveal">Every tool is an MCP server.</h2>
-      <p class="intro reveal">The guide is an MCP host: it reaches the lake, the live city feeds and the web through Model Context Protocol servers. The same servers work in Claude Desktop or any MCP client, so you can bring New York into your own assistant.</p>
-      <p class="reveal" style="margin:-24px 0 36px"><a class="cta-link" href="https://api.giriworks.com/nycynapse/connect">Connect Claude, ChatGPT or Cursor to live NYC data: request access →</a></p>
-      <div class="mcp-grid">
-        <pre class="code reveal">{
-  "mcpServers": {
-    "nycynapse": {
-      "url": "https://api.giriworks.com/nycynapse/mcp/&lt;your token&gt;"
-    }
-  }
-}</pre>
-        <div class="toolset reveal">
-          <div class="set"><b>nycynapse: the lake</b><br><code>ask</code><code>domains</code><code>metric</code><code>run_sql</code></div>
-          <div class="set"><b>nyc-live: the city right now</b><br><code>weather</code><code>road_speeds</code><code>road_events</code><code>subway_alerts</code><code>find_place</code><code>open_data</code></div>
-          <div class="set"><b>nyc-live: the web</b><br><code>web_search</code><code>read_page</code></div>
-          <p class="privacy">All tools are read-only. Generated SQL passes a guard and runs on a read-only connection; page reads cannot reach private networks.</p>
-        </div>
-      </div>
+      <p class="kicker">For your own apps</p>
+      <h2 class="big reveal">Use it from Claude, ChatGPT or Cursor.</h2>
+      <p class="intro reveal" style="margin-bottom:22px">The same live city tools work in any app that speaks the Model Context Protocol. Ask for access, then paste one address into your app.</p>
+      <p class="reveal" style="margin:0"><a class="cta-link" href="developers">How to connect →</a></p>
     </div>
   </section>
 
@@ -181,7 +166,7 @@
   </div>
 </div>
 
-<script src="static/app.js?v=6"></script>
+<script src="static/app.js?v=7"></script>
 <script type="module" src="static/landing.js?v=37"></script>
 </body>
 </html>

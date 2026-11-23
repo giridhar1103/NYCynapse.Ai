@@ -29,7 +29,7 @@ from starlette.routing import Route
 
 from ..catalog import store as catalog_store
 from ..config import Settings
-from .server import build, mcp
+from .server import build
 from .store import Access
 
 log = logging.getLogger(__name__)
@@ -99,6 +99,8 @@ button, .btn { display:inline-block; background:#fff; color:#0b0b0b; border:0; b
 button.ghost { background:transparent; color:var(--ink); border:1px solid #3d3d39; }
 button.bad { background:var(--bad); color:#fff; }
 .muted { color:var(--muted); font-size:14px; }
+details { border-bottom:1px solid var(--rule); padding:10px 0; }
+summary { cursor:pointer; font-weight:700; }
 code, pre { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 14px; }
 pre { background:#0e0e0d; border:1px solid var(--rule); border-radius:10px; padding:14px; overflow-x:auto; white-space:pre-wrap; word-break:break-all; }
 .pill { display:inline-block; border-radius:999px; padding:2px 10px; font-size:12px; font-weight:700; }
@@ -141,6 +143,7 @@ def connector(token: str) -> str:
     return f"{PUBLIC}{PREFIX}/mcp/{token}"
 
 
+GUIDE = "https://giriworks.com/nycynapse/developers"
 TOOLS_TEXT = (
     "trip planning (transit with fares and step-free checks, car, bike, walk), the next trains at "
     "a station, subway and rail service changes, incidents and street closures near a place, air "
@@ -199,7 +202,7 @@ def _ask_form(error: str = "", name: str = "", email: str = "", purpose: str = "
         "<p class='lede'>Connect Claude, ChatGPT, Cursor or any MCP client to live New York City "
         "data. Your app's own model does the thinking; NYCynapse supplies the facts.</p>"
         f"<p class='muted'>Tools: {TOOLS_TEXT}. "
-        f"<a href='{PREFIX}/connect/docs'>Read the connector guide</a>.</p>"
+        f"<a href='{GUIDE}'>How connecting works</a>.</p>"
         "<div class='card'><form method='post'>"
         f"{err}<label for='n'>Name</label><input id='n' name='name' maxlength='80' value='{e(name)}' required>"
         f"<label for='m'>Email</label><input id='m' name='email' type='email' maxlength='200' value='{e(email)}' required>"
@@ -246,14 +249,27 @@ async def status_page(request: Request):
 
 
 def _howto(url: str) -> str:
-    cfg = '{\n  "mcpServers": {\n    "nycynapse": { "url": "' + url + '" }\n  }\n}'
+    """Setup per app with the address filled in. The page runs no scripts, so plain sections."""
+    cursor = '{\n  "mcpServers": {\n    "nycynapse": { "url": "' + url + '" }\n  }\n}'
+    code = '{\n  "servers": {\n    "nycynapse": { "type": "http", "url": "' + url + '" }\n  }\n}'
+    apps = (
+        ("Claude (web or desktop)", "Settings, Connectors, Add custom connector, then paste:", url),
+        ("Claude Code", "Run:", f"claude mcp add --transport http nycynapse {url}"),
+        ("ChatGPT", "Turn on developer mode for connectors, Create, no authentication:", url),
+        ("Cursor", "Add to ~/.cursor/mcp.json:", cursor),
+        ("VS Code", "Add to .vscode/mcp.json:", code),
+        ("Codex", "Run:", f"codex mcp add nycynapse --url {url}"),
+        ("Anything else", "A remote MCP server address (streamable HTTP), no authentication:", url),
+    )
+    rows = "".join(
+        f"<details{' open' if i == 0 else ''}><summary>{e(name)}</summary><p>{e(text)}</p>"
+        f"<pre>{e(snippet)}</pre></details>"
+        for i, (name, text, snippet) in enumerate(apps)
+    )
     return (
-        "<h2>Connect it</h2>"
-        "<p><b>Claude (web or desktop):</b> Settings, Connectors, Add custom connector, paste the "
-        "address.</p><p><b>ChatGPT:</b> Settings, Connectors (developer mode), Create, paste the "
-        "address.</p><p><b>Cursor, Claude Code or any MCP client</b> that reads a config file:</p>"
-        f"<pre>{e(cfg)}</pre><p class='muted'>Then ask things like \"Is the L running normally "
-        'right now?" or "Step-free way from Penn Station to the Met tomorrow at 10?"</p>'
+        f"<h2>Connect it</h2>{rows}<p class='muted'>Then ask things like \"When is the next L at "
+        'Bedford Av?" or "Step-free way from Penn Station to the Met tomorrow at 10?" '
+        f"<a href='{GUIDE}'>More help</a>.</p>"
     )
 
 
@@ -261,36 +277,8 @@ def _howto(url: str) -> str:
 
 
 async def docs_page(request: Request):
-    """How to connect, and every tool as the server itself describes it."""
-    rows = []
-    for t in sorted(await mcp.list_tools(), key=lambda t: t.name):
-        schema = getattr(t, "input_schema", None) or getattr(t, "inputSchema", None) or {}
-        need = set(schema.get("required") or [])
-        args = ", ".join(
-            f"<code>{e(k)}</code>" + ("" if k in need else " (optional)")
-            for k in schema.get("properties") or {}
-        )
-        text = " ".join((t.description or "").split())
-        rows.append(
-            f"<div class='card'><b><code>{e(t.name)}</code></b><p>{e(text)}</p>"
-            f"<p class='muted'>Takes: {args or 'nothing'}</p></div>"
-        )
-    body = (
-        "<h1>Connector guide</h1><p class='lede'>Live New York City data as MCP tools for your own "
-        "app. Your app's model does the thinking; every tool is read-only.</p>"
-        "<h2>Get access</h2><p>Ask on the <a href='"
-        f"{PREFIX}/connect'>request page</a>. Requests are "
-        "reviewed by hand. Once approved you get a personal address, shown one time. Keep it "
-        "private: anyone who has it uses your limits.</p>"
-        + _howto(connector("YOUR-TOKEN"))
-        + "<h2>Limits</h2><p>Usage limits apply during the beta, per hour and per day, and are "
-        "shown on your status page. A call past the limit returns an error that says so.</p>"
-        "<h2>What to know</h2><p>Times are New York time. Results carry a short summary, the data "
-        "and the sources with the time of the reading. Feeds can lag and plans change, so show "
-        "the time of the reading to your readers.</p>"
-        f"<h2>Tools</h2>{''.join(rows)}"
-    )
-    return page("NYCynapse connector guide", body)
+    """The connector guide is part of the site."""
+    return RedirectResponse(GUIDE, 302)
 
 
 # ---------------------------------------------------------------------------------- admin page

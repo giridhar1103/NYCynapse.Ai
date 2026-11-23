@@ -178,7 +178,7 @@ The model provider is pluggable and set in a providers file, by role.
 
 ### Over the internet
 
-Other apps can use the city tools, with their own model doing the thinking, at [api.giriworks.com/nycynapse/connect](https://api.giriworks.com/nycynapse/connect). Access is by request and reviewed by hand; an approved app gets a personal address. Usage limits apply during the beta. The [connector guide](https://api.giriworks.com/nycynapse/connect/docs) lists the tools and how to add it to a client.
+Other apps can use the city tools, with their own model doing the thinking, at [api.giriworks.com/nycynapse/connect](https://api.giriworks.com/nycynapse/connect). Access is by request and reviewed by hand; an approved app gets a personal address. Usage limits apply during the beta. [How to connect](https://giriworks.com/nycynapse/developers) has the steps for each app and the tools.
 
 ### On your own machine
 

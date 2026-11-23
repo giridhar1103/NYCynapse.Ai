@@ -119,7 +119,8 @@ def freshness():
     con = answerer().ctx.lake.cursor()
     rows = con.execute(
         "SELECT table_name, domain, cadence, coverage_start, coverage_end, row_count, "
-        "last_success_at, is_stale, hours_since_latest_event FROM lake.gold.ops_source_freshness "
+        "last_success_at, is_stale, hours_since_latest_event, is_source_late "
+        "FROM lake.gold.ops_source_freshness "
         "ORDER BY domain, table_name"
     ).fetchall()
     cols = [
@@ -132,6 +133,23 @@ def freshness():
         "last_success_at",
         "is_stale",
         "hours_since_latest_event",
+        "is_source_late",
+    ]
+    # What concerns a source, in plain words. Error texts and housekeeping stay in the log.
+    words = {
+        "load_late": "has not loaded on schedule",
+        "load_failing": "keeps failing to load; the last good data stays",
+        "source_late": "has not published anything new for longer than usual",
+        "volume_drop": "sent far less than usual",
+    }
+    incidents = [
+        {"source": s, "kind": k, "text": words[k], "since": str(o), "open": bool(is_open)}
+        for s, k, o, is_open in con.execute(
+            "SELECT DISTINCT ON (source, kind) source, kind, opened_at, is_open "
+            "FROM lake.gold.ops_incident WHERE source IS NOT NULL AND is_open "
+            "ORDER BY source, kind, opened_at"
+        ).fetchall()
+        if k in words
     ]
     gaps = con.execute(
         "SELECT source, feed, gap_start, gap_end, gap_minutes, reason "
@@ -142,6 +160,7 @@ def freshness():
             json.dumps(
                 {
                     "tables": [dict(zip(cols, r, strict=True)) for r in rows],
+                    "incidents": incidents,
                     "gaps": [
                         dict(
                             zip(
@@ -198,6 +217,31 @@ def catalog():
         ],
         "relationships": len(c.relationships),
     }
+
+
+@app.get("/api/connector-tools")
+async def connector_tools():
+    """The public MCP server's tools, as it describes them itself."""
+    if "connector_tools" not in _state:
+        from ..connect.server import mcp
+
+        out = []
+        for t in await mcp.list_tools():
+            schema = getattr(t, "input_schema", None) or getattr(t, "inputSchema", None) or {}
+            need = set(schema.get("required") or [])
+            text = " ".join((t.description or "").split())
+            out.append(
+                {
+                    "name": t.name,
+                    "summary": text.split(". ")[0].split(" (")[0].rstrip("."),
+                    "description": text,
+                    "args": [
+                        {"name": k, "required": k in need} for k in schema.get("properties") or {}
+                    ],
+                }
+            )
+        _state["connector_tools"] = out
+    return {"tools": _state["connector_tools"]}
 
 
 @app.get("/api/evals")

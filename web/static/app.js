@@ -8,7 +8,7 @@ const NY = (() => {
 
   function base() {
     // "/nycynapse/evals" -> "/nycynapse/", "/nycynapse/" -> "/nycynapse/"
-    const p = location.pathname.replace(/(evals|data|catalog|trace)(\.html)?$/, "");
+    const p = location.pathname.replace(/(evals|data|catalog|developers|trace)(\.html)?$/, "");
     return p.endsWith("/") ? p : p + "/";
   }
   const url = (p) => base() + p.replace(/^\//, "");
@@ -53,7 +53,7 @@ const NY = (() => {
   try { const t = localStorage.getItem("nyc-theme"); if (t) document.documentElement.dataset.theme = t; } catch (_) { /* ignore */ }
 
   function header(active) {
-    const pages = [["", "Guide"], ["evals", "Evals"], ["data", "Data"], ["catalog", "Catalog"]];
+    const pages = [["", "Guide"], ["evals", "Evals"], ["data", "Data"], ["catalog", "Catalog"], ["developers", "Connect"]];
     const toggle = el("button", { class: "theme-toggle", "aria-label": "Switch light or dark",
       onclick: () => { setTheme(currentTheme() === "dark" ? "light" : "dark"); toggle.textContent = icon(); } });
     const icon = () => (currentTheme() === "dark" ? "☀" : "☾");
