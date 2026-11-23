@@ -4,6 +4,10 @@ A guide to New York City you can ask anything. It answers from the city's own da
 
 **Live:** [giriworks.com/nycynapse](https://giriworks.com/nycynapse/)
 
+<img alt="Asking how to get from Grand Central to Yankee Stadium: the guide plans the trip, answers with sources, and shows the route card and the line on the map" src="docs/img/guide.gif" width="900">
+
+<sub>One real question, sped up: the answer took 35 seconds.</sub>
+
 **In short**
 
 | | |
