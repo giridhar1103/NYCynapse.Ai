@@ -2262,3 +2262,34 @@ def test_weekend_line_questions_fetch_the_planned_work_ahead():
     )
     assert "days" not in json.loads(core._prefetch("is the 7 train delayed")[0]["args"])
     assert core._prefetch("what is the A list") == []
+
+
+def test_a_stored_turn_holds_nothing_of_the_readers_spots():
+    from nycynapse.agent.core import without_spots
+
+    home, at = (40.713, -73.951), (40.754, -73.984)
+    out = {
+        "answer": "Leave home at 8:30. It costs $3.00.",
+        "map": [{"type": "trip", "from": {"lat": 40.713, "lon": -73.951}}],
+        "places": [{"name": "Home", "lat": 40.713, "lon": -73.951}],
+        "sources": [{"url": "https://x.test/plan?lat=40.7131&lng=-73.9508"}],
+        "steps": [{"tool": "trip_plan", "args": {"origin": "40.7130,-73.9510 (home)"}}],
+        "memory": {"facts": "from 40.7540,-73.9840 to Times Square, 31 min", "spot": [40.7129]},
+        "model": "m",
+    }
+    kept = without_spots(out, at, {"home": home})
+    text = json.dumps(kept)
+    for piece in ("40.71", "73.95", "40.75", "73.98"):
+        assert piece not in text
+    assert kept["answer"] == out["answer"] and kept["model"] == "m"
+    assert "31 min" in kept["memory"]["facts"]
+    assert out["map"]  # the reader still gets theirs
+    assert without_spots(out, None, None) is out
+
+
+def test_the_readers_spots_come_in_headers_and_not_in_the_address():
+    import inspect
+
+    from nycynapse.api import chat
+
+    assert not {"at", "home", "work"} & set(inspect.signature(chat.chat).parameters)

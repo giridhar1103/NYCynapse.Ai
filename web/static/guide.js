@@ -55,7 +55,7 @@ class Guide {
   }
 
   // "Use my location": asked for only when the reader taps the pin, rounded to about 100 m, sent
-  // with each question while it is on, and never stored by the server.
+  // with each question while it is on, and taken out of what the server keeps of the turn.
   setupLocation() {
     const btn = $("g-loc"), pill = $("g-where");
     const save = $("g-save");
@@ -351,13 +351,19 @@ class Guide {
         return;
       }
     }
-    // Saved home and work go only with a question that names them.
-    const kept = places(), named = {};
-    for (const kind of ["home", "work"]) if (kept[kind] && NAMES[kind].test(q)) named[kind] = kept[kind];
-    this.personal = !!this.where || Object.keys(named).length > 0;
-    const qs = new URLSearchParams({ q, chat: this.chat || "", token, ...(this.where ? { at: this.where } : {}), ...named });
+    // Saved home and work go only with a question that names them, and with the follow-ups to it, because the server does not keep them. They travel in
+    // headers: an address ends up in logs along the way.
+    const kept = places(), spots = {};
+    if (!this.chat) this.named = new Set();
+    for (const kind of ["home", "work"]) {
+      if (NAMES[kind].test(q)) this.named.add(kind);
+      if (kept[kind] && this.named.has(kind)) spots[`X-NYC-${kind}`] = kept[kind];
+    }
+    if (this.where) spots["X-NYC-At"] = this.where;
+    this.personal = Object.keys(spots).length > 0;
+    const qs = new URLSearchParams({ q, chat: this.chat || "", token });
     try {
-      const r = await fetch(url("api/chat?" + qs), { headers: { Accept: "text/event-stream" } });
+      const r = await fetch(url("api/chat?" + qs), { headers: { Accept: "text/event-stream", ...spots } });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const reader = r.body.getReader(), dec = new TextDecoder();
       let buf = "", ended = false;
@@ -766,7 +772,7 @@ class TurnView {
       if (d.can_rate && d.chat && !d.shared) {
         const share = el("button", { type: "button", class: "copy", "aria-label": "Share a link to this answer" }, "Share");
         share.addEventListener("click", async () => {
-          if (d.personal && !window.confirm("This answer was planned from your location or a saved place, and its map shows that spot. Share it anyway?")) return;
+          if (d.personal && !window.confirm("This answer was planned from your location or a saved place. The shared copy leaves out the map, but its text may name streets or stations near you. Share it anyway?")) return;
           try {
             const r = await NY.get("api/chat/share?" + new URLSearchParams({ chat: d.chat, turn: d.turn }));
             if (!r.ok) throw new Error("not shared");

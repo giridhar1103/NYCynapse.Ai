@@ -267,18 +267,17 @@ async def chat(
     q: str = Query("", max_length=2000),
     chat: str = "",
     token: str = "",
-    at: str = Query("", max_length=40),
-    home: str = Query("", max_length=40),
-    work: str = Query("", max_length=40),
 ):
     client = _client(request)
     ip = _address(request)
     question = _clean(q)
-    # Home and work are saved on the reader's device and sent only with a question that names
-    # them; like the location, they are never stored.
-    places = {k: v for k, v in (("home", _where(home)), ("work", _where(work))) if v}
+    # The reader's location, and the home and work saved on their device, come in headers: an
+    # address ends up in logs along the way. What is stored of the turn has them taken out.
+    spots = {k: _where(request.headers.get(f"x-nyc-{k}", "")) for k in ("at", "home", "work")}
+    where = spots.pop("at")
+    places = {k: v for k, v in spots.items() if v}
     return StreamingResponse(
-        _turn(question, chat.strip() or None, token, client, ip, _where(at), places),
+        _turn(question, chat.strip() or None, token, client, ip, where, places),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
     )
@@ -286,7 +285,7 @@ async def chat(
 
 def _where(at: str) -> tuple[float, float] | None:
     """A location the reader chose to share ("40.7128,-74.0060"), rounded to about 100 m, and
-    only inside the region the guide covers. Never stored."""
+    only inside the region the guide covers."""
     m = re.fullmatch(r"\s*(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)\s*", at or "")
     if not m:
         return None
@@ -427,7 +426,10 @@ async def _turn(
             out["steps"] = (out.get("steps") or []) + [{"queued_ms": queued_ms}]
             _log_turn(slot, out, outcome, queued_ms)
             try:
-                chats().record(slot, question, out, outcome)
+                from ..agent.core import without_spots
+
+                kept = without_spots(out, where, places) if personal else out
+                chats().record(slot, question, kept, outcome)
             except psycopg.Error:
                 log.exception("could not store a chat turn")
             if out.get("answer"):
