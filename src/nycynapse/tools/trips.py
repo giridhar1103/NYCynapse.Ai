@@ -24,7 +24,7 @@ from functools import lru_cache
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from . import Tool, ToolResult, failed
+from . import Tool, ToolResult, failed, railfares
 from .http import env, get_json
 
 NY = ZoneInfo("America/New_York")
@@ -1299,7 +1299,13 @@ def trip_plan(
                         ):
                             pages.setdefault(x["name"], x["fare_url"])
             for name, page in list(pages.items())[:3]:
-                lines.append(f"{name} fares depend on zones and time of day: {page}")
+                if name in ("LIRR", "Metro-North"):
+                    lines.append(
+                        f"{name} prices are one-way adult fares bought ahead, from the MTA's fare "
+                        f"charts; tickets bought on board cost more: {page}"
+                    )
+                else:
+                    lines.append(f"{name} fares depend on zones and time of day: {page}")
                 sources.append({"kind": "official", "title": f"{name} fares", "url": page})
             if step_free:
                 lines.append(
@@ -1477,10 +1483,43 @@ _MTA = re.compile(r"\bMTA\b|New York City Transit|NYCT|MTA Bus", re.I)
 _BUS_AGENCY = {"NJ TRANSIT BUS": "NJ Transit", "Greyhound-us": "Greyhound", "FlixBus-us": "FlixBus"}
 
 
+def _rail_prices(o: dict) -> dict[int, str | None]:
+    """The fare of each LIRR and Metro-North ride, by leg. One ticket covers trains changed on the
+    way, so the first leg carries the price and the rest an empty string."""
+    out: dict[int, str | None] = {}
+    trip: list[dict] = []
+
+    def close() -> None:
+        if not trip:
+            return
+        a, z = trip[0], trip[-1]
+        price = None
+        if a.get("from") and z.get("to") and a.get("depart_ts") and z.get("depart_ts"):
+            price = railfares.fare(
+                a["name"], a["from"], z["to"], a["depart_ts"], z["depart_ts"] + 60 * z["minutes"]
+            )
+        out[id(a)] = price
+        for x in trip[1:]:
+            out[id(x)] = "" if price is not None else None
+        trip.clear()
+
+    for x in o.get("lines") or []:
+        if x.get("mode") == "walk":
+            continue
+        rides = x.get("mode") == "train" and x.get("name") in ("LIRR", "Metro-North")
+        if trip and (not rides or x["name"] != trip[-1]["name"]):
+            close()
+        if rides:
+            trip.append(x)
+    close()
+    return out
+
+
 def _fare(o: dict) -> str:
     """What one adult pays for an itinerary, as far as fixed fares go: "$3.00", or "$3.00 plus
     the LIRR fare" when a zone-priced train is in it. Empty when it cannot be said."""
-    total, rail, local, path = 0.0, [], False, False
+    total, rail, local, path, either = 0.0, [], False, False, []
+    priced = _rail_prices(o)
     legs = [x for x in o.get("lines") or [] if x.get("mode") != "walk"]
     names = {x.get("name") or "" for x in legs}
     nj_rail = "NJ Transit" in names
@@ -1512,11 +1551,24 @@ def _fare(o: dict) -> str:
                 total += FARES["local"]
                 local = True
         elif mode == "train":
-            rail.append(name or "commuter rail")
+            price = priced.get(id(x))
+            if price == "":
+                continue  # a change of trains on the ticket already counted
+            if price is None:
+                rail.append(name or "commuter rail")
+            elif " or " in price:
+                either.append(f"{name} {price}")
+            else:
+                total += float(price.lstrip("$"))
     if not legs:
         return ""
-    if not total and not rail:
+    if not total and not rail and not either:
         return "free"
+    if either:
+        # One price cannot be told from the other, so nothing is added up for that ride.
+        parts = [f"${total:.2f}"] if total else []
+        parts += either + ([f"the {' and '.join(dict.fromkeys(rail))} fare"] if rail else [])
+        return " plus ".join(parts)
     named = f"the {' and '.join(dict.fromkeys(rail))} fare"
     if not rail:
         return f"${total:.2f}"

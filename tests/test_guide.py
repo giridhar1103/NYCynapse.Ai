@@ -2362,3 +2362,97 @@ def test_the_connector_page_lists_every_public_tool():
     assert asyncio.run(connect.docs_page(None)).headers["location"] == connect.GUIDE
     how = connect._howto("https://x.test/mcp/<a>")
     assert "&lt;a&gt;" in how and "<a>" not in how
+
+
+def _rail_ts(text):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    return datetime.fromisoformat(text).replace(tzinfo=ZoneInfo("America/New_York")).timestamp()
+
+
+def test_rail_fares_follow_the_official_charts():
+    from nycynapse.tools import railfares as rf
+
+    def fare(rr, a, b, dep, arr):
+        return rf.fare(rr, a, b, _rail_ts(dep), _rail_ts(arr))
+
+    tue = "2026-12-08T"  # an ordinary Tuesday
+    sat = "2026-12-12T"
+    assert fare("LIRR", "Penn Station", "Huntington", tue + "17:47", tue + "18:52") == "$18.25"
+    assert fare("LIRR", "Penn Station", "Huntington", tue + "13:00", tue + "14:05") == "$13.50"
+    assert fare("LIRR", "Penn Station", "Huntington", sat + "17:47", sat + "18:52") == "$13.50"
+    assert fare("LIRR", "Babylon", "Atlantic Terminal", tue + "07:09", tue + "08:21") == "$18.25"
+    assert fare("LIRR", "Babylon", "Atlantic Terminal", tue + "09:30", tue + "10:45") == "$13.50"
+    assert fare("LIRR", "Mineola", "Babylon", tue + "08:00", tue + "09:00") == "$6.50"
+    assert fare("LIRR", "Jamaica", "Penn Station", tue + "08:00", tue + "08:20") == "$7.25"
+    assert (
+        fare("Metro-North", "Grand Central", "Cold Spring", tue + "17:00", tue + "18:20")
+        == "$21.75"
+    )
+    assert (
+        fare("Metro-North", "Grand Central", "New Haven", tue + "07:03", tue + "09:00") == "$27.25"
+    )
+    assert (
+        fare("Metro-North", "White Plains", "Grand Central", tue + "11:00", tue + "11:40")
+        == "$10.25"
+    )
+    assert fare("Metro-North", "Yonkers", "Beacon", tue + "08:00", tue + "09:00") == "$14.25"
+    # what it cannot know, it does not guess
+    assert fare("Metro-North", "Stamford", "New Haven", tue + "08:00", tue + "09:00") is None
+    assert fare("LIRR", "Far Rockaway", "Penn Station", tue + "08:00", tue + "09:00") is None
+    assert fare("LIRR", "Nowhere", "Penn Station", tue + "08:00", tue + "09:00") is None
+    assert " or " in fare("LIRR", "Jamaica", "Huntington", tue + "08:00", tue + "09:00")
+    assert " or " in fare(
+        "LIRR", "Penn Station", "Huntington", "2026-11-26T17:00", "2026-11-26T18:00"
+    )
+    assert " or " in fare("LIRR", "Woodside", "Huntington", tue + "16:10", tue + "17:00")
+    assert (
+        fare("LIRR", "Penn Station", "Huntington", "2027-08-03T17:00", "2027-08-03T18:00") is None
+    )
+    for i, a in enumerate(rf._Z):  # the chart is the same both ways
+        for j, b in enumerate(rf._Z):
+            assert rf._PEAK[a][j] == rf._PEAK[b][i]
+    for a in rf._MNR_BETWEEN:
+        for b in rf._MNR_BETWEEN:
+            assert rf._MNR_BETWEEN[a][b - 2] == rf._MNR_BETWEEN[b][a - 2]
+
+
+def test_one_rail_ticket_covers_a_change_of_trains():
+    from nycynapse.tools.trips import _fare
+
+    def leg(name, a, b, dep, minutes):
+        return {
+            "mode": "train",
+            "name": name,
+            "from": a,
+            "to": b,
+            "depart_ts": _rail_ts(dep),
+            "minutes": minutes,
+        }
+
+    two = [
+        leg("LIRR", "Babylon", "Jamaica", "2026-12-08T07:09", 46),
+        leg("LIRR", "Jamaica", "Atlantic Terminal", "2026-12-08T08:01", 20),
+    ]
+    subway = {"mode": "subway", "name": "Q"}
+    assert _fare({"lines": two + [subway]}) == "$21.25"
+    assert (
+        _fare({"lines": [leg("LIRR", "Far Rockaway", "Penn Station", "2026-12-08T08:00", 60)]})
+        == "plus the LIRR fare"
+    )
+    nj = leg("NJ Transit", "NEW YORK PENN STATION", "SECAUCUS UPPER LEVEL", "2026-12-08T08:00", 9)
+    assert _fare({"lines": [subway, nj]}) == "$3.00 plus the NJ Transit fare"
+    text = _fare({"lines": [subway, leg("LIRR", "Jamaica", "Huntington", "2026-12-08T08:00", 50)]})
+    assert text == "$3.00 plus LIRR $13.25 peak or $9.75 off-peak"
+
+
+def test_a_rail_station_is_the_one_named():
+    from nycynapse.tools.railfares import station
+
+    assert station("Cold Spring Metro-North station")["lat"] > 41.4
+    assert station("Cold Spring Harbor LIRR")["lat"] < 41
+    assert station("Beacon station")["name"] == "Beacon (Metro-North)"
+    assert station("Fordham station") is None  # also a subway stop
+    assert station("Penn Station") is None
+    assert station("White Plains") is None  # the town, not the station

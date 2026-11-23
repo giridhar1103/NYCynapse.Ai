@@ -12,6 +12,7 @@ import json
 import re
 from functools import lru_cache
 
+from . import railfares
 from . import trips as T
 from .http import get_json
 from .path_trains import PATH
@@ -834,6 +835,9 @@ def _locate(text: str) -> dict | None:
         # Coordinates come from a reader who shared their location or saved home or work.
         name = m.group(3).capitalize() if m.group(3) else "Your location"
         return {"name": name, "lat": lat, "lon": lon} if _inside(lat, lon) else None
+    rail = railfares.station(raw)
+    if rail:
+        return rail
     n = _norm(raw)
     low = " ".join(re.sub(r"[^a-z0-9 ]+", " ", raw.lower()).split())
     term = re.search(r"\bterminal\s*([a-c1-8])\b|\bt([1-8])\b", low)
