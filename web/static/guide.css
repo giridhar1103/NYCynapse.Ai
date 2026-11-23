@@ -85,11 +85,11 @@ body.locked { overflow: hidden; }
 
 /* the route: lake, live, web */
 .route { position: relative; display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; margin-top: 12px; }
-.route::before { content: ""; position: absolute; left: 6%; right: 6%; top: 27px; height: 6px; border-radius: 3px;
+.route::before { content: ""; position: absolute; left: 12.5%; right: 12.5%; top: 27px; height: 6px; border-radius: 3px;
   background: linear-gradient(90deg, var(--lake), var(--live) 45%, var(--web) 80%, var(--ink) 100%); opacity: .9; }
-.route .train-dot { position: absolute; top: 20px; left: 6%; width: 20px; height: 20px; border-radius: 50%; background: var(--surface);
+.route .train-dot { position: absolute; top: 20px; left: calc(12.5% - 10px); width: 20px; height: 20px; border-radius: 50%; background: var(--surface);
   border: 4px solid var(--ink); box-shadow: 0 4px 14px rgba(0, 0, 0, .25); animation: ride 9s var(--ease) infinite; }
-@keyframes ride { 0%, 8% { left: 6%; } 25%, 33% { left: 34%; } 50%, 58% { left: 62%; } 75%, 92% { left: calc(94% - 20px); } 100% { left: 6%; } }
+@keyframes ride { 0%, 8% { left: calc(12.5% - 10px); } 25%, 33% { left: calc(37.5% - 10px); } 50%, 58% { left: calc(62.5% - 10px); } 75%, 92% { left: calc(87.5% - 10px); } 100% { left: calc(12.5% - 10px); } }
 .stop { position: relative; padding-top: 64px; }
 .stop .dot { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); width: 32px; height: 32px; border-radius: 50%;
   background: var(--surface); border: 6px solid var(--ink); display: grid; place-items: center; }
@@ -165,8 +165,8 @@ pre.code { background: #0f0f0e; color: #e8e7df; border-radius: 14px; padding: 18
 .g-head button:hover { background: #ffffff; color: #0b0b0b; }
 .g-head .close { width: 34px; height: 34px; padding: 0; display: grid; place-items: center; font-size: 18px; }
 
-.g-chat { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--rule); background: var(--bg); }
-.g-log { flex: 1; overflow-y: auto; padding: 18px 18px 8px; display: flex; flex-direction: column; gap: 14px; scroll-behavior: smooth; }
+.g-chat { display: flex; flex-direction: column; min-height: 0; min-width: 0; border-right: 1px solid var(--rule); background: var(--bg); }
+.g-log { flex: 1; min-width: 0; overflow-x: hidden; overflow-y: auto; padding: 18px 18px 8px; display: flex; flex-direction: column; gap: 14px; scroll-behavior: smooth; }
 .msg-q { align-self: flex-end; max-width: 88%; background: var(--ink); color: var(--bg); padding: 10px 14px; border-radius: 16px 16px 4px 16px; font-size: 15px;
   animation: pop .35s var(--ease); }
 @keyframes pop { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
@@ -258,7 +258,7 @@ pre.code { background: #0f0f0e; color: #e8e7df; border-radius: 14px; padding: 18
   .cards, .guards { grid-template-columns: 1fr 1fr; }
   .mcp-grid { grid-template-columns: 1fr; }
   .flow-legend { grid-template-columns: 1fr 1fr; }
-  .guide .panel { margin: 0; border-radius: 0; grid-template-columns: 1fr; grid-template-rows: auto 34vh 1fr; }
+  .guide .panel { margin: 0; border-radius: 0; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 34vh 1fr; }
   .g-map { grid-row: 2; }
   .g-chat { grid-row: 3; border-right: 0; border-top: 1px solid var(--rule); }
   .g-head .model { display: none; }
@@ -320,11 +320,11 @@ a.cite:hover { background: var(--ink); color: var(--bg); border-color: var(--ink
   padding: 4px 6px; font-size: 12.5px; color: var(--ink); text-decoration: none; max-width: none; }
 .srclist a.src:hover { background: var(--sunk); }
 .srclist .n { font-weight: 700; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
-.srclist .t { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.srclist .t { overflow: hidden; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 @media (max-width: 560px) { .srclist .h { grid-column: 2 / -1; } }
 .srclist .h { color: var(--muted); font-size: 11.5px; white-space: nowrap; }
 .srclist .stale { grid-column: 2 / -1; color: var(--warn); font-size: 11.5px; }
-.fc { display: grid; grid-template-columns: repeat(auto-fit, minmax(54px, 1fr)); gap: 4px; margin: 4px 0 6px; }
+.fc { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 4px; margin: 10px 0 4px; }
 .fd { display: grid; justify-items: center; gap: 1px; padding: 6px 2px; border-radius: 10px; background: var(--sunk); font-size: 12px; }
 .fd b { font-size: 12px; }
 .fd .hi { font-weight: 700; font-size: 13px; }
@@ -344,7 +344,7 @@ a.cite:hover { background: var(--ink); color: var(--bg); border-color: var(--ink
 .hl-mark .txt { display: grid; background: rgba(255, 255, 255, .94); color: #0b0b0b; border-radius: 9px; padding: 3px 8px;
   box-shadow: 0 3px 12px rgba(0, 0, 0, .18); font-size: 12px; line-height: 1.25; max-width: 170px; }
 .hl-mark .txt b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.hl-mark .txt small { color: #4b4a45; font-size: 11px; white-space: nowrap; }
+.hl-mark .txt small { color: #4b4a45; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hl-mark.dim { opacity: .35; }
 .hl-mark.short .txt { display: none; }
 .hl-mark.short:hover .txt { display: grid; position: absolute; left: 30px; z-index: 2; }
@@ -394,8 +394,9 @@ a.cite:hover { background: var(--ink); color: var(--bg); border-color: var(--ink
   .g-map .wxstrip { left: 8px; right: 8px; bottom: 8px; gap: 4px; overflow-x: auto; justify-content: flex-start; }
   .g-map .wxstrip .d { min-width: 46px; padding: 4px 5px; }
   .hl-mark .txt { display: none; }
-  .g-map .legend { left: 8px; bottom: 8px; min-width: 0; max-width: 62%; padding: 6px 8px; font-size: 11px; border-radius: 9px; }
-  .g-map .legend b { font-size: 11.5px; margin-bottom: 3px; }
+  .g-map .legend { left: 8px; bottom: 8px; min-width: 0; max-width: 44%; padding: 5px 7px; font-size: 10.5px; border-radius: 9px; }
+  .g-map .legend b { font-size: 10.5px; margin-bottom: 2px; }
+  .g-map .legend .ends { gap: 8px; }
   .g-map .legend .bar { height: 6px; }
   .g-map .chipbar { right: 8px; top: 8px; max-width: 75%; }
   .g-map .chipbar span { font-size: 11px; padding: 3px 8px; }

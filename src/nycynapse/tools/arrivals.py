@@ -230,7 +230,7 @@ def next_trains(station: str, line: str | None = None, n: int = 3) -> ToolResult
         map=[
             {
                 "type": "points",
-                "label": "Station",
+                "label": where,
                 "points": [
                     {
                         "lat": float(here[0]["gtfs_latitude"]),

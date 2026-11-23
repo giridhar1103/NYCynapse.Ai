@@ -515,11 +515,10 @@ def _answer_payload(slot: Slot, out: dict, cached: bool = False) -> dict:
         "sources": out.get("sources") or [],
         "model": out.get("model"),
         "fell_back": bool(out.get("fell_back")),
-        "cost_usd": out.get("cost_usd"),
         "latency_ms": out.get("latency_ms"),
         "cached": cached,
         "untraced": out.get("untraced") or [],
-        **({"trace": out.get("trace") or []} if TRACE else {}),
+        **({"trace": out.get("trace") or [], "cost_usd": out.get("cost_usd")} if TRACE else {}),
         "places": out.get("places") or [],
     }
 

@@ -80,6 +80,8 @@ body { margin:0; background:var(--bg); color:var(--ink);
 .wrap { max-width: 880px; margin: 0 auto; padding: 40px 16px 64px; }
 a { color: #8ab4f8; }
 .brand { display:flex; align-items:center; gap:10px; font-weight:800; font-size:20px; margin-bottom:28px; }
+a.brand { color:inherit; text-decoration:none; }
+.card label:first-of-type { margin-top:0; }
 .brand i { display:grid; place-items:center; width:30px; height:30px; border-radius:50%;
   background:var(--accent); font-style:normal; font-size:15px; }
 h1 { font-size: clamp(28px, 4vw, 40px); line-height:1.1; margin: 0 0 12px; letter-spacing:-.02em; }
@@ -119,7 +121,7 @@ def page(title: str, body: str, status: int = 200) -> HTMLResponse:
         f"<meta name='viewport' content='width=device-width, initial-scale=1'>"
         f"<meta name='robots' content='noindex'><title>{html.escape(title)}</title>"
         f"<style>{CSS}</style></head><body><div class='wrap'>"
-        f"<div class='brand'><i>N</i>NYCynapse</div>{body}</div></body></html>"
+        f"<a class='brand' href='https://giriworks.com/nycynapse/'><i>N</i>NYCynapse</a>{body}</div></body></html>"
     )
     r = HTMLResponse(doc, status_code=status)
     r.headers["Content-Security-Policy"] = (
@@ -194,8 +196,8 @@ def _ask_form(error: str = "", name: str = "", email: str = "", purpose: str = "
     return (
         "<h1>Use NYCynapse in your own AI app.</h1>"
         "<p class='lede'>Connect Claude, ChatGPT, Cursor or any MCP client to live New York City "
-        f"data: {TOOLS_TEXT}. Your app's own model does the thinking; NYCynapse supplies the "
-        "facts.</p>"
+        "data. Your app's own model does the thinking; NYCynapse supplies the facts.</p>"
+        f"<p class='muted'>Tools: {TOOLS_TEXT}.</p>"
         "<div class='card'><form method='post'>"
         f"{err}<label for='n'>Name</label><input id='n' name='name' maxlength='80' value='{e(name)}' required>"
         f"<label for='m'>Email</label><input id='m' name='email' type='email' maxlength='200' value='{e(email)}' required>"

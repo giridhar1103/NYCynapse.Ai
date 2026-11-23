@@ -1593,7 +1593,10 @@ def _trip_layer(a: dict, b: dict, t: datetime, arrive_by: bool, mode: str, data:
         "label": f"{a['name']} to {b['name']}",
         "from": {"name": a["name"], "lat": a["lat"], "lon": a["lon"]},
         "to": {"name": b["name"], "lat": b["lat"], "lon": b["lon"]},
-        "when": ("Arrive by " if arrive_by else "Leave ") + t.strftime("%a %-I:%M %p"),
+        # A trip for now is not given a clock time: the routes below leave a few minutes later.
+        "when": "Leaving now"
+        if not arrive_by and abs(t.timestamp() - time.time()) < 600
+        else ("Arrive by " if arrive_by else "Leave ") + t.strftime("%a %-I:%M %p"),
         "modes": modes,
         "default": default,
         "step_free": bool(data.get("step_free")),
