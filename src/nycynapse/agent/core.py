@@ -1241,6 +1241,33 @@ def _hide_where(args: dict, where: tuple[float, float] | None, places: dict | No
 
 
 _COORDS = re.compile(r"(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)")
+_DECIMAL = re.compile(r"-?\d{2,3}\.\d{2,}")
+
+
+def without_spots(out: dict, where: tuple[float, float] | None, places: dict | None) -> dict:
+    """A finished turn as it may be stored: no map (its lines start at the reader's door) and no
+    number within about a kilometer of their location, home or work, wherever it appears."""
+    spots = ([where] if where else []) + list((places or {}).values())
+    if not spots:
+        return out
+
+    def near(v: float) -> bool:
+        return any(abs(v - y) < 0.01 or abs(v - x) < 0.01 for y, x in spots)
+
+    def clean(v):
+        if isinstance(v, str):
+            v = _hide_where({"v": v}, where, places)["v"]
+            return _DECIMAL.sub(lambda m: "(hidden)" if near(float(m.group(0))) else m.group(0), v)
+        if isinstance(v, float):
+            return None if near(v) else v
+        if isinstance(v, dict):
+            return {k: clean(x) for k, x in v.items()}
+        if isinstance(v, list | tuple):
+            return [clean(x) for x in v]
+        return v
+
+    parts = ("answer", "steps", "sources", "memory", "error")
+    return {**out, **{k: clean(out[k]) for k in parts if k in out}, "map": [], "places": []}
 
 
 def _public_args(args: dict) -> dict:
