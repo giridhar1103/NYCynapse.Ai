@@ -2341,3 +2341,15 @@ def test_next_trains_uses_whole_station_complexes_and_the_right_shuttle(monkeypa
     assert "S toward" in arrivals.next_trains("Franklin Avenue", "S").summary
     assert "does not stop" in arrivals.next_trains("Times Sq-42 St", "G").error
     assert "several stations" in arrivals.next_trains("86th Street").error
+
+
+def test_the_connector_guide_lists_every_public_tool():
+    import asyncio
+
+    from nycynapse.connect import app as connect
+    from nycynapse.connect.server import mcp
+
+    html = asyncio.run(connect.docs_page(None)).body.decode()
+    names = [t.name for t in asyncio.run(mcp.list_tools())]
+    assert "next_trains" in names and all(f"<code>{n}</code>" in html for n in names)
+    assert "Usage limits apply during the beta" in html and "YOUR-TOKEN" in html

@@ -29,7 +29,7 @@ from starlette.routing import Route
 
 from ..catalog import store as catalog_store
 from ..config import Settings
-from .server import build
+from .server import build, mcp
 from .store import Access
 
 log = logging.getLogger(__name__)
@@ -142,8 +142,9 @@ def connector(token: str) -> str:
 
 
 TOOLS_TEXT = (
-    "trip planning (transit with fares and step-free checks, car, bike, walk), subway and rail "
-    "service changes, road closures and events, live road speeds, weather and alerts, Citi Bike "
+    "trip planning (transit with fares and step-free checks, car, bike, walk), the next trains at "
+    "a station, subway and rail service changes, incidents and street closures near a place, air "
+    "quality, road closures and events, live road speeds, weather and alerts, Citi Bike "
     "right now, public restrooms and fountains, place lookup, and NYC Open Data"
 )
 
@@ -197,7 +198,8 @@ def _ask_form(error: str = "", name: str = "", email: str = "", purpose: str = "
         "<h1>Use NYCynapse in your own AI app.</h1>"
         "<p class='lede'>Connect Claude, ChatGPT, Cursor or any MCP client to live New York City "
         "data. Your app's own model does the thinking; NYCynapse supplies the facts.</p>"
-        f"<p class='muted'>Tools: {TOOLS_TEXT}.</p>"
+        f"<p class='muted'>Tools: {TOOLS_TEXT}. "
+        f"<a href='{PREFIX}/connect/docs'>Read the connector guide</a>.</p>"
         "<div class='card'><form method='post'>"
         f"{err}<label for='n'>Name</label><input id='n' name='name' maxlength='80' value='{e(name)}' required>"
         f"<label for='m'>Email</label><input id='m' name='email' type='email' maxlength='200' value='{e(email)}' required>"
@@ -253,6 +255,42 @@ def _howto(url: str) -> str:
         f"<pre>{e(cfg)}</pre><p class='muted'>Then ask things like \"Is the L running normally "
         'right now?" or "Step-free way from Penn Station to the Met tomorrow at 10?"</p>'
     )
+
+
+# ---------------------------------------------------------------------------------- docs page
+
+
+async def docs_page(request: Request):
+    """How to connect, and every tool as the server itself describes it."""
+    rows = []
+    for t in sorted(await mcp.list_tools(), key=lambda t: t.name):
+        schema = getattr(t, "input_schema", None) or getattr(t, "inputSchema", None) or {}
+        need = set(schema.get("required") or [])
+        args = ", ".join(
+            f"<code>{e(k)}</code>" + ("" if k in need else " (optional)")
+            for k in schema.get("properties") or {}
+        )
+        text = " ".join((t.description or "").split())
+        rows.append(
+            f"<div class='card'><b><code>{e(t.name)}</code></b><p>{e(text)}</p>"
+            f"<p class='muted'>Takes: {args or 'nothing'}</p></div>"
+        )
+    body = (
+        "<h1>Connector guide</h1><p class='lede'>Live New York City data as MCP tools for your own "
+        "app. Your app's model does the thinking; every tool is read-only.</p>"
+        "<h2>Get access</h2><p>Ask on the <a href='"
+        f"{PREFIX}/connect'>request page</a>. Requests are "
+        "reviewed by hand. Once approved you get a personal address, shown one time. Keep it "
+        "private: anyone who has it uses your limits.</p>"
+        + _howto(connector("YOUR-TOKEN"))
+        + "<h2>Limits</h2><p>Usage limits apply during the beta, per hour and per day, and are "
+        "shown on your status page. A call past the limit returns an error that says so.</p>"
+        "<h2>What to know</h2><p>Times are New York time. Results carry a short summary, the data "
+        "and the sources with the time of the reading. Feeds can lag and plans change, so show "
+        "the time of the reading to your readers.</p>"
+        f"<h2>Tools</h2>{''.join(rows)}"
+    )
+    return page("NYCynapse connector guide", body)
 
 
 # ---------------------------------------------------------------------------------- admin page
@@ -529,6 +567,7 @@ async def lifespan(app):
 pages = Starlette(
     routes=[
         Route("/connect", ask_page, methods=["GET", "POST"]),
+        Route("/connect/docs", docs_page),
         Route("/connect/status/{key}", status_page),
         Route("/connect/admin", admin, methods=["GET", "POST"]),
         Route("/connect/admin/login", admin, methods=["POST"]),

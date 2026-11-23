@@ -9,7 +9,7 @@ A guide to New York City you can ask anything. It answers from the city's own da
 | | |
 |---|---|
 | What it is | An agent that answers questions about New York City from live city feeds, a data lake of city history, and the web as a last resort, with every fact cited and every place shown on a map |
-| What it does well | Getting around (transit, PATH and the AirTrains, live-traffic driving, walking, Citi Bike, shown like a map app), whether a line or road is running, weather for plans, rent and neighborhood figures, city history through text-to-SQL |
+| What it does well | Getting around (transit with fares and step-free checks, PATH and the AirTrains, live-traffic driving, walking, Citi Bike, shown like a map app), the next trains at a station, whether a line or road is running now or this weekend, what is happening near a place, weather for plans, rent and neighborhood figures, city history through text-to-SQL |
 | The hard parts | A governed text-to-SQL pipeline over a billion rows; tools served over MCP; checks that send back any answer with a figure no tool gave or a claim the tool results do not support; an evaluation loop where a different model family writes realistic questions and judges the answers with web search |
 | Where it stands | A working beta. A strict independent judge still finds a serious error in about one turn in ten, mostly around dates and exact local details, so check times before you travel |
 
@@ -25,7 +25,7 @@ Under the guide is a QueryGPT-style text-to-SQL pipeline, following the path Ube
 The guide is a small, budgeted agent that works with any model provider. Each step, the model replies with JSON: a status line for the reader and either up to three tool calls, run in parallel, or the answer. Tool results, failures included, go back to it on the next step.
 
 1. **The lake first.** `ask_lake` sends one precise question through the governed pipeline below and gets rows back. It knows what the lake covers, table by table, so it does not ask the lake about tonight.
-2. **Live city feeds next.** Weather by borough with a week's forecast and alerts (Open-Meteo, National Weather Service), NYC DOT road speeds, 511NY closures and planned street events, train and bus service changes, MTA subway alerts with the hours each one applies, a trip planner, Census rent, income and population by ZIP code area, NYC Open Data and the city's address search.
+2. **Live city feeds next.** Weather by borough with a week's forecast and alerts (Open-Meteo, National Weather Service), NYC DOT road speeds, 511NY closures and planned street events, DOT street closure permits, train and bus service changes, MTA subway alerts with the hours each one applies and planned work up to a week ahead, the next trains at a station, incidents near a place, air quality, public restrooms and fountains, a trip planner, Census rent, income and population by ZIP code area, NYC Open Data and the city's address search.
 3. **The web last.** Google results through Serper (Tavily and a self-hosted SearXNG behind it), and the text of the best pages, treated as untrusted material.
 4. **Routes are planned, not guessed, and shown like a map app.** Directions and travel times come from `trip_plan`: transit itineraries from [Transitous](https://transitous.org), a public trip planner built on the agencies' own schedules with live times where they publish them, and typical taxi and app trip times for that hour between the two taxi zones, from the last three months of TLC trip records in the lake. JFK trips add the AirTrain leg from the Port Authority's figures and its alerts. Driving times come from TomTom with live traffic (or its forecast for later trips), drawn along the roads. The page shows each trip with a switch between transit, car, walking and bike, route cards with each line in its own color, and the chosen route drawn bold with the others grey, as map apps do. Stations, street corners and hubs are found by the names the agencies use. Any figure in an answer that no tool returned sends the answer back to be rewritten, and is dropped if it comes back again.
 5. **One answer.** Short and direct. Every source the tools return gets a number, the model cites facts with those numbers, and the page shows them as source pills; sources the answer did not use are left out. A mixed question ("rain and roads right now") is split and sent to the right tools in one step; a failed tool is reported and the agent tries another way.
@@ -34,13 +34,17 @@ Each tool result can carry map layers: boroughs, neighborhoods or ZIP codes shad
 
 | Limit | Value |
 |---|---|
-| Steps and calls per answer | 4 rounds, 7 calls; 2 web searches, 2 page reads, 3 lake questions |
+| Steps and calls per answer | 5 rounds, 9 calls; 3 web searches, 3 page reads, 3 lake questions |
 | Time per answer | 150 seconds, then it answers with what it has |
-| Conversation | A question and 3 follow-ups, with memory of earlier turns; ends after 30 minutes idle |
-| Answers at once | 3, with a line of 10 that shows each reader their place, then a full-capacity message |
+| Conversation | A question and 5 follow-ups, with memory of earlier turns; ends after 30 minutes idle |
+| Answers at once | 5, with a line of 10 that shows each reader their place, then a full-capacity message |
 | Models | Claude Sonnet 5.5, with Gemini 3.8 Flash taking over when it is out of allowance |
 
 The live and web tools run as an MCP server; the guide is an MCP host that connects to it, and falls back to calling the same functions directly if the server process dies. See [MCP servers](#mcp-servers).
+
+**Speed.** When a question plainly needs a tool (a line's status, the weather, a trip from A to B), the call is made before the first model call. The draft is shown, marked as a draft, while a second pass checks it against the tool results; that pass returns the corrected answer instead of a list of problems. Lake questions share only their SQL step, so several can run side by side.
+
+**Your location.** A reader can share a location, or save home and work on their own device. They travel in request headers rather than the address, they are rounded to about 100 m, and they are removed from what is stored of the conversation, including the map. The answer's own words can still name stations or streets nearby.
 
 Guardrails, from scope and prompt injection to page reads that cannot reach private networks, are in [docs/SECURITY.md](docs/SECURITY.md).
 
@@ -168,6 +172,12 @@ The model provider is pluggable and set in a providers file, by role.
 
 ## MCP servers
 
+### Over the internet
+
+Other apps can use the city tools, with their own model doing the thinking, at [api.giriworks.com/nycynapse/connect](https://api.giriworks.com/nycynapse/connect). Access is by request and reviewed by hand; an approved app gets a personal address. Usage limits apply during the beta. The [connector guide](https://api.giriworks.com/nycynapse/connect/docs) lists the tools and how to add it to a client.
+
+### On your own machine
+
 Two stdio servers, both read-only, usable from Claude Desktop or any MCP client.
 
 `nycynapse-mcp`, the lake:
@@ -186,7 +196,13 @@ Two stdio servers, both read-only, usable from Claude Desktop or any MCP client.
 | `weather` | Weather now and for the next hours by borough, a daily forecast up to a week ahead, and National Weather Service alerts |
 | `road_speeds` | NYC DOT sensor speeds, by borough and the slowest segments, with how fresh the feed is |
 | `road_events` | 511NY closures, roadwork, incidents and planned street events (parades, games, concerts), quoted as published (needs a 511NY feed login) |
-| `subway_alerts` | MTA alerts in effect now with the hours each applies, plus changes starting in the next 12 hours, optionally for one line |
+| `subway_alerts` | MTA alerts in effect now with the hours each applies, plus planned changes in the next 12 hours or up to 7 days, optionally for one line |
+| `next_trains` | The next trains at a subway station by line and direction, from the MTA's real-time feeds |
+| `alerts_near` | Road incidents, closures, station alerts and weather warnings near a place |
+| `street_closures` | Streets closed for construction near a place, from NYC DOT permits |
+| `air_quality` | US AQI, fine particles and ozone, now and for the next hours |
+| `nearby` | Public restrooms and drinking fountains near a place |
+| `citibike_now` | Bikes, e-bikes and docks at the nearest Citi Bike stations |
 | `transit_changes` | 511NY service changes for LIRR, Metro-North, NJ Transit, subway and buses |
 | `trip_plan` | Every way between two places: transit itineraries (Transitous, PATH, AirTrains), driving with live traffic (TomTom), walking and bike, and typical taxi and app fares for that hour (lake) |
 | `find_place` | An address, landmark or venue: coordinates, neighborhood, borough |

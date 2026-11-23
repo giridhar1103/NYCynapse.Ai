@@ -14,7 +14,7 @@ Every tool is read-only. There is nothing to send, buy, post, delete or write.
 | Tool | Reach |
 |---|---|
 | `ask_lake`, `lake_freshness` | Gold tables of the lake, through the semantic layer and a SQL guard |
-| `weather`, `road_speeds`, `road_events`, `subway_alerts`, `find_place`, `area_stats` | Fixed public APIs (Open-Meteo, NWS, NYC DOT, 511NY, MTA, NYC GeoSearch, Census Reporter) |
+| `weather`, `road_speeds`, `road_events`, `subway_alerts`, `next_trains`, `alerts_near`, `street_closures`, `air_quality`, `nearby`, `citibike_now`, `trip_plan`, `find_place`, `area_stats` | Fixed public APIs (Open-Meteo, NWS, NYC DOT, 511NY, MTA, Transitous, TomTom, Citi Bike, NYC Open Data, NYC GeoSearch, Census Reporter) |
 | `open_data` | Six named NYC Open Data datasets, at most 50 rows |
 | `web_search` | Serper, then Tavily, then a self-hosted SearXNG |
 | `read_page` | One public web page, through the guarded fetch below |
@@ -54,7 +54,7 @@ Tests in `tests/test_guide.py` cover these cases.
 
 ## Excessive agency and runaway loops [LLM06, ASI08]
 
-* A turn has at most 4 rounds and 7 tool calls; at most 2 web searches, 2 page reads and 3 lake
+* A turn has at most 5 rounds and 9 tool calls; at most 3 web searches, 3 page reads and 3 lake
   questions. The same call is never repeated. After 150 seconds the model must answer with what it
   has.
 * Unknown tool names are refused and reported back to the model.
@@ -65,13 +65,27 @@ Tests in `tests/test_guide.py` cover these cases.
 ## Cost and abuse [LLM10]
 
 * A Cloudflare Turnstile check before a conversation starts.
-* Per reader: 16 messages an hour and 48 a day. Per conversation: a question and three follow-ups,
+* Per reader: 16 messages an hour and 48 a day. Per conversation: a question and five follow-ups,
   ending after 30 minutes idle.
 * Questions are 3 to 400 characters, with control characters removed.
-* Three answers run at once and ten more wait in a line, each told its place. Beyond that, readers
+* Five answers run at once and ten more wait in a line, each told its place. Beyond that, readers
   are told the site is at full capacity rather than left waiting. A daily budget caps model spend
   for the whole site, and web searches have their own daily cap.
 * `NYCYNAPSE_PAUSED=1` stops new questions without a deploy.
+
+## Readers' locations, and tokens
+
+* A shared location, and home and work saved on the device, come in request headers, rounded to
+  about 100 m. Home and work are sent only in a conversation that names them.
+* What is stored of such a turn has its map removed and every number within about a kilometer of
+  those spots taken out. The answer's words may still name streets or stations nearby. Location is
+  passed to the model and to the outside services that plan the trip.
+* A reader who asks for alerts near a spot has that spot stored, rounded, until they turn it off or
+  30 days pass.
+* The web server's access log keeps no query strings, and for the MCP server and the sign-up pages
+  no path, because it holds a token. A failed upstream request can still appear in its error log.
+* MCP access is by request. Each token has hourly and daily limits and can be revoked; the owner's
+  page is behind a password with a limit on tries.
 
 ## Scope, people and harmful requests [LLM09, ASI09]
 
