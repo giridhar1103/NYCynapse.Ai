@@ -2293,3 +2293,51 @@ def test_the_readers_spots_come_in_headers_and_not_in_the_address():
     from nycynapse.api import chat
 
     assert not {"at", "home", "work"} & set(inspect.signature(chat.chat).parameters)
+
+
+def test_next_trains_uses_whole_station_complexes_and_the_right_shuttle(monkeypatch):
+    import time as _t
+
+    from google.transit import gtfs_realtime_pb2
+
+    from nycynapse.tools import arrivals
+
+    def stop(sid, complex_id, name, lines, boro="M"):
+        return {
+            "gtfs_stop_id": sid,
+            "complex_id": complex_id,
+            "stop_name": name,
+            "borough": boro,
+            "daytime_routes": lines,
+            "gtfs_latitude": "40.75",
+            "gtfs_longitude": "-73.98",
+        }
+
+    stations = [
+        stop("R16", "611", "Times Sq-42 St", "N Q R W"),
+        stop("127", "611", "Times Sq-42 St", "1 2 3"),
+        stop("902", "611", "Times Sq-42 St", "S"),
+        stop("S01", "627", "Franklin Av", "S", "Bk"),
+        stop("R01", "1", "Astoria-Ditmars Blvd", "N W", "Q"),
+    ] + [stop(f"X{i}", f"9{i}", "86 St", line) for i, line in enumerate("1BQR")]
+    fed = {}
+    for key, route, stops in (
+        ("nyct%2Fgtfs-nqrw", "N", ["R16N", "R01N"]),
+        ("nyct%2Fgtfs-bdfm", "FS", ["S01S", "D26S"]),
+        ("nyct%2Fgtfs-nqrw", "N", ["R01S", "R16S"]),
+    ):
+        feed = fed.setdefault(key, gtfs_realtime_pb2.FeedMessage())
+        feed.header.gtfs_realtime_version, feed.header.timestamp = "2.0", int(_t.time())
+        e = feed.entity.add(id=f"{route}{len(feed.entity)}")
+        e.trip_update.trip.route_id = route
+        for k, sid in enumerate(stops):
+            e.trip_update.stop_time_update.add(stop_id=sid).arrival.time = int(_t.time()) + 240 + k
+    empty = gtfs_realtime_pb2.FeedMessage()
+    monkeypatch.setattr(arrivals, "_feed", lambda key: fed.get(key, empty))
+    monkeypatch.setattr("nycynapse.tools.access._stations", lambda: stations)
+    r = arrivals.next_trains("Times Square", "N")
+    assert "N toward Astoria-Ditmars Blvd: 4 min" in r.summary
+    assert "toward Times Sq" not in r.summary  # a train ending here cannot be boarded
+    assert "S toward" in arrivals.next_trains("Franklin Avenue", "S").summary
+    assert "does not stop" in arrivals.next_trains("Times Sq-42 St", "G").error
+    assert "several stations" in arrivals.next_trains("86th Street").error
