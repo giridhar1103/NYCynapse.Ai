@@ -123,7 +123,7 @@ Everything the system may know about the lake is declared in [`semantic/`](seman
 | `workspaces.yaml` | Ten domains (taxis and app rides, subway, Citi Bike, 311, traffic safety, road speeds, weather, data freshness, places, calendar) and the models in each |
 | `models/` | 27 semantic models over the gold tables: time columns, keys, dimensions, measures and named filters |
 | `metrics/` | 39 governed metrics with units, bounds and how they may be added up |
-| `relationships.yaml` | 46 joins the planner is allowed to use |
+| `relationships.yaml` | 53 joins the planner is allowed to use |
 | `time.yaml` | Named parts of the day and week, such as rush hour |
 | `places.yaml` | Landmarks, venues, airports and stations people name, such as Yankee Stadium |
 | `instructions.yaml` | Domain rules, such as how subway delay is signed or why taxi tips need card trips |
@@ -142,7 +142,7 @@ A few choices worth calling out:
 
 `nycynapse publish` validates the semantic layer and writes it to Postgres as a new catalog version:
 
-* 372 objects (models, dimensions, metrics, relationships, places and so on), each with a short description, a 384-dimension embedding (`bge-small-en-v1.5`, run locally) and a full text index
+* 484 objects (models, dimensions, metrics, relationships, places and so on), each with a short description, a 384-dimension embedding (`bge-small-en-v1.5`, run locally) and a full text index
 * 16 thousand distinct values of the dimensions that need grounding, such as complaint types, station names and neighborhood names, indexed with trigrams
 * the coverage of every named place
 

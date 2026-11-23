@@ -225,6 +225,7 @@ pre.code { background: #0f0f0e; color: #e8e7df; border-radius: 14px; padding: 18
 .g-input .hint { font-size: 12px; color: var(--muted); margin-top: 7px; display: flex; justify-content: space-between; gap: 10px; }
 .g-input .hint .beta { text-align: right; }
 .g-input .hint > span:first-child { white-space: nowrap; }
+@media (max-width: 1150px) { .g-input .hint { flex-direction: column; gap: 2px; } .g-input .hint .beta { text-align: left; } }
 @media (max-width: 560px) { .g-input .hint { flex-direction: column; gap: 2px; } .g-input .hint .beta { text-align: left; } }
 .ts-box { margin-top: 8px; }
 .ts-box:empty { display: none; }
