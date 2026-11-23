@@ -351,6 +351,16 @@ async def _turn(
                 "answer": cached["answer"],
                 "sources": cached["sources"],
                 "map": cached["map"],
+                # The answer's own places keep their numbers and pins, as in a fresh answer.
+                "places": cached.get("places")
+                or next(
+                    (
+                        x.get("items") or []
+                        for x in (cached.get("map") or [])
+                        if x.get("type") == "highlight"
+                    ),
+                    [],
+                ),
                 "steps": cached["steps"],
                 "model": cached["model"],
                 "cost_usd": 0,

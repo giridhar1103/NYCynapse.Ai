@@ -1121,6 +1121,7 @@ def _step_free_first(options: list[dict]) -> list[dict]:
             if not subway
             else "could not be checked"
         )
+        o["step_free_ok"] = not bad
         return bad
 
     bad = {id(o): check(o) for o in options}
@@ -1562,6 +1563,9 @@ def _trip_layer(a: dict, b: dict, t: datetime, arrive_by: bool, mode: str, data:
                     "tags": [
                         t for t, x in (("Arrives first", quick), ("Fewest changes", easy)) if o is x
                     ],
+                    # Only set on a step-free search: whether every station on it checked out.
+                    "step_free": o.get("step_free_ok"),
+                    "access": o.get("access"),
                     "legs": [x for x in o["lines"] if x.get("coords")],
                 }
                 for o in options

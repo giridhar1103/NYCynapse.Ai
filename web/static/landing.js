@@ -1,7 +1,7 @@
 // Landing page: the live map drawing, the ticker, examples, the lakehouse diagram, and the
 // hand-off to the guide overlay.
 
-import { guide } from "./guide.js?v=34";
+import { guide } from "./guide.js?v=35";
 import { drawHero } from "./hero.js?v=3";
 
 const { el, get } = NY;
@@ -15,7 +15,10 @@ pulse.then((p) => {
   if (!p) return;
   const items = [];
   if (p.bikes?.stations) items.push([p.bikes.bikes, `Citi Bikes docked at ${p.bikes.stations.toLocaleString("en-US")} stations now`]);
-  if (p.subway?.arrivals) items.push([p.subway.arrivals, "train arrivals in the latest 20 minutes of feed data"]);
+  // Arrivals reach the lake in batches, so the window's end time is shown with the count.
+  const upTo = p.subway?.at ? new Date(p.subway.at.replace(" ", "T")) : null;
+  const until = upTo && !isNaN(upTo) ? ` to ${upTo.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/New_York" })}` : "";
+  if (p.subway?.arrivals) items.push([p.subway.arrivals, `train arrivals in the 20 minutes${until}`]);
   if (p.alerts != null) items.push([p.alerts, "subway alerts in effect"]);
   if (p.weather) items.push([`${Math.round(p.weather.temp_f)}°F`, `${p.weather.now} in Manhattan`]);
   if (p.lake?.rows) items.push([`${(p.lake.rows / 1e9).toFixed(2)}B`, "rows of city history in the lake"]);
@@ -50,7 +53,7 @@ NY.get("api/config").then((cfg) => {
   const ex = cfg.examples || [];
   $("chips").replaceChildren(...ex.slice(0, 6).map((e) => el("button", {
     class: "chip", type: "button", onclick: (ev) => start(e.q, ev.currentTarget) },
-    el("span", { class: "tag" + (/live|subway|events/i.test(e.tag) && /now|weekend/i.test(e.q) ? " live" : "") }, e.tag), e.q)));
+    el("span", { class: "tag" + (/live|subway|events/i.test(e.tag) ? " live" : "") }, e.tag), e.q)));
   typewriter(heroQ, ex.map((e) => e.q));
 }).catch(() => {});
 
@@ -61,6 +64,7 @@ function typewriter(input, list) {
     if (document.activeElement === input || input.value) return setTimeout(tick, 1500);
     const s = list[i % list.length];
     input.placeholder = s.slice(0, j);
+    input.dataset.example = s;
     if (!back && j < s.length) j += 1;
     else if (!back) { back = true; return setTimeout(tick, 2200); }
     else if (j > 0) j -= 2;
@@ -79,7 +83,8 @@ for (const [formId, inputId] of [["hero-form", "hero-q"], ["cta-form", "cta-q"]]
   $(formId).addEventListener("submit", (e) => {
     e.preventDefault();
     const input = $(inputId);
-    const q = input.value.trim() || input.placeholder;
+    // An empty box asks the example being shown, whole, not the half typed placeholder.
+    const q = input.value.trim() || input.dataset.example || input.placeholder;
     input.value = "";
     start(q, input);
   });
@@ -149,8 +154,8 @@ function flow() {
   const gx = 1046;
   svg.append(mk("path", { d: `M980,${midY} L${gx - 30},${midY}`, class: "pipe" }));
   const guideNode = mk("g", { class: "node" });
-  guideNode.append(mk("circle", { cx: gx, cy: midY, r: 30, fill: "#0b0b0b" }),
-    mk("text", { x: gx, y: midY + 6, "text-anchor": "middle", fill: "#ffffff", style: "fill:#fff;font-weight:800;font-size:18px" }, "N"),
+  guideNode.append(mk("circle", { cx: gx, cy: midY, r: 30, style: "fill:var(--ink)" }),
+    mk("text", { x: gx, y: midY + 6, "text-anchor": "middle", style: "fill:var(--bg);font-weight:800;font-size:18px" }, "N"),
     mk("text", { x: gx, y: midY + 52, "text-anchor": "middle" }, "Guide"),
     mk("text", { x: gx, y: midY + 68, "text-anchor": "middle", class: "sub" }, "MCP host"));
   svg.append(guideNode);
@@ -183,7 +188,7 @@ if ("serviceWorker" in navigator) {
 }
 
 // Fetch the map library while the reader is still reading, so the guide opens at once.
-import("./map.js?v=11").then((m) => {
+import("./map.js?v=12").then((m) => {
   const go = () => m.loadMapLibrary().catch(() => { /* loads again when the map opens */ });
   if ("requestIdleCallback" in window) requestIdleCallback(go, { timeout: 4000 }); else setTimeout(go, 2500);
 });

@@ -54,6 +54,8 @@ def _compute() -> dict:
             WHERE a.arrived_date >= current_date - 1
               AND a.arrived_at > (SELECT max(arrived_at) FROM gold.fct_subway_arrival
                                   WHERE arrived_date >= current_date - 1) - INTERVAL 20 MINUTE
+              -- arrivals land in the lake in batches; older than three hours is not "now"
+              AND a.arrived_at > now() - INTERVAL 3 HOUR
         )
         SELECT r.route_id, s.latitude, s.longitude, count(*) AS n, max(r.arrived_at)
         FROM recent r JOIN gold.dim_subway_station s USING (station_id)

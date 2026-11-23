@@ -2,7 +2,7 @@
 // draws each tool call as it runs (with errors and recoveries), renders the answer and its
 // sources as plain text, and keeps the conversation to a question and five follow-ups.
 
-import { GuideMap, wxIcon } from "./map.js?v=11";
+import { GuideMap, wxIcon } from "./map.js?v=12";
 
 const { el, url } = NY;
 const TOOL = {
@@ -42,7 +42,7 @@ class Guide {
       this.input.style.height = "auto";
       this.input.style.height = Math.min(120, this.input.scrollHeight) + "px";
     });
-    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && this.isOpen()) this.close(); });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && this.isOpen() && !e.target.closest?.(".rate")) this.close(); });
     addEventListener("popstate", () => { if (this.isOpen() && location.hash !== "#guide") this.close(true); });
     this.setupLocation();
     this.setupVoice();
@@ -231,10 +231,17 @@ class Guide {
     } catch (_) { /* tried again next visit */ }
   }
 
-  isOpen() { return !this.root.hidden; }
+  isOpen() { return !!this.opened; }
+
+  // The page behind the open guide is out of reach for the keyboard and screen readers.
+  behind(off) {
+    for (const n of document.body.children) if (n !== this.root && !n.contains(this.root) && n.tagName !== "SCRIPT") n.inert = off;
+  }
 
   open(origin) {
-    if (this.isOpen()) return;
+    if (this.opened) return;
+    this.opened = true;
+    clearTimeout(this.hideTimer);  // reopened while the close animation was still running
     const r = origin?.getBoundingClientRect?.();
     const panel = this.root.querySelector(".panel");
     if (r) {
@@ -242,17 +249,21 @@ class Guide {
       panel.style.setProperty("--oy", `${r.top + r.height / 2}px`);
     }
     this.root.hidden = false;
+    this.behind(true);
     document.body.classList.add("locked");
     requestAnimationFrame(() => requestAnimationFrame(() => this.root.classList.add("open")));
     if (location.hash !== "#guide") history.pushState(null, "", "#guide");
     if (!this.map) this.map = new GuideMap($("g-map"), $("g-legend"), $("g-chipbar"));
-    setTimeout(() => { this.map.resize(); this.input.focus(); }, 480);
+    setTimeout(() => { this.map.resize(); if (!TOUCH) this.input.focus(); }, 480);
   }
 
   close(fromHistory) {
+    if (!this.opened) return;
+    this.opened = false;
     this.root.classList.remove("open");
     document.body.classList.remove("locked");
-    setTimeout(() => { this.root.hidden = true; }, 380);
+    this.behind(false);
+    this.hideTimer = setTimeout(() => { this.root.hidden = true; }, 380);
     if (!fromHistory && location.hash === "#guide") history.back();
   }
 
@@ -269,7 +280,7 @@ class Guide {
 
   renderTurns() {
     const box = $("g-turns");
-    box.replaceChildren("Follow-ups ", ...Array.from({ length: this.maxTurns - 1 }, (_, i) =>
+    box.replaceChildren(el("span", { class: "lbl" }, "Follow-ups"), ...Array.from({ length: this.maxTurns - 1 }, (_, i) =>
       el("i", { class: i < Math.max(0, this.turn - 1) ? "used" : "" })));
     const left = this.turn === 0 ? "A question and up to 5 follow-ups"
       : this.turn >= this.maxTurns ? "That's the last follow-up for this chat during the beta. Start a new chat to keep going."
@@ -321,9 +332,10 @@ class Guide {
     const qEl = el("div", { class: "msg-q" }, q);
     this.log.append(qEl);
     const view = new TurnView(this.log);
+    this.hold = false;
     // A failed answer can be asked again in one tap; the failed attempt is cleared away.
     view.retry = () => { qEl.remove(); view.box.remove(); this.ask(q); };
-    this.scroll();
+    this.scroll(true);
     await this.map?.ready;
     this.map?.clear();
     this.map?.busy(true);
@@ -366,7 +378,7 @@ class Guide {
           else if (ev === "draft") view.draft(d.text);
           else if (ev === "tool") view.tool(d);
           else if (ev === "lake") view.lake(d);
-          else if (ev === "map") { view.layers.push(...(d.layers || [])); this.map?.show(d.layers); }
+          else if (ev === "map") { view.layers.push(...(d.layers || [])); this.map?.show(d.layers)?.catch(() => {}); }
           else if (ev === "answer") {
             ended = true;
             this.turn = d.turn;
@@ -376,6 +388,10 @@ class Guide {
             view.answer(d, (f) => this.ask(f), (i) => this.map?.focus(i), {
               place: (i) => this.map?.reveal(i), done: () => this.map?.revealAll(), scroll: () => this.scroll(),
               trip: (trip, sel) => this.map?.showTrip(trip, sel) });
+            $("g-status").textContent = d.declined ? "" : "Answer ready";
+            // The reader starts at the top of the answer, not at its end.
+            this.hold = true;
+            this.log.scrollTo({ top: qEl.getBoundingClientRect().top - this.log.getBoundingClientRect().top + this.log.scrollTop - 8, behavior: "smooth" });
             const name = MODEL_NAMES[d.model] || d.model;
             if (name) $("g-model").textContent = name + (d.fell_back ? " (backup)" : "");
           } else if (ev === "error") {
@@ -394,11 +410,15 @@ class Guide {
       this.map?.busy(false);
       this.renderTurns();
       this.scroll();
-      if (this.turn < this.maxTurns) this.input.focus();
+      if (this.turn < this.maxTurns && !TOUCH) this.input.focus();
     }
   }
 
-  scroll() { this.log.scrollTop = this.log.scrollHeight; }
+  // Follows new lines only while the reader is at the bottom, and stops once the answer is in.
+  scroll(force) {
+    const log = this.log;
+    if (force || (!this.hold && log.scrollHeight - log.scrollTop - log.clientHeight < 120)) log.scrollTop = log.scrollHeight;
+  }
 
   // A shared answer, opened from its link: shown as asked, with its map, read only.
   async showShared(id) {
@@ -412,7 +432,7 @@ class Guide {
     await this.map?.ready;
     this.map?.clear();
     view.layers = d.map || [];
-    if (view.layers.length) this.map?.show(view.layers);
+    if (view.layers.length) this.map?.show(view.layers)?.catch(() => {});
     const when = d.asked_at ? new Date(d.asked_at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "";
     view.answer({ ...d, shared: true, cached: true, follow_ups: [], follow_ups_left: 0 }, (f) => this.ask(f), (i) => this.map?.focus(i), {
       place: (i) => this.map?.reveal(i), done: () => this.map?.revealAll(), scroll: () => this.scroll(),
@@ -517,7 +537,10 @@ function tripPanel(trip, draw) {
             ` · ${o.transfers ? `${o.transfers} change${o.transfers > 1 ? "s" : ""}` : "no changes"}`,
             o.walk_minutes ? ` · ${o.walk_minutes} min walk` : "",
             o.fare ? ` · ${o.fare}` : "",
-            ...(o.tags || []).map((t) => el("span", { class: "tag" }, t))));
+            ...(o.tags || []).map((t) => el("span", { class: "tag" }, t)),
+            // On a step-free search, each option says whether its stations checked out.
+            o.step_free === true ? el("span", { class: "tag" }, "Step-free") : "",
+            o.step_free === false ? el("span", { class: "tag warn", title: o.access || "" }, "Stairs or elevator out") : ""));
         return on ? el("div", { class: "optwrap" }, card, stepList(o.legs, trip)) : card;
       }));
     } else if (state.mode === "drive") {
@@ -551,6 +574,9 @@ function b64(s) {
   const raw = atob((s + pad).replace(/-/g, "+").replace(/_/g, "/"));
   return Uint8Array.from(raw, (c) => c.charCodeAt(0));
 }
+
+// On phones the keyboard would cover half the screen, so the box is not focused by itself.
+const TOUCH = matchMedia("(pointer: coarse)").matches;
 
 // Home and work, kept on this device only, as rounded coordinates ("40.712,-74.006").
 const PLACES = "nycynapse.places";
@@ -625,7 +651,8 @@ class TurnView {
     log.append(this.box);
   }
 
-  status(text) { this.text = text; this.tick(); }
+  // Screen readers hear each new step once, not the seconds counter.
+  status(text) { this.text = text; this.tick(); const sr = document.getElementById("g-status"); if (sr) sr.textContent = text; }
 
   tick() {
     if (this.text == null) return;
@@ -675,8 +702,9 @@ class TurnView {
       s.row.classList.add(d.state);
       s.st.append(d.ms != null ? ms(d.ms) : "", d.via === "mcp" ? " · MCP" : "");
       if (d.state === "error" && d.error) {
-        const msg = d.error.replace(/[.\s]*$/, ".");
-        s.row.append(el("span", { class: "err" }, `${msg[0].toUpperCase()}${msg.slice(1)} The guide will try another way.`));
+        // Tool errors carry advice for the model after a semicolon; readers see only what failed.
+        const msg = d.error.split(/;\s*(?:use|try|ask|name|call)\b/i)[0].replace(/[.\s]*$/, ".");
+        s.row.append(el("span", { class: "err" }, `${msg[0].toUpperCase()}${msg.slice(1)} Trying another way.`));
       }
       if (s.stages) s.stages.querySelectorAll("span").forEach((x) => x.classList.add("on"));
       const sql = (d.sources || []).map((x) => x.sql).find(Boolean);
@@ -699,7 +727,9 @@ class TurnView {
     this.fold(d, srcs.length);
     const card = el("div", { class: "answer-card" + (d.declined ? " declined" : "") });
     card.append(...renderText(d.text || "", { sources: numbered, places: d.places || [], onPlace }));
-    const wx = this.layers.find((L) => L.type === "weather" && (L.daily || []).length >= 3);
+    // The longest forecast when the answer looked at the weather more than once.
+    const wx = this.layers.filter((L) => L.type === "weather" && (L.daily || []).length >= 3)
+      .sort((a, b) => b.daily.length - a.daily.length)[0];
     if (wx && !d.declined) card.append(forecast(wx.daily));
     const trip = this.layers.filter((L) => L.type === "trip").pop();
     if (trip && !d.declined && Object.keys(trip.modes || {}).length) card.append(tripPanel(trip, cue.trip));
@@ -789,7 +819,7 @@ class TurnView {
     const ago = d.asked_at ? Math.max(1, Math.round((Date.now() / 1000 - d.asked_at) / 60)) : null;
     const bits = d.shared ? ["Shared answer"] : d.cached ? [ago != null ? `Same question answered ${ago} min ago` : "Stored answer from earlier today"]
       : [`Worked for ${secs} s`, steps ? `${steps} ${steps === 1 ? "check" : "checks"}` : "",
-        d.cost_usd ? `$${Number(d.cost_usd).toFixed(3)}` : "", d.fell_back ? "backup model" : ""];
+        d.fell_back ? "backup model" : ""];
     this.stop();
     this.now.textContent = "";
     this.now.hidden = true;

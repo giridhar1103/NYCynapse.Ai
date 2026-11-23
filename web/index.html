@@ -10,9 +10,9 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="static/icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-title" content="NYCynapse">
-<link rel="stylesheet" href="static/style.css?v=8">
+<link rel="stylesheet" href="static/style.css?v=9">
 <link rel="stylesheet" href="static/vendor/maplibre-gl.css">
-<link rel="stylesheet" href="static/guide.css?v=22">
+<link rel="stylesheet" href="static/guide.css?v=23">
 </head>
 <body>
 <header class="band on-night">
@@ -68,12 +68,12 @@
       <p class="kicker">What you can ask</p>
       <h2 class="big reveal">Built for the questions New Yorkers actually have.</h2>
       <div class="cards">
-        <div class="cap reveal"><span class="bullet b1">S</span><h3>Getting around</h3><p>Delays and planned work by line, the busiest stations, how late trains ran, rides by neighborhood.</p><div class="q" data-q="Which subway lines have delays right now?">Which subway lines have delays right now? →</div></div>
-        <div class="cap reveal"><span class="bullet b5">W</span><h3>Weather and streets</h3><p>Rain chances by borough, weather alerts, road speeds from city sensors, closures and events.</p><div class="q" data-q="How is the rain and road situation in New York right now?">Rain and roads right now? →</div></div>
-        <div class="cap reveal"><span class="bullet b3">B</span><h3>Bikes and rides</h3><p>Where Citi Bike riders start, e-bike share, app and taxi trips by zone, airport waits.</p><div class="q" data-q="How many Citi Bike rides started in Williamsburg in the most recent month on record?">Citi Bike in Williamsburg →</div></div>
-        <div class="cap reveal"><span class="bullet b2">3</span><h3>Your block</h3><p>311 complaints by neighborhood, how fast agencies close them, restaurant grades, farmers markets.</p><div class="q" data-q="Which neighborhoods had the most noise complaints last month?">Noise complaints by neighborhood →</div></div>
-        <div class="cap reveal"><span class="bullet b8">X</span><h3>Safety</h3><p>Crashes, injuries and contributing factors by borough and month, from NYPD reports.</p><div class="q" data-q="How many cyclists have been injured in Brooklyn so far this year?">Cyclists injured in Brooklyn →</div></div>
-        <div class="cap reveal"><span class="bullet b4">E</span><h3>What's on</h3><p>Permitted street events, parades and film shoots, plus the web for openings and news.</p><div class="q" data-q="What street events are happening in Manhattan this weekend?">Street events this weekend →</div></div>
+        <div class="cap reveal"><span class="bullet b1">S</span><h3>Getting around</h3><p>Delays and planned work by line, the busiest stations, how late trains ran, rides by neighborhood.</p><button type="button" class="q" data-q="Which subway lines have delays right now?">Which subway lines have delays right now? →</button></div>
+        <div class="cap reveal"><span class="bullet b5">W</span><h3>Weather and streets</h3><p>Rain chances by borough, weather alerts, road speeds from city sensors, closures and events.</p><button type="button" class="q" data-q="How is the rain and road situation in New York right now?">Rain and roads right now? →</button></div>
+        <div class="cap reveal"><span class="bullet b3">B</span><h3>Bikes and rides</h3><p>Where Citi Bike riders start, e-bike share, app and taxi trips by zone, airport waits.</p><button type="button" class="q" data-q="How many Citi Bike rides started in Williamsburg in the most recent month on record?">Citi Bike in Williamsburg →</button></div>
+        <div class="cap reveal"><span class="bullet b2">3</span><h3>Your block</h3><p>311 complaints by neighborhood, how fast agencies close them, restaurant grades, farmers markets.</p><button type="button" class="q" data-q="Which neighborhoods had the most noise complaints last month?">Noise complaints by neighborhood →</button></div>
+        <div class="cap reveal"><span class="bullet b8">X</span><h3>Safety</h3><p>Crashes, injuries and contributing factors by borough and month, from NYPD reports.</p><button type="button" class="q" data-q="How many cyclists have been injured in Brooklyn so far this year?">Cyclists injured in Brooklyn →</button></div>
+        <div class="cap reveal"><span class="bullet b4">E</span><h3>What's on</h3><p>Permitted street events, parades and film shoots, plus the web for openings and news.</p><button type="button" class="q" data-q="What street events are happening in Manhattan this weekend?">Street events this weekend →</button></div>
       </div>
     </div>
   </section>
@@ -158,7 +158,8 @@
       <button class="close" type="button" data-close aria-label="Close">✕</button>
     </div>
     <div class="g-chat">
-      <div class="g-log" id="g-log" aria-live="polite"></div>
+      <div class="g-log" id="g-log"></div>
+      <div class="sr-only" id="g-status" role="status" aria-live="polite"></div>
       <div class="g-input">
         <div class="g-where" id="g-where" hidden><span>Using where you are</span><span class="g-save" id="g-save"></span><button type="button" id="g-where-off" aria-label="Stop using my location">✕</button></div>
         <form id="g-form" autocomplete="off">
@@ -181,6 +182,6 @@
 </div>
 
 <script src="static/app.js?v=6"></script>
-<script type="module" src="static/landing.js?v=34"></script>
+<script type="module" src="static/landing.js?v=35"></script>
 </body>
 </html>
