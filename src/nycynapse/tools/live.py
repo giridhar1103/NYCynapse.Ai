@@ -22,7 +22,7 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from ..config import REPO
-from . import Tool, ToolResult, failed
+from . import Tool, ToolResult, areas, failed
 from .http import UA, cached, env, get_json
 
 NY = ZoneInfo("America/New_York")
@@ -1350,6 +1350,13 @@ DATASETS = {
         "season_begin, accepts_ebt, latitude, longitude",
     ),
 }
+# The column holding a record's point, where there is one to draw a neighborhood around.
+_POINT = {
+    "311": "location",
+    "collisions": "location",
+    "crime": "lat_lon",
+    "restaurant_inspections": "location",
+}
 # The date column that says how far a dataset reaches.
 _NEWEST = {"311": "created_date", "collisions": "crash_date", "crime": "cmplnt_fr_dt"}
 
@@ -1394,8 +1401,10 @@ def open_data(
     group: str = "",
     order: str = "",
     limit: int = 20,
+    area: str = "",
 ) -> ToolResult:
-    """Query one NYC Open Data dataset from a fixed list with SoQL clauses."""
+    """Query one NYC Open Data dataset from a fixed list with SoQL clauses, in a neighborhood or
+    ZIP code when `area` names one."""
     if dataset not in DATASETS:
         return failed(f"unknown dataset {dataset}; choose from {', '.join(DATASETS)}")
     for clause in (select, where, group, order):
@@ -1407,6 +1416,15 @@ def open_data(
     for k, v in (("$select", select), ("$where", where), ("$group", group), ("$order", order)):
         if v.strip():
             params[k] = v.strip()
+    drawn = None
+    if area.strip():
+        if dataset not in _POINT:
+            return failed(f"{dataset} has no points to match with an area; use its own columns")
+        drawn = areas.outline(area)
+        if "error" in drawn:
+            return failed(drawn["error"])
+        inside = f"within_polygon({_POINT[dataset]}, '{drawn['wkt']}')"
+        params["$where"] = f"({where}) AND {inside}" if where.strip() else inside
     url = f"https://data.cityofnewyork.us/resource/{ds}.json"
     rows = get_json(url, params, _socrata_headers(), ttl_s=300, again=_behind)
     pts = [
@@ -1439,8 +1457,12 @@ def open_data(
         more = " (one row per group; a row is that group's count, not the area's total)"
     elif len(rows) > 20:
         more = " (the first 20 are shown)"
+    inside = f"\nArea: {drawn['note']}." if drawn else ""
+    layers = [{"type": "points", "label": title, "points": pts}] if pts else []
+    if drawn:
+        layers.insert(0, {"type": "highlight", "label": title, "items": [drawn["item"]]})
     return ToolResult(
-        summary=f"{title}: {len(rows)} rows{more}\n{preview}{_reaches(dataset, where)}",
+        summary=f"{title}: {len(rows)} rows{more}\n{preview}{inside}{_reaches(dataset, where)}",
         data=rows,
         sources=[
             {
@@ -1449,7 +1471,7 @@ def open_data(
                 "url": f"https://data.cityofnewyork.us/d/{ds}",
             }
         ],
-        map=[{"type": "points", "label": title, "points": pts}] if pts else [],
+        map=layers,
     )
 
 
@@ -1569,7 +1591,12 @@ TOOLS = [
         "Query a NYC Open Data dataset directly with SoQL (select, where, group, order, limit "
         "up to 50). Datasets: "
         + "; ".join(f"{k}: {v[1]} (columns: {v[2]})" for k, v in DATASETS.items())
-        + ". Use when the lake does not cover the subject or is not fresh enough.",
+        + ". For a neighborhood or ZIP code set `area` ('Washington Heights', 'Murray Hill, "
+        "Queens', '11102') with "
+        + ", ".join(_POINT)
+        + ": it uses the city's own outlines, so never list ZIP codes for a neighborhood; say "
+        "which outlines were counted. Use when the lake does not cover the subject or is not "
+        "fresh enough.",
         {
             "type": "object",
             "properties": {
@@ -1579,6 +1606,7 @@ TOOLS = [
                 "group": {"type": "string"},
                 "order": {"type": "string"},
                 "limit": {"type": "integer", "minimum": 1, "maximum": 50},
+                "area": {"type": "string"},
             },
             "required": ["dataset"],
         },

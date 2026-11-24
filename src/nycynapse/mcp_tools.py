@@ -112,10 +112,12 @@ def open_data(
     group: str = "",
     order: str = "",
     limit: int = 20,
+    area: str = "",
 ) -> dict:
     """Query an allowlisted NYC Open Data dataset with SoQL. Datasets: 311, collisions, events,
-    film_permits, restaurant_inspections, farmers_markets."""
-    return live.open_data(dataset, select, where, group, order, limit).as_dict()
+    film_permits, restaurant_inspections, farmers_markets. `area` limits 311, collisions, crime
+    and restaurant_inspections to a neighborhood or ZIP code by the city's outlines."""
+    return live.open_data(dataset, select, where, group, order, limit, area).as_dict()
 
 
 @server.tool(annotations=LIVE)

@@ -53,6 +53,15 @@ def export(con: duckdb.DuckDBPyConnection, out: Path) -> dict:
             "ORDER BY nta_code",
             ["name", "code", "borough", "kind"],
         ),
+        # For queries by neighborhood, not for drawing (tools/areas.py).
+        "outlines.json": _features(
+            con,
+            "SELECT nta_name, 'nta', ST_AsGeoJSON(ST_SimplifyPreserveTopology(geom, 0.00005)) "
+            "FROM silver.geo_nta WHERE nta_kind = 'residential' UNION ALL "
+            "SELECT modzcta, 'zip', ST_AsGeoJSON(ST_SimplifyPreserveTopology(geom, 0.00005)) "
+            "FROM silver.geo_modzcta WHERE modzcta <> '99999' ORDER BY 2, 1",
+            ["name", "kind"],
+        ),
         "zips.json": _features(
             con,
             # Each ZIP is labelled with the residential neighborhoods covering most of it, so

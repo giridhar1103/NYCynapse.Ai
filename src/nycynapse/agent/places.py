@@ -15,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from ..config import REPO
 from ..tools import live
+from ..tools.areas import norm as _norm
 
 GEO = REPO / "web" / "static" / "geo"
 MAX_PLACES = 6
@@ -41,12 +42,6 @@ _ABBR = {
     "pkwy": "parkway",
     "sq": "square",
 }
-
-
-def _norm(s: str) -> str:
-    s = re.sub(r"\(.*?\)", " ", s.lower().replace("'", "").replace("\u2019", ""))
-    s = re.sub(r"[^a-z0-9]+", " ", s)
-    return " ".join(w for w in s.split() if w not in {"the", "neighborhood", "area"})
 
 
 def _load() -> dict:

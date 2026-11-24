@@ -149,10 +149,12 @@ def open_data(
     group: str = "",
     order: str = "",
     limit: int = 20,
+    area: str = "",
 ) -> dict:
     """Query one NYC Open Data dataset with SoQL clauses: 311, collisions, events, film_permits,
-    restaurant_inspections, crime, farmers_markets."""
-    return live.open_data(dataset, select, where, group, order, limit).as_dict()
+    restaurant_inspections, crime, farmers_markets. `area` limits 311, collisions, crime and
+    restaurant_inspections to a neighborhood or ZIP code by the city's outlines."""
+    return live.open_data(dataset, select, where, group, order, limit, area).as_dict()
 
 
 def build(access: Access, hosts: list[str]):
