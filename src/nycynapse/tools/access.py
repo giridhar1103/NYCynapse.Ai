@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import math
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from .http import get_json
@@ -15,7 +15,9 @@ from .http import get_json
 NY = ZoneInfo("America/New_York")
 STATIONS = "https://data.ny.gov/resource/39hk-dx4f.json"
 OUTAGES = "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fnyct_ene.json"
+EQUIPMENT = "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fnyct_ene_equipments.json"
 NEAR_M = 250
+LATE = timedelta(hours=12)  # repairs often end after the time given
 
 
 def _norm(name: str) -> str:
@@ -26,9 +28,41 @@ def _stations() -> list[dict]:
     return list(get_json(STATIONS, {"$limit": 600}, ttl_s=24 * 3600) or [])
 
 
-def _outages() -> list[dict]:
-    rows = get_json(OUTAGES, ttl_s=300) or []
-    return [r for r in rows if r.get("equipmenttype") == "EL" and r.get("isupcomingoutage") != "Y"]
+def _outages(at: datetime | None = None) -> list[dict]:
+    """Elevators out now, or at the time of a trip: planned outages that will have begun count,
+    and the ones expected back by then do not."""
+    rows = [r for r in get_json(OUTAGES, ttl_s=300) or [] if r.get("equipmenttype") == "EL"]
+    if at is None:
+        return [r for r in rows if r.get("isupcomingoutage") != "Y"]
+    out = []
+    for r in rows:
+        planned = r.get("isupcomingoutage") == "Y"
+        begins, ends = _time(r.get("outagedate")), _time(r.get("estimatedreturntoservice"))
+        if planned and (begins is None or at < begins):
+            continue
+        if ends and at >= ends + (timedelta(0) if planned else LATE):
+            continue
+        out.append(r)
+    return out
+
+
+def _time(s: str | None) -> datetime | None:
+    try:
+        return datetime.strptime(s or "", "%m/%d/%Y %I:%M:%S %p").replace(tzinfo=NY)
+    except ValueError:
+        return None
+
+
+def _lines_served() -> dict[str, set[str]]:
+    """Which lines each elevator serves. At 161 St the one to the 4 does not matter to the D."""
+    try:
+        rows = get_json(EQUIPMENT, ttl_s=24 * 3600) or []
+    except Exception:  # noqa: BLE001 - then every elevator at the station counts
+        return {}
+    return {
+        r.get("equipmentno"): set(re.findall(r"[A-Z0-9]+", r.get("linesservedbyelevator") or ""))
+        for r in rows
+    }
 
 
 def _metres(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -37,9 +71,11 @@ def _metres(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return math.hypot(dx, dy)
 
 
-def station(name: str, lat: float, lon: float, line: str | None = None) -> dict | None:
+def station(
+    name: str, lat: float, lon: float, line: str | None = None, at: datetime | None = None
+) -> dict | None:
     """The MTA's access record for the subway platform nearest a point (the line's own
-    platform when it is given), with any elevator out there now."""
+    platform when it is given), with any elevator to it that is out, now or at a time."""
     near = [
         (s, _metres(lat, lon, float(s["gtfs_latitude"]), float(s["gtfs_longitude"])))
         for s in _stations()
@@ -56,10 +92,12 @@ def station(name: str, lat: float, lon: float, line: str | None = None) -> dict 
     notes = s.get("ada_notes") if s.get("ada_notes") not in (None, "NaN", "") else None
     outages_known = True
     try:
+        served = _lines_served() if line else {}
         out = [
             o
-            for o in _outages()
-            if _norm(o.get("station")) == _norm(s["stop_name"])
+            for o in (_outages(at) if at else _outages())
+            if not (served.get(o.get("equipment")) and line not in served[o["equipment"]])
+            and _norm(o.get("station")) == _norm(s["stop_name"])
             and set((o.get("trainno") or "").replace("/", " ").split())
             & set((s.get("daytime_routes") or "").split())
         ]

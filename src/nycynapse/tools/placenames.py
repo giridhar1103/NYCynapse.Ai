@@ -231,8 +231,6 @@ _DROP = {
     "bronx",
     "staten",
     "island",
-    "new",
-    "york",
     "ny",
     "metro",
     "north",
@@ -246,6 +244,7 @@ def _key_words(text: str) -> set[str]:
     """Words that identify a stop or street, with street types spelled one way."""
     t = re.sub(r"[^a-z0-9 ]+", " ", text.lower().replace("-", " ").replace("/", " "))
     t = re.sub(r"\b(\d+)(?:st|nd|rd|th)\b", r"\1", t)
+    t = re.sub(r"\bnew york\b", " ", t)  # York St and New Lots Av keep their names
     return {_STREET.get(w, w) for w in t.split()} - _DROP
 
 
@@ -993,7 +992,7 @@ def _line_station(name: str, lines: set[str], area: str = "") -> dict | None:
     """The subway station of that name served by those lines, from the MTA's station list."""
     from . import access
 
-    want = _key_words(name)
+    want = _station_words(name)
     core = want - set(_STREET.values())  # "Avenue" alone names no station
     try:
         rows = access._stations()
@@ -1015,19 +1014,91 @@ def _line_station(name: str, lines: set[str], area: str = "") -> dict | None:
     )
     fits = []
     for r in rows:
-        got = _key_words(r.get("stop_name") or "")
+        got = _station_words(r.get("stop_name") or "")
         routes = set((r.get("daytime_routes") or "").split())
         if core and core <= got and len(got - want) <= 2 and lines & routes:
-            fits.append(((boro is not None and r.get("borough") != boro), len(got ^ want), r))
+            elsewhere = boro is not None and r.get("borough") != boro
+            # "Gun Hill Rd (5)" is the one only the 5 serves, not the one on the 2 and 5.
+            fits.append((elsewhere, len(got ^ want), len(routes - lines), r))
     if not fits:
         return None
-    r = min(fits, key=lambda x: x[:2])[2]
+    r = min(fits, key=lambda x: x[:3])[3]
     routes = sorted(set((r.get("daytime_routes") or "").split()))
     return {
         "name": f"{r['stop_name']} ({' '.join(routes)})",
         "lat": float(r["gtfs_latitude"]),
         "lon": float(r["gtfs_longitude"]),
     }
+
+
+_RAILROAD = re.compile(
+    r"lirr|railroad|metro.?north|nj ?transit|\bpath\b|amtrak|ferry|\bbus\b", re.I
+)
+# The MTA shortens names ("W 4 St-Wash Sq", "Atlantic Av-Barclays Ctr").
+_SHORT = {
+    **{"west": "w", "east": "e", "center": "ctr", "centre": "ctr", "washington": "wash"},
+    **{"turnpike": "tpke", "highway": "hwy", "heights": "hts", "sts": "st", "plz": "plaza"},
+    **{
+        w: str(i)
+        for i, w in enumerate(
+            "first second third fourth fifth sixth seventh eighth ninth tenth".split(), 1
+        )
+    },
+}
+
+
+def _station_words(text: str) -> set[str]:
+    return {_SHORT.get(w, w) for w in _key_words(text)}
+
+
+def _subway_station(raw: str, loose: bool = False) -> dict | None:
+    """ "9 Av station, Brooklyn": the subway station of exactly that name there, or the only one
+    with those words in its name ("Union Square station" is 14 St-Union Sq). Loose: also when the
+    reader did not write station."""
+    if _RAILROAD.search(raw):
+        return None
+    if not loose and not re.search(r"\b(?:station|subway|stop)\b", raw, re.I):
+        return None
+    from . import access
+
+    name, _, area = raw.partition(",")
+    tail = re.match(r"(.+?\b(?:station|subway|stop))\s+(?:in\s+)?(\S.*)$", name, re.I)
+    if tail and not area:  # "96th St station Upper West Side"
+        name, area = tail.groups()
+    want, boro = _station_words(name), _borough_named(area)
+    if not want - set(_STREET.values()) - {"w", "e"}:
+        return None
+    try:
+        rows = [(r, _station_words(r.get("stop_name") or "")) for r in access._stations()]
+    except Exception:  # noqa: BLE001 - the other ways of finding it remain
+        return None
+    codes = {"manhattan": "M", "brooklyn": "Bk", "queens": "Q", "bronx": "Bx"}
+    if boro:
+        rows = [x for x in rows if x[0].get("borough") == codes.get(boro, "SI")]
+    for fits in (
+        [r for r, got in rows if got == want],
+        [r for r, got in rows if want <= got],
+    ):
+        hood = _neighborhood(_norm(area)) if area.strip() and fits else None
+        if hood and not hood.get("around") and boro:
+            hood = None
+        if hood:  # the nearest one to the area named, if it is there
+            spot = lambda r: {  # noqa: E731
+                "lat": float(r["gtfs_latitude"]),
+                "lon": float(r["gtfs_longitude"]),
+            }
+            near = min(fits, key=lambda r: T._metres(hood, spot(r)))
+            fits = [near] if T._metres(hood, spot(near)) < 2500 else []
+        if len({r.get("complex_id") for r in fits}) == 1:
+            routes = sorted({x for r in fits for x in (r.get("daytime_routes") or "").split()})
+            return {
+                "name": f"{fits[0]['stop_name']} ({' '.join(routes)})",
+                "lat": float(fits[0]["gtfs_latitude"]),
+                "lon": float(fits[0]["gtfs_longitude"]),
+            }
+        if fits:
+            return None  # several: the reader has to say which
+    return None
 
 
 def _locate(text: str) -> dict | None:
@@ -1049,6 +1120,9 @@ def _locate(text: str) -> dict | None:
     low = " ".join(re.sub(r"[^a-z0-9 ]+", " ", raw.lower()).split())
     term = re.search(r"\bterminal\s*([a-c1-8])\b|\bt([1-8])\b", low)
     term = (term.group(1) or term.group(2)).upper() if term else None
+    station = _subway_station(raw)
+    if station:
+        return station
     for key, ap in T.AIRPORT_WORDS.items():
         if re.search(rf"\b{key}\b", low):
             out = {"name": ap["name"], "lat": ap["lat"], "lon": ap["lon"], "airport": ap["code"]}
@@ -1114,9 +1188,9 @@ def _locate(text: str) -> dict | None:
     # A street named without a house number is usually its station ("Metropolitan Av" on the
     # G), not one address somewhere along it.
     if re.search(
-        r"\b(?:av|ave|avenue|st|street|blvd|boulevard|pkwy|parkway|rd|road)\b", n
+        r"\b(?:av|ave|avenue|st|street|blvd|boulevard|pkwy|parkway|rd|road|plaza)\b", n
     ) and not (re.search(r"\d+\s*-?\d*\s+\w", raw.strip()[:6]) and raw.strip()[0].isdigit()):
-        stop = _stop(raw)
+        stop = _subway_station(raw, loose=True) or _stop(raw)
         if stop:
             return stop
     outside = re.search(
@@ -1215,7 +1289,8 @@ def _locate(text: str) -> dict | None:
                 if station and T._metres(station, {"lat": lat, "lon": lon}) < 6000:
                     return {**station, "name": f"{station['name']} station"}
             return {"name": f"near {name}" if k else name, "lat": lat, "lon": lon}
-    return _rail_stop(raw)
+    # "Vernon Jackson", "Atlantic Barclays": the words of one station's name.
+    return (_subway_station(raw, loose=True) if not outside else None) or _rail_stop(raw)
 
 
 # Commuter rail reaches well past the city: Montauk, New Haven, Poughkeepsie, Trenton.

@@ -2982,3 +2982,109 @@ def test_the_fastest_way_is_worked_out_by_the_tool():
     line = T._by_time(data)
     assert "bike 36 min, car 39 min, transit 42 min. Only bike may" in line
     assert T._by_time({"transit": data["transit"]}) is None
+
+
+def test_subway_stations_by_exact_name(monkeypatch):
+    from nycynapse.tools import trips as T, access, placenames as pn  # noqa: F401, I001
+
+    def row(name, boro, lines, complex_id, lat):
+        return {
+            "stop_name": name,
+            "borough": boro,
+            "daytime_routes": lines,
+            "complex_id": complex_id,
+            "gtfs_latitude": str(lat),
+            "gtfs_longitude": "-73.9",
+        }
+
+    rows = [
+        row("9 Av", "Bk", "D", "1", 40.646),
+        row("Gun Hill Rd", "Bx", "2 5", "2", 40.878),
+        row("Gun Hill Rd", "Bx", "5", "3", 40.869),
+        row("York St", "Bk", "F", "4", 40.701),
+        row("Sutphin Blvd-Archer Av-JFK Airport", "Q", "E J Z", "5", 40.700),
+        row("36 St", "Bk", "D N R", "6", 40.655),
+        row("14 St-Union Sq", "M", "L N Q R W 4 5 6", "8", 40.7347),
+        row("59 St-Columbus Circle", "M", "A B C D 1", "9", 40.768),
+        row("W 4 St-Wash Sq", "M", "A B C D E F M", "10", 40.732),
+        row("Atlantic Av-Barclays Ctr", "Bk", "B D N Q R 2 3 4 5", "11", 40.684),
+        row("Vernon Blvd-Jackson Av", "Q", "7", "12", 40.7426),
+        row("36 St", "Q", "M R", "7", 40.752),
+    ]
+    monkeypatch.setattr(access, "_stations", lambda: rows)
+    at = lambda text: (pn._subway_station(text) or {}).get("lat")  # noqa: E731
+    assert at("9 Av station, Brooklyn") == 40.646
+    assert at("Sutphin Blvd-Archer Av-JFK Airport station, Queens") == 40.700
+    assert at("36 St station, Queens") == 40.752
+    assert at("36 St station") is None  # there are two
+    assert at("Gun Hill Rd station, Bronx") is None
+    assert at("9 Av LIRR station, Brooklyn") is None and at("9 Av, Brooklyn") is None
+    # By the names people use, when only one station has them.
+    assert at("Union Square station") == 40.7347 and at("Columbus Circle station") == 40.768
+    assert at("West 4th station") == 40.732 and at("Barclays Center station") == 40.684
+    assert pn._subway_station("Vernon Jackson", loose=True)["lat"] == 40.7426
+    assert at("Street station") is None
+    assert pn._line_station("Gun Hill Rd", {"5"}, "Bronx")["lat"] == 40.869
+    assert pn._line_station("Gun Hill Rd", {"2"}, "Bronx")["lat"] == 40.878
+    assert pn._line_station("York St", {"F"})["lat"] == 40.701
+
+
+def test_an_elevator_counts_only_for_the_lines_it_serves_and_when_it_is_out(monkeypatch):
+    from datetime import datetime
+
+    from nycynapse.tools import access
+
+    def feed(url, params=None, ttl_s=0):
+        if url == access.STATIONS:
+            return [
+                {
+                    "gtfs_stop_id": "D11",
+                    "stop_name": "161 St-Yankee Stadium",
+                    "daytime_routes": "B D",
+                    "gtfs_latitude": "40.8279",
+                    "gtfs_longitude": "-73.9257",
+                    "ada": "1",
+                }
+            ]
+        if url == access.EQUIPMENT:
+            return [
+                {"equipmentno": "EL132", "linesservedbyelevator": "4"},
+                {"equipmentno": "EL134", "linesservedbyelevator": "B/D"},
+            ]
+
+        def out(n, upcoming, begins, ends):
+            return {
+                "station": "161 St-Yankee Stadium",
+                "trainno": "B/D/4",
+                "equipment": n,
+                "equipmenttype": "EL",
+                "serving": "somewhere",
+                "isupcomingoutage": upcoming,
+                "outagedate": begins,
+                "estimatedreturntoservice": ends,
+            }
+
+        return [
+            out("EL132", "N", "11/02/2026 06:57:00 PM", "11/30/2026 03:00:00 AM"),
+            out("EL134", "Y", "11/28/2026 10:00:00 PM", "11/29/2026 06:00:00 AM"),
+        ]
+
+    monkeypatch.setattr(access, "get_json", feed)
+
+    def outages(line, *at):
+        when = datetime(*at, tzinfo=access.NY) if at else None
+        rec = access.station("", 40.8279, -73.9257, line, when)
+        return [x.split()[1] for x in rec["out"]]
+
+    assert outages("D") == []  # the one out serves the 4
+    assert outages("4") == ["EL132"]
+    assert outages("D", 2026, 11, 29, 1) == ["EL134"]  # planned for that night
+    assert outages("D", 2026, 11, 29, 7) == []
+    assert outages("4", 2026, 11, 30, 5) == ["EL132"]  # repairs run late
+    assert outages("4", 2026, 12, 2, 5) == []
+
+
+def test_a_borough_is_not_a_place_to_plan_a_trip_to():
+    from nycynapse.agent import core
+
+    assert core._trip_prefetch("next L from union square station to brooklyn", None) is None

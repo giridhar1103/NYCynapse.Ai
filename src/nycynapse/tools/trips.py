@@ -1189,7 +1189,9 @@ def _step_free_first(options: list[dict]) -> list[dict]:
                 continue
             for lon, lat in ends:
                 try:
-                    rec = access.station("", lat, lon, lg.get("name"))
+                    ts = lg.get("depart_ts")
+                    at = datetime.fromtimestamp(ts, NY) if ts else None
+                    rec = access.station("", lat, lon, lg.get("name"), at)
                 except Exception:  # noqa: BLE001
                     rec = None
                 if not rec:

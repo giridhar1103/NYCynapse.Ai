@@ -1080,6 +1080,9 @@ def _shown_trip(trips: list[dict], answer: str) -> dict:
     return max(enumerate(trips), key=lambda x: (*told(x[1]), x[0]))[1]
 
 
+_WHOLE = {"brooklyn", "queens", "the bronx", "bronx", "staten island", "new jersey", "nj"}
+
+
 def _trip_prefetch(
     question: str, where: tuple[float, float] | None, places: dict | None = None
 ) -> dict | None:
@@ -1105,6 +1108,8 @@ def _trip_prefetch(
         kind = _SAVED.get(x.lower())
         ends.append(f"{saved[0]:.4f},{saved[1]:.4f} ({kind})" if saved else x)
     a, b = ends
+    if any(x.lower().strip(" .,?!") in _WHOLE for x in ends):
+        return None  # "the L to Brooklyn" is a direction, not a place to plan to
     try:
         if not (locate(a) and locate(b)):
             return None
