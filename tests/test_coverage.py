@@ -1,7 +1,7 @@
 from datetime import datetime
 from types import SimpleNamespace
 
-from nycynapse.pipeline.graph import coverage_gap, local_now
+from nycynapse.pipeline.graph import coverage_gap, local_now, newest_record
 from nycynapse.pipeline.timeparse import Window
 
 RIDERSHIP = SimpleNamespace(
@@ -48,3 +48,14 @@ def test_the_future_is_not_missing_data():
 def test_local_now_is_new_york_time():
     assert local_now("2026-10-03T06:00:00-04:00") == datetime(2026, 10, 3, 6, 0)
     assert local_now("2026-10-03T10:00:00+00:00") == datetime(2026, 10, 3, 6, 0)
+
+
+def test_a_note_when_the_last_day_is_not_whole():
+    c = ctx(datetime(2024, 1, 1), datetime(2026, 11, 23, 15, 9))
+    month = Window(datetime(2026, 11, 1), datetime(2026, 11, 24), "1 to 23 Nov")
+    morning = datetime(2026, 11, 24, 6)
+    assert coverage_gap(c, ["gold.fct_ridership"], month, morning) is None
+    note = newest_record(c, ["gold.fct_ridership"], month, morning)
+    assert "Mon Nov 23 2026, 3:09 PM" in note
+    earlier = Window(datetime(2026, 11, 1), datetime(2026, 11, 23), "1 to 22 Nov")
+    assert newest_record(c, ["gold.fct_ridership"], earlier, morning) is None

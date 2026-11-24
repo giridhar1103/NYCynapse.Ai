@@ -571,22 +571,29 @@ def coverage_gap(ctx: Context, tables: list[str], window, now=None) -> Gap | Non
             )
         worst = Gap(message, covered)
     return worst
-    span = (window.end - window.start).total_seconds()
+
+
+def newest_record(ctx: Context, tables: list[str], window, now=None) -> str | None:
+    """A note when the data stops short of the end of the window, however little: the last day
+    is not whole, and the same dates of another year are."""
+    if window is None or window.is_now or window.start is None or window.end is None:
+        return None
+    end_of_window = min(window.end, now) if now is not None and now > window.start else window.end
+    ends = []
     for m in ctx.models_for_tables(tables):
         spans = [ctx.table_coverage[t] for t in m.coverage if ctx.table_coverage.get(t, (None,))[0]]
-        if not spans or not span:
-            continue
-        # A few source rows carry impossible dates; the lake's history starts in 2024.
-        start = max(min(s for s, _ in spans), HISTORY_START)
-        end = max(e for _, e in spans)
-        missing = max(0.0, (window.end - max(end, window.start)).total_seconds())
-        missing += max(0.0, (min(start, window.end) - window.start).total_seconds())
-        if missing / span > 0.1:
-            return (
-                f"{m.label} covers {start:%-d %b %Y} to {end:%-d %b %Y}, which does not "
-                f"cover most of {window.label}."
-            )
-    return None
+        if spans:
+            ends.append((max(e for _, e in spans), m.label))
+    if not ends:
+        return None
+    end, label = min(ends)
+    if (end_of_window - end).total_seconds() < 3 * 3600 or end <= window.start:
+        return None
+    return (
+        f"The newest record in {label} is from {end:%a %b %-d %Y, %-I:%M %p}, so the end of this "
+        "period is not complete. A comparison with another period should end on a full day "
+        "before that in both."
+    )
 
 
 def _literals(sql: str) -> list[str]:

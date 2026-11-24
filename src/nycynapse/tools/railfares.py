@@ -183,22 +183,23 @@ _MNR = _index(_MNR_STATIONS)
 _NJT = _index(_NJT_STATIONS)
 _NJT_PENN = _norm("NEW YORK PENN STATION")
 
-# Days that may run on a holiday fare: both prices are given rather than one guessed.
-_MAYBE_HOLIDAY = {(1, 1), (6, 19), (7, 3), (7, 4), (12, 24), (12, 25), (12, 31)}
+
+def _holiday(d: date) -> bool:
+    """Off-peak fares are valid all day on these, from mta.info/fares-tolls/lirr-metro-north."""
+    if (d.month, d.day) in {(1, 1), (7, 4), (12, 25)}:
+        return True
+    week = (d.day - 1) // 7 + 1
+    if d.weekday() == 0:  # Martin Luther King, Presidents, Labor and Memorial Day
+        last = (d + timedelta(days=7)).month != d.month
+        return (d.month, week) in {(1, 3), (2, 3), (9, 1)} or d.month == 5 and last
+    thursday = d - timedelta(days=1) if d.weekday() == 4 else d  # and the day after Thanksgiving
+    return d.weekday() in (3, 4) and d.month == 11 and (thursday.day - 1) // 7 + 1 == 4
 
 
 def _maybe_holiday(d: date) -> bool:
-    if (d.month, d.day) in _MAYBE_HOLIDAY:
-        return True
-    if d.weekday() == 0 and d.month in (
-        1,
-        2,
-        5,
-        9,
-        10,
-    ):  # the Monday holidays fall on some of these
-        return True
-    return d.month == 11 and (d.weekday() in (3, 4) and 22 <= d.day <= 29 or d.day == 11)
+    """A holiday on a weekend may be kept on the weekday next to it: both prices are given."""
+    near = {4: d + timedelta(days=1), 0: d - timedelta(days=1)}.get(d.weekday())
+    return near is not None and (near.month, near.day) in {(1, 1), (7, 4), (12, 25)}
 
 
 _TERMINALS = {
@@ -254,7 +255,7 @@ def fare(railroad: str, start: str, end: str, depart: float, arrive: float) -> s
         return None
     if peak == off:
         return f"${peak:.2f}"
-    if day.weekday() >= 5:
+    if day.weekday() >= 5 or _holiday(day.date()):
         return f"${off:.2f}"
     both = f"${peak:.2f} peak or ${off:.2f} off-peak"
     if _maybe_holiday(day.date()):

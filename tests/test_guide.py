@@ -2403,9 +2403,8 @@ def test_rail_fares_follow_the_official_charts():
     assert fare("LIRR", "Far Rockaway", "Penn Station", tue + "08:00", tue + "09:00") is None
     assert fare("LIRR", "Nowhere", "Penn Station", tue + "08:00", tue + "09:00") is None
     assert " or " in fare("LIRR", "Jamaica", "Huntington", tue + "08:00", tue + "09:00")
-    assert " or " in fare(
-        "LIRR", "Penn Station", "Huntington", "2026-11-26T17:00", "2026-11-26T18:00"
-    )
+    holiday = ("2026-11-26T17:00", "2026-11-26T18:00")  # Thanksgiving, off-peak all day
+    assert fare("LIRR", "Penn Station", "Huntington", *holiday) == "$13.50"
     assert " or " in fare("LIRR", "Woodside", "Huntington", tue + "16:10", tue + "17:00")
     assert (
         fare("LIRR", "Penn Station", "Huntington", "2027-08-03T17:00", "2027-08-03T18:00") is None
@@ -2555,3 +2554,96 @@ def test_a_landmark_in_a_longer_name_is_not_the_place(monkeypatch):
     assert pn.locate("NYU Langone, Manhattan")["name"] == "NYU Langone Tisch Hospital"
     got = pn.locate("NYU Langone, Brooklyn")
     assert not got or "Tisch" not in got["name"]
+
+
+def test_a_ride_to_a_station_its_train_skips_is_not_offered(monkeypatch):
+    import time as _time
+    from datetime import datetime
+
+    from nycynapse.tools import access, trips
+
+    def alert(text, kind):
+        return {
+            "entity": [
+                {
+                    "alert": {
+                        "header_text": {"translation": [{"language": "en", "text": text}]},
+                        "informed_entity": [{"route_id": "F", "stop_id": "B10"}],
+                        "active_period": [
+                            {"start": int(_time.time()) - 60, "end": int(_time.time()) + 86400}
+                        ],
+                        "transit_realtime.mercury_alert": {"alert_type": kind},
+                    }
+                }
+            ]
+        }
+
+    feed = alert("[F] skips 57 St in both directions", "Planned - Stops Skipped")
+    monkeypatch.setattr(trips, "get_json", lambda *a, **k: feed)
+    stations = [
+        {
+            "gtfs_stop_id": "B10",
+            "stop_name": "57 St",
+            "gtfs_latitude": "40.763972",
+            "gtfs_longitude": "-73.97745",
+        }
+    ]
+    monkeypatch.setattr(access, "_stations", lambda: stations)
+
+    def ride(to, coords):
+        leg = {"mode": "subway", "name": "F", "from": "Forest Hills-71 Av", "to": to}
+        return {"lines": [{**leg, "coords": coords}]}
+
+    ends_there = ride("57 St", [[-73.8445, 40.7217], [-73.9774, 40.7640]])
+    trips._line_changes(ends_there, datetime.now(trips.NY))
+    assert ends_there["skipped"] == "the F does not stop at 57 St then"
+    rides_past = ride("34 St-Herald Sq", [[-73.8445, 40.7217], [-73.9879, 40.7497]])
+    trips._line_changes(rides_past, datetime.now(trips.NY))
+    assert "skipped" not in rides_past
+    feed = alert("Manhattan-bound [F] skips 57 St", "Planned - Stops Skipped")
+    one_way = ride("57 St", [[-73.8445, 40.7217], [-73.9774, 40.7640]])
+    trips._line_changes(one_way, datetime.now(trips.NY))
+    assert "skipped" not in one_way  # it may be the other direction
+
+
+def test_open_data_says_how_far_its_records_go(monkeypatch):
+    def rows(url, params=None, *a, **k):
+        if "newest" in params.get("$select", ""):
+            return [{"newest": "2026-11-22T02:06:22.000"}]
+        return [{"count": "5"}]
+
+    monkeypatch.setattr(live, "get_json", rows)
+    got = live.open_data("311", select="count(*)", where="created_date >= '2026-11-01'")
+    assert "Sun Nov 22 2026" in got.summary and "same dates in both" in got.summary
+    assert "newest" not in live.open_data("311", select="count(*)", where="agency = 'HPD'").summary
+
+
+def test_railroad_holidays():
+    from datetime import date
+
+    from nycynapse.tools.railfares import _holiday, _maybe_holiday
+
+    for d in (
+        date(2026, 11, 26),
+        date(2026, 11, 27),
+        date(2026, 12, 25),
+        date(2027, 1, 1),
+        date(2027, 1, 18),
+        date(2027, 2, 15),
+        date(2027, 5, 31),
+        date(2026, 9, 7),
+        date(2024, 11, 29),  # Thanksgiving on the 28th
+        date(2030, 11, 29),  # and the day after it on the 29th
+    ):
+        assert _holiday(d), d
+    for d in (
+        date(2026, 11, 25),
+        date(2026, 11, 20),
+        date(2026, 11, 11),
+        date(2026, 10, 12),
+        date(2027, 1, 11),
+        date(2027, 5, 24),
+        date(2026, 11, 19),
+    ):
+        assert not _holiday(d), d
+    assert _maybe_holiday(date(2026, 7, 3)) and not _maybe_holiday(date(2026, 12, 24))

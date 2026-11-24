@@ -73,13 +73,25 @@ def cached(key: tuple, ttl_s: float, make):
 
 
 def get_json(
-    url: str, params: dict | None = None, headers: dict | None = None, ttl_s: float = 60
+    url: str,
+    params: dict | None = None,
+    headers: dict | None = None,
+    ttl_s: float = 60,
+    again=None,
 ) -> object:
-    """GET a known API (not user-supplied URLs) and parse JSON, with caching."""
+    """GET a known API (not user-supplied URLs) and parse JSON, with caching. `again` looks at
+    the headers and says whether to ask once more."""
 
     def make():
         r = _client.get(url, params=params, headers=headers)
         r.raise_for_status()
+        if again and again(r.headers):
+            try:
+                other = _client.get(url, params=params, headers=headers)
+                other.raise_for_status()
+                r = other
+            except httpx.HTTPError:
+                pass  # the first answer is better than none
         return r.json()
 
     key = ("GET", url, tuple(sorted((params or {}).items())))

@@ -1293,14 +1293,18 @@ def area_stats(
 DATASETS = {
     "311": (
         "erm2-nwe9",
-        "311 service requests, 2020 to now, updated daily",
+        "311 service requests, 2020 to now, updated daily. The last 2 days are missing or not "
+        "complete: to compare this month with last year, end both periods 3 days before today "
+        "and name those dates",
         "created_date, closed_date, agency, complaint_type, descriptor, incident_zip, "
         "incident_address, borough, status, latitude, longitude",
     ),
     "collisions": (
         "h9gi-nx95",
-        "Motor vehicle crashes reported by NYPD. Near a place: where within_circle(location, "
-        "LAT, LON, METERS). A crash involves a bike when cyclists were hurt or killed or any of "
+        "Motor vehicle crashes reported by NYPD. The last 5 days are missing or not complete: "
+        "end both periods of a comparison 6 days before today. Near a place: where "
+        "within_circle(location, LAT, LON, METERS). A crash involves a bike when cyclists were "
+        "hurt or killed or any of "
         "vehicle_type_code1 to vehicle_type_code5 is a bike or e-bike (upper(...) like '%BIKE%' "
         "or '%BICYCLE%'); count with select count(*), never by counting listed rows",
         "crash_date, crash_time, borough, zip_code, on_street_name, location, "
@@ -1346,6 +1350,40 @@ DATASETS = {
         "season_begin, accepts_ebt, latitude, longitude",
     ),
 }
+# The date column that says how far a dataset reaches.
+_NEWEST = {"311": "created_date", "collisions": "crash_date", "crime": "cmplnt_fr_dt"}
+
+
+def _behind(headers) -> bool:
+    """Several copies of a dataset answer queries, and this one says it is out of date."""
+    return headers.get("X-SODA2-Data-Out-Of-Date", "").lower() == "true"
+
+
+def _reaches(dataset: str, where: str) -> str:
+    """How far the records go, when a query picks dates: a period that runs past that is not
+    complete, and not the same length as the same dates of another year."""
+    col = _NEWEST.get(dataset)
+    if not col or col not in where:
+        return ""
+    ds = DATASETS[dataset][0]
+    try:
+        rows = get_json(
+            f"https://data.cityofnewyork.us/resource/{ds}.json",
+            {"$select": f"max({col}) as newest"},
+            _socrata_headers(),
+            ttl_s=1800,
+            again=_behind,
+        )
+        newest = datetime.fromisoformat(rows[0]["newest"])
+    except Exception:  # noqa: BLE001 - only a note
+        return ""
+    return (
+        f"\nThe newest record in this dataset is from {newest:%a %b %-d %Y, %-I:%M %p}. Dates "
+        "after that are not in it yet and the last day or two may be incomplete: to compare with "
+        "another period, use the same dates in both, ending on a full day before that."
+    )
+
+
 _SOQL_BAD = re.compile(r"[;\\]|--|/\*")
 
 
@@ -1369,9 +1407,8 @@ def open_data(
     for k, v in (("$select", select), ("$where", where), ("$group", group), ("$order", order)):
         if v.strip():
             params[k] = v.strip()
-    rows = get_json(
-        f"https://data.cityofnewyork.us/resource/{ds}.json", params, _socrata_headers(), ttl_s=300
-    )
+    url = f"https://data.cityofnewyork.us/resource/{ds}.json"
+    rows = get_json(url, params, _socrata_headers(), ttl_s=300, again=_behind)
     pts = [
         {
             "lat": float(r["latitude"]),
@@ -1403,7 +1440,7 @@ def open_data(
     elif len(rows) > 20:
         more = " (the first 20 are shown)"
     return ToolResult(
-        summary=f"{title}: {len(rows)} rows{more}\n{preview}",
+        summary=f"{title}: {len(rows)} rows{more}\n{preview}{_reaches(dataset, where)}",
         data=rows,
         sources=[
             {

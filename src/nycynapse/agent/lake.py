@@ -18,7 +18,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from ..pipeline.context import Context
-from ..pipeline.graph import build, coverage_gap, local_now
+from ..pipeline.graph import build, coverage_gap, local_now, newest_record
 from ..tools import Tool, ToolResult, failed
 
 NY = ZoneInfo("America/New_York")
@@ -326,6 +326,9 @@ def ask_lake(
     gap = coverage_gap(ctx, state["guard"].tables, window, local_now(as_of))
     if gap:
         notes.append(gap.message)
+    newest = newest_record(ctx, state["guard"].tables, window, local_now(as_of))
+    if newest and not gap:
+        notes.append(newest)
     if state.get("problem"):
         notes.append(state["problem"])
     summary = (

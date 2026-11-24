@@ -1035,6 +1035,31 @@ def _station_key(name: str) -> str:
     return re.sub(r"[^a-z0-9]", "", (name or "").lower().replace("street", "st"))
 
 
+def _skipped_end(al: dict, head: str, legs: list[dict]) -> str | None:
+    """The station where this ride boards or gets off that its line does not stop at, when the
+    alert says trains skip it both ways ("F skips 57 St in both directions")."""
+    from . import access
+
+    kind = (al.get("transit_realtime.mercury_alert") or {}).get("alert_type") or ""
+    if not re.search(r"skip", f"{kind} {head}", re.I) or "both directions" not in head.lower():
+        return None
+    gone = {(x.get("route_id"), x.get("stop_id")) for x in al.get("informed_entity") or []}
+    try:
+        stops = {r.get("gtfs_stop_id"): r for r in access._stations()}
+    except Exception:  # noqa: BLE001
+        return None
+    for lg in legs:
+        ends = (lg["coords"][0], lg["coords"][-1]) if lg.get("coords") else ()
+        for route, stop in gone:
+            r = stops.get(stop)
+            if route != lg.get("name") or not r:
+                continue
+            spot = {"lat": float(r["gtfs_latitude"]), "lon": float(r["gtfs_longitude"])}
+            if any(_metres({"lat": lat, "lon": lon}, spot) < 250 for lon, lat in ends):
+                return str(r["stop_name"])
+    return None
+
+
 def _line_changes(option: dict, at: datetime) -> list[str]:
     """MTA service changes on the subway lines an option rides that are in effect at the time
     of the trip (planned work the schedules may not show). One that names a station this ride
@@ -1081,6 +1106,9 @@ def _line_changes(option: dict, at: datetime) -> list[str]:
             )
             if touches:
                 option["affected"] = True
+            skipped = _skipped_end(al, head, legs)
+            if skipped:
+                option["skipped"] = f"the {'/'.join(sorted(hit))} does not stop at {skipped} then"
             if line not in out:
                 out.append(line)
     out.sort(key=lambda x: not x.startswith("Affects"))
@@ -1251,10 +1279,22 @@ def trip_plan(
             options, notes = [], [f"Transit planner unavailable: {str(e)[:80]}"]
         finally:
             _STEP_FREE.reset(token)
+        changes = {id(o): _line_changes(o, t) for o in options}
+        # A ride that boards or ends where its train does not stop cannot be taken.
+        unusable = [o for o in options if o.get("skipped")]
+        if unusable:
+            why = "; ".join(dict.fromkeys(o["skipped"] for o in unusable))
+            if len(unusable) < len(options):
+                options = [o for o in options if not o.get("skipped")]
+                notes.append(f"Left out, not possible at that time: {why}.")
+            else:
+                notes.append(
+                    f"None of these work at that time: {why}. Plan again from or to "
+                    "another station."
+                )
         if options and step_free:
             options = _step_free_first(options)
-        changes = {id(o): _line_changes(o, t) for o in options}
-        if not step_free:  # for a step-free trip, the order by access stands
+        else:  # for a step-free trip, the order by access stands
             options = _affected_last(options, arrive_by)
         data["transit"] = options
         late = _hours_away(options, t, arrive_by)
