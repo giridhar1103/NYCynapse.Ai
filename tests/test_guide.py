@@ -2539,3 +2539,19 @@ def test_a_named_place_is_looked_for_in_the_area_the_reader_named(monkeypatch):
     assert at("Sea Cloud, Lower East Side")[0].startswith("near ")  # the barber is another place
     assert at("Union Square, Manhattan")[0] == "Union Square Park"
     assert at("Peter Luger, Tribeca")[0].startswith("near ")
+
+
+def test_a_landmark_in_a_longer_name_is_not_the_place(monkeypatch):
+    from nycynapse.tools import placenames as pn
+
+    for text in ("Nitehawk Prospect Park", "Loeb Boathouse Central Park"):
+        assert pn._landmark(pn._norm(text)) is None, text
+    for text in ("the Brooklyn Bridge", "Manhattan Times Square", "Times Square area"):
+        assert pn._landmark(pn._norm(text)), text
+    monkeypatch.setattr(
+        pn, "get_json", lambda url, *a, **k: {"features": []} if "geosearch" in url else []
+    )
+    assert pn.locate("NYU Langone")["name"] == "NYU Langone Tisch Hospital"
+    assert pn.locate("NYU Langone, Manhattan")["name"] == "NYU Langone Tisch Hospital"
+    got = pn.locate("NYU Langone, Brooklyn")
+    assert not got or "Tisch" not in got["name"]

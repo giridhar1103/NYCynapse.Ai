@@ -493,9 +493,20 @@ def _landmark(n: str) -> dict | None:
             # makes it a different place.
             if set(n.split()) - set(key.split()) & _PLACE_WORDS:
                 continue
+            # "Nitehawk Prospect Park" is a cinema, not the park: the words before the name may
+            # only say which part or where.
+            if set(re.split(rf"\b{re.escape(key)}\b", n)[0].split()) - _LEAD:
+                continue
             return dict(v)
     return None
 
+
+_LEAD = {
+    *("north", "south", "east", "west", "upper", "lower", "central", "downtown", "midtown"),
+    *("uptown", "manhattan", "brooklyn", "queens", "bronx", "staten", "island", "new", "york"),
+    *("near", "around", "by", "at", "in", "to", "from", "inside", "outside", "of", "old"),
+    *("flushing", "harlem", "city", "entrance", "main", "corner", "middle", "end", "side"),
+}
 
 _PLACE_WORDS = {
     "park",
@@ -663,7 +674,12 @@ def locate(text: str) -> dict | None:
     # A town given with the name (not a street, not a borough) must agree with what is found.
     town = _locate(last) if not streetish.search(last) and _norm(last) not in boroughs else None
 
-    def checked(found: dict, p: str) -> dict:
+    boro = _borough_named(", ".join(parts[1:]))
+
+    def checked(found: dict, p: str) -> dict | None:
+        z = T.zone_of(found["lat"], found["lon"])
+        if boro and p is parts[0] and z and (T._zone_borough(z[0]) or "").lower() != boro:
+            return None  # "NYU Langone, Brooklyn" is not the one on First Avenue
         if town and p != last and T._metres(found, town) > 3000:
             # Another place of that name (Washington Square in Manhattan, not in Larchmont):
             # the town is all that is known.
@@ -809,10 +825,15 @@ def _place_in(raw: str) -> dict | None:
     if not apart:
         return None
     h, around = apart[0], area.split(",")[0]
-    # The name says when there are several, or when it is in the neighborhood next door.
+    # The name says when there are several, and when the closest is in the area next door.
     notes = [f"one of {len(apart)} around {around}"] if len(apart) > 1 else []
     z = None if town or reach == 800 else T.zone_of(h["lat"], h["lon"])
-    if z and T._metres(h, at) > 600 and not _words(_norm(str(z[1]))) & _words(_norm(around)):
+    if (
+        notes
+        and z
+        and T._metres(h, at) > 600
+        and not _words(_norm(str(z[1]))) & _words(_norm(around))
+    ):
         notes.insert(0, f"in {z[1]}")
     more = f" ({', '.join(notes)})" if notes else ""
     return {"name": h["name"] + more, "lat": h["lat"], "lon": h["lon"]}
@@ -998,7 +1019,12 @@ def _locate(text: str) -> dict | None:
     bare = " ".join(bare.split())
     # Well-known places before neighborhoods: Union Square is the park, not the middle of the
     # "Midtown South-Flatiron-Union Square" neighborhood.
+    said = _borough_named(raw)
     mark = _landmark(n) or (_landmark(bare) if bare else None)
+    if mark and said:  # a landmark of that name in another borough
+        z = T.zone_of(mark["lat"], mark["lon"])
+        if z and (T._zone_borough(z[0]) or "").lower() != said:
+            mark = None
     # "Strand Bookstore, Union Square" is the shop, not the park.
     own = re.split(r",|\s(?:in|at)\s", raw, maxsplit=1)
     inside = len(own) > 1 and _norm(own[0]) and not _known(own[0]) and not _borough_named(own[0])
@@ -1008,7 +1034,6 @@ def _locate(text: str) -> dict | None:
         hood = _neighborhood(bare)
         if hood:
             return hood
-    said = _borough_named(raw)
     # "Razza, Jersey City" or "Juniors in Downtown Brooklyn" is a place there, not the area.
     head = _norm(re.split(r",|\s(?:in|at)\s", raw, maxsplit=1)[0])
     for key, (name, lat, lon) in T.NAMED.items():
@@ -1070,7 +1095,8 @@ def _locate(text: str) -> dict | None:
         # ("Bloomfield Ave, Montclair" is not 73 Bloomfield Avenue on Staten Island).
         town = raw.partition(",")[2].strip()
         foreign = town and not _borough_named(town) and not _neighborhood(_norm(town))
-        close = len(want) >= 3 and len(want ^ got) <= 1 and not (want - got) & _KIND
+        # A word may be missing from an address, not from a name: "Nitehawk Prospect Park".
+        close = len(want) >= 3 and len(want ^ got) <= 1 and (want <= got or re.match(r"\s*\d", raw))
         if want and not foreign and (want == got or close):
             return {"name": label.split(",")[0], "lat": lat, "lon": lon}
     stop = _stop(raw)
