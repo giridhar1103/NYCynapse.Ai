@@ -442,7 +442,7 @@ a.cite:hover { background: var(--ink); color: var(--bg); border-color: var(--ink
 .chain .sep { color: var(--muted); font-size: 13px; }
 .walkbit { display: inline-flex; align-items: center; color: var(--muted); }
 .walkbit small { font-size: 10.5px; margin-left: 1px; }
-.badge { display: inline-flex; align-items: center; justify-content: center; height: 22px; min-width: 22px; padding: 0 7px;
+.badge { display: inline-flex; flex: none; white-space: nowrap; align-items: center; justify-content: center; height: 22px; min-width: 22px; padding: 0 7px;
   border-radius: 6px; font-size: 12px; font-weight: 750; line-height: 1; }
 .badge.round { border-radius: 50%; padding: 0; width: 22px; }
 .steps { list-style: none; margin: 0; padding: 2px 12px 10px 14px; }

@@ -2457,7 +2457,7 @@ def test_one_rail_ticket_covers_a_change_of_trains():
     later = leg("NJ Transit", "NEW YORK PENN STATION", "TRENTON TRANSIT CENTER",
                 "2027-07-06T08:00", 80)  # fmt: skip
     assert _fare({"lines": [later]}) == "plus the NJ Transit fare"
-    light = {"mode": "tram", "name": "Hudson-Bergen Light Rail", "agency": "NJ TRANSIT RAIL"}
+    light = {"mode": "tram", "name": "Light Rail", "agency": "NJ TRANSIT RAIL"}
     assert _fare({"lines": [{"mode": "train", "name": "PATH"}, light, light]}) == "$5.90"
     newark = {"mode": "tram", "name": "NJ Transit light rail", "agency": "NJ TRANSIT RAIL"}
     assert _fare({"lines": [newark]}) == "plus the NJ Transit light rail fare"
@@ -2474,3 +2474,21 @@ def test_a_rail_station_is_the_one_named():
     assert station("Fordham station") is None  # also a subway stop
     assert station("Penn Station") is None
     assert station("White Plains") is None  # the town, not the station
+
+
+def test_a_place_that_was_not_found_does_not_become_the_middle_of_its_town(monkeypatch):
+    from nycynapse.tools import placenames as pn
+
+    asked = []
+
+    def nothing(url, params=None, **kw):
+        asked.append((params or {}).get("q") or "")
+        return {"features": []} if "geosearch" in url else []
+
+    monkeypatch.setattr(pn, "get_json", nothing)
+    for text in ("the Sea Cloud Cafe, Jersey City", "Razza, Jersey City", "Razza in Jersey City"):
+        got = pn.locate(text)
+        assert got["name"].startswith("near "), (text, got)
+    assert not any(q.lower().startswith("the ") for q in asked)
+    for text in ("Jersey City", "Jersey City, NJ", "Hoboken, NJ", "downtown Jersey City"):
+        assert not pn.locate(text)["name"].startswith("near "), text

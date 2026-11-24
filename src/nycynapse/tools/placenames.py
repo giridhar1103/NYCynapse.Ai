@@ -666,6 +666,9 @@ def locate(text: str) -> dict | None:
             # Another place of that name (Washington Square in Manhattan, not in Larchmont):
             # the town is all that is known.
             return {**town, "name": f"near {town['name']}"}
+        if town and p == last and p is not parts[0]:
+            # Only the town was found, not the place in it: its middle must not pass for the place.
+            return {**found, "name": f"near {found['name']}"}
         if p is not parts[0] and parts[0] not in exact:
             return {**found, "name": f"{parts[0]} ({found['name']})"}
         return found
@@ -720,8 +723,14 @@ def locate(text: str) -> dict | None:
     return town and {**town, "name": f"near {town['name']}"}
 
 
+def _no_article(q: str) -> str:
+    """OpenStreetMap finds nothing for "the Liberty Science Center"."""
+    return re.sub(r"^\s*the\s+", "", q, flags=re.I)
+
+
 def _osm(q: str) -> dict | None:
     """The first OpenStreetMap match for a query, inside the region."""
+    q = _no_article(q)
     try:
         hits = get_json(
             "https://nominatim.openstreetmap.org/search",
@@ -873,8 +882,14 @@ def _locate(text: str) -> dict | None:
         if hood:
             return hood
     said = _borough_named(raw)
+    # "Razza, Jersey City" or "Juniors in Downtown Brooklyn" is a place there, not the area.
+    head = _norm(re.split(r",|\s(?:in|at)\s", raw, maxsplit=1)[0])
     for key, (name, lat, lon) in T.NAMED.items():
-        if n == key or re.search(rf"\b{key}\b", n) and len(n.split()) <= len(key.split()) + 2:
+        if n == key or (
+            re.search(rf"\b{key}\b", n)
+            and len(n.split()) <= len(key.split()) + 2
+            and (not head or key in head)
+        ):
             z = T.zone_of(lat, lon)
             if said and z and (T._zone_borough(z[0]) or "").lower() != said:
                 continue  # "Grand Army Plaza, Manhattan" is not Brooklyn's
@@ -950,7 +965,7 @@ def _locate(text: str) -> dict | None:
         "terminal",
         "station",
     }
-    queries = [raw]
+    queries = [_no_article(raw)]
     # An intersection outside the city ("Washington & 8th, Hoboken"): the first street in that
     # town is close enough to plan from, and the name says it is approximate.
     m = re.match(r"\s*(.+?)\s+(?:&|and|at)\s+(.+?)(?:,\s*(.+))?$", raw, re.I)

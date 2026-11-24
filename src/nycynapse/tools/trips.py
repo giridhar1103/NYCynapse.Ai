@@ -167,7 +167,7 @@ _AGENCY = {
     "NYC Ferry": "NYC Ferry",
 }
 
-HBLR = "Hudson-Bergen Light Rail"
+HBLR = "Light Rail"  # Hudson-Bergen, short enough for a badge
 
 
 def _leg_text(leg: dict, end: str) -> str:
