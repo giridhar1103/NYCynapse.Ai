@@ -12,6 +12,8 @@ Environment=PYTHONUNBUFFERED=1
 Environment=NYCYNAPSE_LLM_CONCURRENCY=5
 Environment=NYCYNAPSE_CHAT_ACTIVE=5
 Environment=NYCYNAPSE_WARM_MODELS=1
+# Kept across restarts: without it the search model is downloaded again every time.
+Environment=FASTEMBED_CACHE_PATH=/var/cache/nycynapse/fastembed
 Environment=PATH=/root/.local/bin:/usr/local/bin:/usr/bin:/bin
 ExecStart=/root/NYCynapse/.venv/bin/uvicorn nycynapse.api.app:app --host 127.0.0.1 --port 8031 --workers 1 --proxy-headers --forwarded-allow-ips 127.0.0.1 --no-access-log
 Restart=on-failure
