@@ -1336,7 +1336,8 @@ DATASETS = {
     "crime": (
         "5uac-w243",
         "NYPD crime complaints this year, released quarterly (felonies, misdemeanors and "
-        "violations); for counts near a place use where within_circle(lat_lon, LAT, LON, "
+        "violations); earlier years are not in it, so a trend is by month of this year (one "
+        "query with group); for counts near a place use where within_circle(lat_lon, LAT, LON, "
         "METERS); count by ofns_desc or law_cat_cd, never list individual people; a total and "
         "its breakdown use the same where (same circle, same cmplnt_fr_dt range), and say the "
         "period they cover",
@@ -1366,13 +1367,8 @@ def _behind(headers) -> bool:
     return headers.get("X-SODA2-Data-Out-Of-Date", "").lower() == "true"
 
 
-def _reaches(dataset: str, where: str) -> str:
-    """How far the records go, when a query picks dates: a period that runs past that is not
-    complete, and not the same length as the same dates of another year."""
-    col = _NEWEST.get(dataset)
-    if not col or col not in where:
-        return ""
-    ds = DATASETS[dataset][0]
+def _newest(dataset: str) -> datetime | None:
+    col, ds = _NEWEST[dataset], DATASETS[dataset][0]
     try:
         rows = get_json(
             f"https://data.cityofnewyork.us/resource/{ds}.json",
@@ -1381,14 +1377,34 @@ def _reaches(dataset: str, where: str) -> str:
             ttl_s=1800,
             again=_behind,
         )
-        newest = datetime.fromisoformat(rows[0]["newest"])
-    except Exception:  # noqa: BLE001 - only a note
+        return datetime.fromisoformat(rows[0]["newest"])
+    except Exception:  # noqa: BLE001 - only used for notes and bounds
+        return None
+
+
+def _reaches(dataset: str, where: str) -> str:
+    """How far the records go, when a query picks dates: a period that runs past that is not
+    complete, and not the same length as the same dates of another year."""
+    col = _NEWEST.get(dataset)
+    newest = _newest(dataset) if col and col in where else None
+    if not newest:
         return ""
     return (
         f"\nThe newest record in this dataset is from {newest:%a %b %-d %Y, %-I:%M %p}. Dates "
         "after that are not in it yet and the last day or two may be incomplete: to compare with "
         "another period, use the same dates in both, ending on a full day before that."
     )
+
+
+def _refused(e: httpx.HTTPStatusError) -> str:
+    """Why the city would not answer, in its own words when the query was at fault."""
+    code = e.response.status_code
+    if code != 400:
+        return f"the city's data service did not answer (error {code}); try once more"
+    with suppress(Exception):
+        why = re.sub(r"'MULTIPOLYGON.*?'", "AREA", str(e.response.json()["message"]), flags=re.S)
+        return f"the city could not read the query: {why[-400:]}"
+    return "the city could not read the query"
 
 
 _SOQL_BAD = re.compile(r"[;\\]|--|/\*")
@@ -1425,8 +1441,24 @@ def open_data(
             return failed(drawn["error"])
         inside = f"within_polygon({_POINT[dataset]}, '{drawn['wkt']}')"
         params["$where"] = f"({where}) AND {inside}" if where.strip() else inside
+    bound = ""
+    if dataset == "crime" and "cmplnt_fr_dt" not in where and (newest := _newest(dataset)):
+        # Thousands of its records are of crimes in earlier years, reported this year.
+        this_year = f"cmplnt_fr_dt >= '{newest.year}-01-01T00:00:00'"
+        params["$where"] = " AND ".join(
+            [x for x in (f"({params['$where']})" if "$where" in params else "", this_year) if x]
+        )
+        bound = (
+            f"\nOnly crimes of {newest.year} are counted, up to {newest:%b %-d}; records of "
+            "earlier years' crimes reported late are left out."
+        )
     url = f"https://data.cityofnewyork.us/resource/{ds}.json"
-    rows = get_json(url, params, _socrata_headers(), ttl_s=300, again=_behind)
+    try:
+        rows = get_json(url, params, _socrata_headers(), ttl_s=300, again=_behind)
+    except httpx.HTTPStatusError as e:
+        return failed(_refused(e))
+    except httpx.TransportError:
+        return failed("the city's data service did not answer in time; try once more")
     pts = [
         {
             "lat": float(r["latitude"]),
@@ -1462,7 +1494,8 @@ def open_data(
     if drawn:
         layers.insert(0, {"type": "highlight", "label": title, "items": [drawn["item"]]})
     return ToolResult(
-        summary=f"{title}: {len(rows)} rows{more}\n{preview}{inside}{_reaches(dataset, where)}",
+        summary=f"{title}: {len(rows)} rows{more}\n{preview}{inside}{bound}"
+        f"{_reaches(dataset, where)}",
         data=rows,
         sources=[
             {

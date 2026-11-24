@@ -106,10 +106,54 @@ def test_open_data_counts_inside_an_area(monkeypatch):
     r = live.open_data(
         "crime", "count(*)", "law_cat_cd = 'FELONY' or law_cat_cd = 'X'", area="Bushwick"
     )
-    where = asked[0]["$where"]
-    assert where.startswith(
-        "(law_cat_cd = 'FELONY' or law_cat_cd = 'X') AND within_polygon(lat_lon"
-    )
+    where = asked[-1]["$where"]
+    assert "(law_cat_cd = 'FELONY' or law_cat_cd = 'X') AND within_polygon(lat_lon" in where
     assert "Bushwick (East)" in r.summary and r.map[0]["items"][0]["level"] == "nta"
     assert not live.open_data("events", area="Bushwick").ok
     assert not live.open_data("311", "count(*)", area="Atlantis").ok
+
+
+def test_crime_counts_leave_out_earlier_years(monkeypatch):
+    from nycynapse.tools import live
+
+    asked = []
+
+    def fake(url, params=None, *a, **k):
+        asked.append(params or {})
+        if "newest" in (params or {}).get("$select", ""):
+            return [{"newest": "2026-09-30T00:00:00.000"}]
+        return [{"count": "7"}]
+
+    monkeypatch.setattr(live, "get_json", fake)
+    r = live.open_data("crime", "count(*)", "ofns_desc = 'ROBBERY' or ofns_desc = 'ARSON'")
+    assert asked[-1]["$where"] == (
+        "(ofns_desc = 'ROBBERY' or ofns_desc = 'ARSON') AND cmplnt_fr_dt >= '2026-01-01T00:00:00'"
+    )
+    assert "up to Sep 30" in r.summary
+    live.open_data("crime", "count(*)")
+    assert asked[-1]["$where"] == "cmplnt_fr_dt >= '2026-01-01T00:00:00'"
+    # A query that picks its own dates keeps them.
+    own = "cmplnt_fr_dt >= '2026-05-01'"
+    r = live.open_data("crime", "count(*)", own)
+    assert {"$where": own} in [{"$where": a.get("$where")} for a in asked]
+    assert "left out" not in r.summary
+
+
+def test_a_query_the_city_refuses_says_why(monkeypatch):
+    import httpx
+
+    from nycynapse.tools import live
+
+    def answer(code, **kw):
+        def fake(url, *a, **k):
+            resp = httpx.Response(code, request=httpx.Request("GET", url), **kw)
+            raise httpx.HTTPStatusError("no", request=resp.request, response=resp)
+
+        return fake
+
+    message = "Could not parse within_polygon(location, 'MULTIPOLYGON(((1 2)))'): no such column x"
+    monkeypatch.setattr(live, "get_json", answer(400, json={"message": message}))
+    r = live.open_data("311", "count(*)", "x = 1")
+    assert not r.ok and "no such column x" in r.error and "MULTIPOLYGON" not in r.error
+    monkeypatch.setattr(live, "get_json", answer(503))
+    assert "503" in live.open_data("311", "count(*)").error

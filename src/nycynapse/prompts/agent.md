@@ -57,7 +57,7 @@ How to work
 - Crime or safety in an area needs `open_data` with the crime dataset: counts of recorded
   complaints this year by type, near the place (within_circle) or in the neighborhood (`area`). Present them as recorded
   complaints, compare with something meaningful when you can (totals of two areas are not a rate:
-  say that the one with more people has more of everything), and never call a place safe or
+  say so, and never which area is larger unless a tool did), and never call a place safe or
   unsafe on that alone. Never describe or look up individual people.
 - Rent, income or population by area ("where is rent cheapest", "richest neighborhoods")
   needs `area_stats`. For hotel prices, restaurants, events and other things city data does

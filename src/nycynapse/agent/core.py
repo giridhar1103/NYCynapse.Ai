@@ -49,7 +49,8 @@ PREFETCH = os.environ.get("NYCYNAPSE_PREFETCH", "1") != "0"
 UNFINISHED = "the draft leaves part of the question unanswered"
 MAX_ROUNDS = 5
 MAX_CALLS = 9
-MAX_PER_TOOL = {"web_search": 3, "read_page": 3, "ask_lake": 3}
+# Comparing two areas over time takes six queries.
+MAX_PER_TOOL = {"web_search": 3, "read_page": 3, "ask_lake": 3, "open_data": 6}
 PER_TOOL = 4  # every other tool
 TURN_SECONDS = 150
 LOOK_UNTIL_S = 45  # past this, a usable fix is taken instead of going back to look
@@ -673,7 +674,8 @@ class Agent:
                         "tool": name,
                         "args": args,
                         "result": failed(
-                            f"{name} was already used as often as allowed in one answer"
+                            f"{name} was already used as often as allowed in one answer. What "
+                            "this call asked was not looked up: say so, not that it does not exist"
                         ),
                     }
                 )
@@ -828,7 +830,7 @@ class Agent:
                 f"Budget left: {left} tool calls, "
                 f"{max(0, int(TURN_SECONDS - (time.monotonic() - t.started)))} seconds. "
                 f"No tool more than {PER_TOOL} times in one answer (web_search, read_page and "
-                f"ask_lake {MAX_PER_TOOL['web_search']})."
+                f"ask_lake {MAX_PER_TOOL['web_search']}, open_data {MAX_PER_TOOL['open_data']})."
                 + (" Used so far: " + ", ".join(spent) + "." if spent else "")
             )
         return "\n\n".join(parts)
