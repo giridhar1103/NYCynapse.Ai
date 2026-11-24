@@ -48,6 +48,7 @@ def main(argv: list[str] | None = None) -> int:
     au.add_argument("--only", help="comma separated case ids")
     au.add_argument("--auditors", help="comma separated provider ids (default: all auditors)")
     sub.add_parser("export-geo", help="write map outlines to web/static/geo from the lake")
+    sub.add_parser("export-corners", help="write the list of street corners from the city's map")
     sub.add_parser("warm-examples", help="answer the site's example questions again")
     pg = sub.add_parser("purge", help="delete conversations and traces past the retention period")
     pg.add_argument("--days", type=int, default=30)
@@ -415,6 +416,26 @@ def main(argv: list[str] | None = None) -> int:
         from .config import REPO
 
         print(geo.export(lake.connect(settings), REPO / "web" / "static" / "geo"))
+        return 0
+
+    if args.cmd == "export-corners":
+        from .tools import corners, http
+
+        print(
+            corners.export(
+                lambda offset, limit: http.get_json(
+                    f"https://data.cityofnewyork.us/resource/{corners.DATASET}.json",
+                    {
+                        "$select": "the_geom, full_street_name, boroughcode, rw_type, "
+                        "from_level_code, to_level_code",
+                        "$order": "physicalid, objectid",
+                        "$limit": limit,
+                        "$offset": offset,
+                    },
+                    timeout=180,
+                )
+            )
+        )
         return 0
 
     if args.cmd == "purge":

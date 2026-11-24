@@ -936,10 +936,15 @@ def _alert_hours(periods: list[dict], now: float) -> tuple[str, float | None]:
 
 
 def subway_alerts(line: str | None = None, days: int = 0) -> ToolResult:
-    """Subway service alerts in effect right now, from the MTA, with the hours each one
-    applies, plus planned changes starting in the next 12 hours, or in the next `days` days
-    (up to 7) for questions about the weekend or later in the week."""
-    d = get_json(MTA_ALERTS, ttl_s=120)
+    """Service alerts in effect right now on the subway, or on one bus route, from the MTA, with
+    the hours each one applies, plus planned changes starting in the next 12 hours, or in the next
+    `days` days (up to 7) for questions about the weekend or later in the week."""
+    from . import busalerts
+
+    # A bus route has its own feed. "M", "B" and "Q" alone are trains.
+    bus = busalerts.route(line)
+    d = get_json(busalerts.BUS_ALERTS if bus else MTA_ALERTS, ttl_s=120)
+    kind = "bus" if bus else "subway"
     now = time.time()
     try:
         days = max(0, min(int(days or 0), 7))
@@ -958,7 +963,9 @@ def subway_alerts(line: str | None = None, days: int = 0) -> ToolResult:
         routes = sorted(
             {e.get("route_id") for e in a.get("informed_entity", []) if e.get("route_id")}
         )
-        if line and line.upper() not in routes:
+        if bus:
+            routes = sorted({busalerts.route(r) or r for r in routes})
+        if line and (bus or line.upper()) not in routes:
             continue
         meta = a.get("transit_realtime.mercury_alert", {})
         detail = _plain((a.get("description_text") or {}).get("translation"))
@@ -982,11 +989,11 @@ def subway_alerts(line: str | None = None, days: int = 0) -> ToolResult:
     delays = [i for i in now_items if (i["type"] or "").lower() in ("delays", "severe delays")]
 
     def row(i: dict, detail_chars: int = 140) -> str:
+        # A citywide notice names two hundred bus routes.
+        many = bus and len(i["routes"]) > 8
+        who = f"{bus} and other routes" if many else ",".join(i["routes"])
         detail = f" {i['detail'][:detail_chars]}" if i["detail"] and detail_chars else ""
-        return (
-            f"- [{','.join(i['routes'])}] {i['type']}: {i['text'][:180]}"
-            f" (applies {i['hours'] or 'now'}).{detail}"
-        )
+        return f"- [{who}] {i['type']}: {i['text'][:180]} (applies {i['hours'] or 'now'}).{detail}"
 
     # Everything in effect fits: delays and service changes in full, then the rest shorter,
     # and anything past the budget summed up by line, so nothing is silently cut off.
@@ -1009,8 +1016,8 @@ def subway_alerts(line: str | None = None, days: int = 0) -> ToolResult:
             + ", ".join(routes_left)
         )
     summary = (
-        f"All {len(now_items)} MTA subway alerts in effect now"
-        + (f" for the {line.upper()}" if line else "")
+        f"{f'All {len(now_items)}' if now_items else 'No'} MTA {kind} alerts in effect now"
+        + (f" for the {bus or line.upper()}" if line else "")
         + (f", {len(delays)} about delays" if delays else ", none about delays")
         + ":\n"
         + "\n".join(lines_out)
@@ -1049,12 +1056,12 @@ def subway_alerts(line: str | None = None, days: int = 0) -> ToolResult:
                 "label": label,
             }
         ]
-        if touched
+        if touched and not bus
         else [],
         sources=[
             {
                 "kind": "live",
-                "title": "MTA subway service alerts",
+                "title": f"MTA {kind} service alerts",
                 "url": "https://new.mta.info/alerts",
                 "updated_at": _now_ny().isoformat(),
             }
@@ -1070,11 +1077,32 @@ def find_place(text: str) -> ToolResult:
     text = text.strip()[:120]
     if not text:
         return failed("nothing to look up")
-    d = get_json(
-        "https://geosearch.planninglabs.nyc/v2/search", {"text": text, "size": 3}, ttl_s=86400
-    )
-    out = []
-    for f in d.get("features", []):
+    # The address search does not know corners and answers with one nearby.
+    from . import corners
+    from .trips import zone_of  # before placenames, which needs it
+    from .placenames import _mapped_corner  # isort: skip
+
+    corner = _mapped_corner(text)
+    if corner:
+        z = zone_of(corner["lat"], corner["lon"])
+        out = [
+            {
+                "label": corner["name"],
+                "borough": corner["corner"],
+                "neighborhood": z[1] if z else None,
+                "lat": corner["lat"],
+                "lon": corner["lon"],
+                "kind": "corner",
+            }
+        ]
+        found = {"title": "NYC Street Centerline", "url": corners.PAGE}
+    else:
+        d = get_json(
+            "https://geosearch.planninglabs.nyc/v2/search", {"text": text, "size": 3}, ttl_s=86400
+        )
+        out = []
+        found = {"title": "NYC Planning GeoSearch", "url": "https://geosearch.planninglabs.nyc"}
+    for f in [] if corner else d.get("features", []):
         p = f["properties"]
         lon, lat = f["geometry"]["coordinates"]
         out.append(
@@ -1114,15 +1142,15 @@ def find_place(text: str) -> ToolResult:
             f"{o['label']} (neighborhood {o['neighborhood']}, {o['borough']}, "
             f"{o['lat']:.5f},{o['lon']:.5f})"
             for o in out
+        )
+        + (
+            ". This is the point where the two streets meet. For records at the corner itself "
+            "use within_circle with 60 meters: 75 or more takes in the next corner on some blocks."
+            if corner
+            else ""
         ),
         data=out,
-        sources=[
-            {
-                "kind": "live",
-                "title": "NYC Planning GeoSearch",
-                "url": "https://geosearch.planninglabs.nyc",
-            }
-        ],
+        sources=[{"kind": "live", **found}],
         map=[
             {
                 "type": "points",
@@ -1303,8 +1331,9 @@ DATASETS = {
         "h9gi-nx95",
         "Motor vehicle crashes reported by NYPD. The last 5 days are missing or not complete: "
         "end both periods of a comparison 6 days before today. Near a place: where "
-        "within_circle(location, LAT, LON, METERS). A crash involves a bike when cyclists were "
-        "hurt or killed or any of "
+        "within_circle(location, LAT, LON, METERS), at a corner 60 meters around the point "
+        "find_place gives for it. A crash involves a bike when cyclists were hurt or killed or "
+        "any of "
         "vehicle_type_code1 to vehicle_type_code5 is a bike or e-bike (upper(...) like '%BIKE%' "
         "or '%BICYCLE%'); count with select count(*), never by counting listed rows",
         "crash_date, crash_time, borough, zip_code, on_street_name, location, "
@@ -1564,7 +1593,8 @@ TOOLS = [
         "Service changes on trains and buses in and around NYC from 511NY: LIRR, Metro-North, "
         "NJ Transit rail schedules and trackwork, subway disruptions such as a drawbridge, and "
         "bus stop moves, ongoing or starting in the next 7 days. Use for commuter rail, NJ "
-        "trips and buses; for subway delays and planned subway work use subway_alerts.",
+        "trips and bus stop moves; for subway delays, planned subway work and bus detours use "
+        "subway_alerts.",
         {
             "type": "object",
             "properties": {
@@ -1580,7 +1610,8 @@ TOOLS = [
         "live",
         "MTA subway service alerts in effect right now (delays, suspensions, reroutes) with the "
         "hours each applies, plus planned changes starting in the next 12 hours, optionally for "
-        "one line such as A or 7. For the weekend or later this week, set days (1 to 7) to list "
+        "one line such as A or 7, or one bus route such as M10 or Bx12 (detours, closed stops). "
+        "For the weekend or later this week, set days (1 to 7) to list "
         "the planned work starting within that many days. Also carries the JFK AirTrain's alerts.",
         {
             "type": "object",

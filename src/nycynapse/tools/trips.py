@@ -1105,6 +1105,17 @@ def _skipped_end(al: dict, head: str, legs: list[dict]) -> str | None:
     return None
 
 
+def _changes(option: dict, at: datetime) -> list[str]:
+    """Service changes on the subway lines and the buses an option rides."""
+    from . import busalerts
+
+    t0 = option.get("leave_ts") or at.timestamp()
+    found = _line_changes(option, at)
+    found += busalerts.changes(option, t0, option.get("arrive_ts") or t0)
+    # A change that names this ride before one somewhere on the line.
+    return sorted(found, key=lambda x: not x.startswith("Affects"))[:4]
+
+
 def _line_changes(option: dict, at: datetime) -> list[str]:
     """MTA service changes on the subway lines an option rides that are in effect at the time
     of the trip (planned work the schedules may not show). One that names a station this ride
@@ -1324,7 +1335,7 @@ def trip_plan(
             options, notes = [], [f"Transit planner unavailable: {str(e)[:80]}"]
         finally:
             _STEP_FREE.reset(token)
-        changes = {id(o): _line_changes(o, t) for o in options}
+        changes = {id(o): _changes(o, t) for o in options}
         # A ride that boards or ends where its train does not stop cannot be taken.
         unusable = [o for o in options if o.get("skipped")]
         if unusable:

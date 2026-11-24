@@ -85,7 +85,7 @@ def citibike_now(near: str, n: int = 5) -> dict:
 
 @server.tool(annotations=LIVE)
 def subway_alerts(line: str | None = None, days: int = 0) -> dict:
-    """MTA subway service alerts in effect now, optionally for one line."""
+    """MTA subway service alerts in effect now, optionally for one line, or for one bus route."""
     return live.subway_alerts(line, days).as_dict()
 
 

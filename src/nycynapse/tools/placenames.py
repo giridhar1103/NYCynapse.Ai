@@ -12,7 +12,7 @@ import json
 import re
 from functools import lru_cache
 
-from . import railfares
+from . import corners, railfares
 from . import trips as T
 from .http import get_json
 from .path_trains import PATH
@@ -38,6 +38,7 @@ __all__ = [
     "_borough_named",
     "_bias",
     "_said",
+    "_mapped_corner",
     "_corner",
     "_corner_by_street",
     "_same_address",
@@ -341,16 +342,56 @@ def _said(words: set[str]) -> str:
     return " ".join(sorted(words, key=lambda w: (w in kinds, not w.isdigit(), w)))
 
 
-def _corner(raw: str) -> dict | None:
-    """Where two streets meet ("Main St and Roosevelt Ave, Flushing"): a bus stop named for
-    the corner, which the agencies place right at it."""
-    # "Main St and 41st Ave Flushing NY": the area written straight after the corner.
-    raw = re.sub(r"[\s,]+(?:NY|NYC|New York)\s*$", "", raw, flags=re.I)
+def _with_area(raw: str) -> str:
+    """ "Main St and 41st Ave Flushing NY": the area written straight after the corner."""
+    raw = re.sub(r"[\s,]+(?:NY|NYC|New York)\s*$", "", corners.strip(raw), flags=re.I)
     if "," not in raw:
         for area in sorted([*_BORO_CENTER, *_BORO_OF], key=len, reverse=True):
             if raw.lower().endswith(" " + area):
-                raw = f"{raw[: -len(area) - 1]}, {raw[-len(area) :]}"
-                break
+                return f"{raw[: -len(area) - 1]}, {raw[-len(area) :]}"
+    return raw
+
+
+def _mapped_corner(raw: str) -> dict | None:
+    """The corner on the city's street map: in the area named, or else Manhattan's, or the only
+    one there is. Names without an area that meet in several boroughs but not in Manhattan stay
+    open."""
+    m = re.match(r"(.+?)(?:(?:,|\s+in\s)\s*(.+))?$", _with_area(raw).strip())
+    if not m:
+        return None
+    streets, area = m.groups()
+    pair = corners.parse(streets)
+    found = corners.find(*pair) if pair else []
+    # A street can carry a borough's name (Queens Blvd is in Queens, Bronx Park East not only).
+    boro = (_borough_named(area) or "").title() if found and area else ""
+    hood = _neighborhood(_norm(area)) if found and area else None
+    if hood:
+        near = min(found, key=lambda h: T._metres(hood, h))
+        found = [near] if T._metres(hood, near) < 4000 else []
+    elif boro and any(h["borough"] == boro for h in found):
+        found = [h for h in found if h["borough"] == boro]
+    elif area and boro:
+        found = []  # they do not meet in the borough named
+    elif any(h["borough"] == "Manhattan" for h in found):
+        found = [h for h in found if h["borough"] == "Manhattan"]
+    if not found or len({h["borough"] for h in found}) > 1:
+        return None
+    h = found[0]
+    return {
+        "name": f"{pair[0].strip()} and {pair[1].strip()}",
+        "lat": h["lat"],
+        "lon": h["lon"],
+        "corner": h["borough"],
+    }
+
+
+def _corner(raw: str) -> dict | None:
+    """Where two streets meet ("Main St and Roosevelt Ave, Flushing"), from the city's street map
+    or else a bus stop named for the corner, which the agencies place right at it."""
+    raw = _with_area(raw)
+    mapped = _mapped_corner(raw)
+    if mapped:
+        return mapped
     m = re.match(r"\s*(.+?)\s+(?:and|&|at|/)\s+(.+?)(?:(?:,|\s+in)\s+(.+))?\s*$", raw, re.I)
     if not m:
         return None

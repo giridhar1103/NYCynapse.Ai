@@ -2684,3 +2684,128 @@ def test_each_line_of_a_trip_carries_its_own_source():
     )
     ends = [x.rsplit(" ", 1)[-1] for x in text.split("\n")]
     assert ends == ["B.", "[2]", "F", "[5]", "[3]", "[3]", "[4]"]
+
+
+# Corners and bus alerts
+
+
+@pytest.mark.parametrize(
+    "said, lat, lon",
+    [
+        # The address search put this one on 4th Avenue, a hundred metres away.
+        ("Atlantic Avenue and Flatbush Avenue, Brooklyn", 40.68406, -73.97746),
+        ("the corner of Prince and Mott", 40.72304, -73.99491),
+        ("6th and 34th", 40.74979, -73.98777),
+        ("Malcolm X Blvd & 125th St", 40.80777, -73.94547),
+        ("Bedford x N 7th", 40.71784, -73.95773),
+        ("1st and 1st", 40.72327, -73.98843),
+        ("5th Ave and 42nd St", 40.75349, -73.98089),
+        ("42nd St and 5th Ave, Sunset Park", 40.64959, -74.00566),
+        ("Main St and 41st Ave Flushing NY", 40.75838, -73.82955),
+        ("Queens Blvd and Woodhaven Blvd", 40.7335, -73.87036),
+        # At a traffic circle the streets do not touch.
+        ("Central Park West and 110th St", 40.80056, -73.95809),
+        ("Broadway and 59th St", 40.76808, -73.98178),
+    ],
+)
+def test_corners_are_where_the_streets_meet(said, lat, lon):
+    from nycynapse.tools import trips as T, placenames as pn  # noqa: I001
+
+    got = pn._mapped_corner(said)
+    assert got and T._metres(got, {"lat": lat, "lon": lon}) < 20
+
+
+@pytest.mark.parametrize(
+    "said", ["Barnes and Noble, Union Square", "Waverly Pl and Waverly Pl", "Times Square", "Court"]
+)
+def test_not_every_pair_of_words_is_a_corner(said):
+    from nycynapse.tools import trips as T, placenames as pn  # noqa: F401, I001
+
+    assert pn._mapped_corner(said) is None
+
+
+def test_streets_meet_only_on_the_same_level():
+    from nycynapse.tools import corners
+
+    def piece(name, a, b, level):
+        return {
+            "full_street_name": name,
+            "boroughcode": "1",
+            "rw_type": "1",
+            "the_geom": {"coordinates": [[a, b]]},
+            "from_level_code": level,
+            "to_level_code": level,
+        }
+
+    here, n, e = [-73.98, 40.75], [-73.98, 40.751], [-73.979, 40.75]
+    rows = [
+        piece("A ST", n, here, "13"),
+        piece("B ST", here, e, "13"),
+        piece("C ST", here, e, "15"),
+    ]
+    assert [ln.split("\t")[1:3] for ln in corners.build(rows)][0] == ["a st", "b st"]
+    assert not any("c st" in ln for ln in corners.build(rows))
+
+
+def _bus(name, *points):
+    ride = [[lon, lat] for lat, lon in points]
+    return {"mode": "bus", "name": name, "agency": "MTA New York City Transit", "coords": ride}
+
+
+CPW = {72: (40.77623, -73.97596), 97: (40.79195, -73.96451), 110: (40.80046, -73.95825)}
+
+
+def test_bus_stops_closed_on_one_side_of_a_street():
+    from nycynapse.tools import busalerts
+
+    al = {"kind": "Planned - Part Suspended", "routes": {"M10"}}
+    al["head"] = "M10 stops below W 86th St will be closed; The temporary first stop is elsewhere"
+    assert busalerts.check(_bus("M10", CPW[110], CPW[72]), al) == "closed"
+    assert busalerts.check(_bus("M10", CPW[110], CPW[97]), al) is None
+
+
+def test_bus_alerts_streets_away_or_the_other_way_do_not_count():
+    from nycynapse.tools import busalerts
+
+    col = {100: (40.79468, -73.96606), 72: (40.77687, -73.97909)}
+    al = {"kind": "Planned - Stops Skipped", "routes": {"M7"}}
+    al["head"] = "Southbound M7 buses will bypass stops on Columbus Ave from W 80th St to W 72nd St"
+    down, up = _bus("M7", col[100], col[72]), _bus("M7", col[72], col[100])
+    assert busalerts.check(down, al) == "affects"
+    assert busalerts.check(up, al) is None
+    al["head"] = (
+        "M7 buses skip stops at 5th Ave/W 17th St; Use the stop at 5th Ave/W 14th St instead"
+    )
+    assert busalerts.check(down, al) is None
+    al["head"] = (
+        "Southbound M7 buses bypass the stop on Columbus Ave at W 96th St, use the stop at 72nd"
+    )
+    al["kind"] = "Planned - Detour"
+    assert busalerts.check(down, al) == "passes"
+
+
+def test_bus_route_names():
+    from nycynapse.tools import busalerts
+
+    assert [busalerts.route(x) for x in ("M14A-SBS", "M14A+", "Bx12", "SIM1C", "Q58", "BxM10")] == [
+        "M14A",
+        "M14A",
+        "BX12",
+        "SIM1C",
+        "Q58",
+        "BXM10",
+    ]
+    assert [busalerts.route(x) for x in ("M", "Q", "B", "7", "LIRR", None)] == [None] * 6
+
+
+def test_a_bus_that_does_not_stop_there_is_marked(monkeypatch):
+    from nycynapse.tools import busalerts
+
+    head = "M10 stops below W 86th St will be closed"
+    al = {"routes": {"M10"}, "kind": "Planned - Part Suspended", "head": head}
+    monkeypatch.setattr(busalerts, "alerts", lambda routes, t0, t1: [al])
+    leg = {**_bus("M10", CPW[110], CPW[72]), "from": "W 110 ST", "to": "W 72 ST"}
+    option = {"lines": [leg]}
+    lines = busalerts.changes(option, 0, 1)
+    assert option["skipped"] == "the M10 does not stop at W 72 ST then"
+    assert lines[0].startswith("Affects this ride on the M10 bus")
