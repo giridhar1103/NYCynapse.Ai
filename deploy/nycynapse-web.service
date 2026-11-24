@@ -4,6 +4,7 @@ After=network.target postgresql.service
 
 [Service]
 Type=simple
+Slice=nycynapse.slice
 WorkingDirectory=/root/NYCynapse
 EnvironmentFile=/root/.secrets/nycynapse-web.env
 Environment=HOME=/root
@@ -19,6 +20,8 @@ ExecStart=/root/NYCynapse/.venv/bin/uvicorn nycynapse.api.app:app --host 127.0.0
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=15
+# Kept in memory, see nycynapse.slice.
+MemoryMin=900M
 MemoryHigh=2500M
 MemoryMax=3G
 CPUQuota=250%

@@ -4,6 +4,7 @@ After=network.target postgresql.service
 
 [Service]
 Type=simple
+Slice=nycynapse.slice
 WorkingDirectory=/root/NYCynapse
 EnvironmentFile=/root/.secrets/nycynapse-web.env
 EnvironmentFile=/root/.secrets/nycynapse-connect.env
@@ -12,6 +13,7 @@ Environment=PYTHONUNBUFFERED=1
 ExecStart=/root/NYCynapse/.venv/bin/python -m nycynapse.connect.app
 Restart=on-failure
 RestartSec=5
+MemoryMin=100M
 MemoryMax=768M
 CPUQuota=100%
 NoNewPrivileges=true

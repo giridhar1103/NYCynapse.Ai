@@ -1,0 +1,9 @@
+[Unit]
+Description=NYCynapse services that answer readers
+
+# Other work on this machine fills memory with file cache, and the site was swapped out after a few
+# quiet minutes: the next reader waited seconds for it to be read back. Memory up to these amounts is
+# never taken. (MemoryLow did not hold: this kernel only takes it one round later.) A service is only
+# protected if its slice is, hence a slice of its own.
+[Slice]
+MemoryMin=1000M
