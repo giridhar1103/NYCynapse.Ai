@@ -1060,7 +1060,7 @@ _HAPPENING = re.compile(
 )
 
 
-_CLOCK = re.compile(r"\b\d{1,2}:\d{2} [AP]M\b")
+_SAID_TIME = re.compile(r"\b\d{1,2}:\d{2} [AP]M\b")
 
 
 def _shown_trip(trips: list[dict], answer: str) -> dict:
@@ -1069,12 +1069,12 @@ def _shown_trip(trips: list[dict], answer: str) -> dict:
     fit alike it is the one the answer comes to first; when none fit, the last one planned, since
     earlier attempts were superseded."""
     said: dict[str, int] = {}
-    for m in _CLOCK.finditer(re.sub(r"[\u00a0\u202f]", " ", answer or "")):
+    for m in _SAID_TIME.finditer(re.sub(r"[\u00a0\u202f]", " ", answer or "")):
         said.setdefault(m.group(), m.start())
 
     def told(trip: dict) -> tuple[int, int]:
         options = ((trip.get("modes") or {}).get("transit") or {}).get("options") or []
-        times = set(_CLOCK.findall(json.dumps(options[0] if options else trip))) & set(said)
+        times = set(_SAID_TIME.findall(json.dumps(options[0] if options else trip))) & set(said)
         return (len(times), -min(map(said.get, times), default=0))
 
     return max(enumerate(trips), key=lambda x: (*told(x[1]), x[0]))[1]
