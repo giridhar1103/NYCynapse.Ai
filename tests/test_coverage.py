@@ -277,3 +277,34 @@ def test_inside_zone_one_the_terminal_tells_the_direction():
     assert R.fare("LIRR", "Penn Station", "Woodside", at(4, 45), at(4, 56)) == "$5.25"
     assert R.fare("LIRR", "Penn Station", "Woodside", at(17, 45), at(17, 56)) == "$7.25"
     assert " or " in R.fare("LIRR", "Woodside", "Forest Hills", at(17, 45), at(17, 55))
+
+
+def test_the_staten_island_railway_is_the_subway_and_the_ferry_is_free():
+    from nycynapse.tools import trips as T
+
+    def leg(mode, agency, short):
+        stop = {"name": "St George", "lat": 40.64, "lon": -74.07}
+        return {
+            "mode": mode,
+            "agencyName": agency,
+            "routeShortName": short,
+            "from": stop,
+            "to": stop,
+            "duration": 600,
+            "startTime": "2026-11-28T13:00:00Z",
+            "endTime": "2026-11-28T13:10:00Z",
+        }
+
+    sir = leg("REGIONAL_RAIL", "MTA New York City Transit", "SIR")
+    boat = leg("FERRY", "New York City Department of Transportation", "")
+    assert T._leg_text(sir, "").startswith("SIR train")
+    assert T._leg_text(boat, "").startswith("Staten Island Ferry from")
+    lines = [T._line(sir, ""), T._line(boat, "")]
+    assert [(x["mode"], x["name"]) for x in lines] == [
+        ("subway", "SIR"),
+        ("ferry", "Staten Island Ferry"),
+    ]
+    assert T._fare({"lines": lines}) == "$3.00"
+    assert T._fare({"lines": lines[1:]}) == "free"
+    lirr = leg("REGIONAL_RAIL", "Long Island Rail Road", "")
+    assert T._line(lirr, "")["mode"] == "train"

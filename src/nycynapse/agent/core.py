@@ -835,6 +835,11 @@ class Agent:
                 f"ask_lake {MAX_PER_TOOL['web_search']}, open_data {MAX_PER_TOOL['open_data']})."
                 + (" Used so far: " + ", ".join(spent) + "." if spent else "")
             )
+        if t.results:
+            parts.append(
+                "When you answer: under 110 words, clock times exactly as the results give them, "
+                "and nothing the results do not say."
+            )
         return "\n\n".join(parts)
 
     def _step(self, t: Turn, system: str, static: str, force: bool) -> dict | None:
@@ -1232,6 +1237,37 @@ def _dated(x: dict) -> str:
 ELSEWHERE = " (mentions another state: may be about a different place)"
 
 
+# Which source of a trip each line of it comes from, by how the line starts. One result has
+# several, and a fact was often cited to the first of them.
+_LINE_SOURCES = (
+    (re.compile(r"\d\. .*door to door|Walking: |By bike: "), "Transitous"),
+    (re.compile(r"By car (?:\(traffic|right now)|By car, to arrive"), "TomTom"),
+    (re.compile(r"By taxi or car: "), "NYC TLC"),
+    (re.compile(r"By car: at least"), "OSRM"),
+    (re.compile(r"For a flight: "), "TSA"),
+    (re.compile(r"Step-free checks use"), "MTA accessible"),
+)
+
+
+def _cited_lines(summary: str, sources: list[dict], numbers: dict[str, int]) -> str:
+    """A trip's text with the number of its source at the end of each line that has one."""
+    out = []
+    for line in summary.split("\n"):
+        start = next((title for p, title in _LINE_SOURCES if p.match(line)), None)
+        if not start and (m := re.match(r"(\S+) (?:prices are|fares depend)", line)):
+            start = f"{m.group(1)} fares"
+        n = next(
+            (
+                numbers.get(_source_key(s))
+                for s in sources
+                if start and s["title"].startswith(start)
+            ),
+            None,
+        )
+        out.append(f"{line} [{n}]" if n else line)
+    return "\n".join(out)
+
+
 def _result_text(r: dict, numbers: dict[str, int]) -> str:
     res: ToolResult = r["result"]
     head = f"[{r['tool']} {json.dumps(r['args'])}] " + ("OK" if res.ok else "FAILED")
@@ -1254,7 +1290,10 @@ def _result_text(r: dict, numbers: dict[str, int]) -> str:
         for s in res.sources
         if _source_key(s) in numbers
     )
-    return f"{head}. Sources: {cite or 'none'}\n{res.summary}"
+    text = res.summary
+    if r["tool"] == "trip_plan":
+        text = _cited_lines(text, res.sources, numbers)
+    return f"{head}. Sources: {cite or 'none'}\n{text}"
 
 
 def _short(text: str, n: int = 160) -> str:

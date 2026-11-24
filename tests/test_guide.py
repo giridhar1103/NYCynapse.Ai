@@ -2667,3 +2667,20 @@ def test_a_trip_to_a_flight_is_planned_by_when_it_must_get_there():
     assert core._flight_margin(q, home) == home
     own = {**plan, "arrive_by": True}
     assert core._flight_margin(q, own) == own
+
+
+def test_each_line_of_a_trip_carries_its_own_source():
+    titles = ["Transitous trip planner", "TomTom traffic and routing", "NYC TLC trip records"]
+    sources = [{"title": x, "url": f"https://{i}.example"} for i, x in enumerate(titles)]
+    sources.append({"title": "LIRR fares", "url": "https://fares.example"})
+    numbers = {core._source_key(s): i for i, s in enumerate(sources, 2)}
+    text = core._cited_lines(
+        "Trip from A to B.\n1. [arrives first] 30 min door to door, leave 4:00 PM\n"
+        "   Service change on the F\nLIRR prices are one-way\n"
+        "By car right now: about 20 min\nBy car, to arrive by 5 PM: leave by 4:20\n"
+        "By taxi or car: usually 22 min",
+        sources,
+        numbers,
+    )
+    ends = [x.rsplit(" ", 1)[-1] for x in text.split("\n")]
+    assert ends == ["B.", "[2]", "F", "[5]", "[3]", "[3]", "[4]"]

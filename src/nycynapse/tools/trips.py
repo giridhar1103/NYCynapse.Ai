@@ -167,7 +167,17 @@ _AGENCY = {
     "NJ TRANSIT RAIL": "NJ Transit",
     "NY Waterway": "NY Waterway",
     "NYC Ferry": "NYC Ferry",
+    "New York City Department of Transportation": "Staten Island Ferry",  # its only ferry
 }
+
+
+def _kind(leg: dict) -> str | None:
+    """The kind of ride. The Staten Island Railway is a train on the map and the subway in
+    everything a rider does: the same fare, with the same free transfer."""
+    if leg.get("agencyName") == "MTA New York City Transit" and leg.get("mode") == "REGIONAL_RAIL":
+        return "subway"
+    return _MODE.get(leg.get("mode", ""))
+
 
 HBLR = "Light Rail"  # Hudson-Bergen, short enough for a badge
 
@@ -178,7 +188,7 @@ def _leg_text(leg: dict, end: str) -> str:
     if mode == "WALK":
         to = end if leg["to"]["name"] == "END" else leg["to"]["name"]
         return f"walk {mins} min to {to}" if mins >= 1 else ""
-    kind = _MODE.get(mode, mode.lower())
+    kind = _kind(leg) or mode.lower()
     name = leg.get("routeShortName") or leg.get("displayName") or ""
     agency = leg.get("agencyName") or ""
     if kind == "subway":
@@ -189,6 +199,9 @@ def _leg_text(leg: dict, end: str) -> str:
         what = f"{agency} train" + (
             f" ({leg.get('routeLongName')})" if leg.get("routeLongName") else ""
         )
+    elif kind == "ferry":
+        ferry = _AGENCY.get(agency, agency)
+        what = ferry if "erry" in ferry else f"{ferry} ferry"
     else:
         what = f"{agency} {kind}".strip()
     stops = len(leg.get("intermediateStops") or []) + 1
@@ -400,7 +413,7 @@ def _itinerary(
 def _line(lg: dict, end: str) -> dict:
     """One leg as the page draws and lists it: mode, line name and colors, where it boards
     and gets off, when, how long, how many stops, and its path."""
-    mode = _MODE.get(lg["mode"], "walk" if lg["mode"] == "WALK" else "other")
+    mode = _kind(lg) or ("walk" if lg["mode"] == "WALK" else "other")
     name = (
         lg.get("routeShortName")
         if mode in ("subway", "bus")
@@ -514,8 +527,11 @@ def _dollars(o: dict) -> float:
 
 def _effort(o: dict, cheapest: float) -> float:
     """What an option costs beyond its hours, in seconds: five minutes for each change, since
-    people prefer one seat, and two for each dollar over the cheapest way there."""
-    return 300 * o.get("transfers", 0) + 120 * (_dollars(o) - cheapest)
+    people prefer one seat, two for each dollar over the cheapest way there, and half a minute
+    more for each minute on foot."""
+    return (
+        300 * o.get("transfers", 0) + 120 * (_dollars(o) - cheapest) + 30 * o.get("walk_minutes", 0)
+    )
 
 
 def _for_deadline(options: list[dict], when: datetime, arrive_by: bool) -> list[dict]:
@@ -1538,7 +1554,9 @@ def trip_plan(
                 lines.append("No car trip time is available for this pair of places.")
     layers.append(_trip_layer(a, b, t, arrive_by, mode, data))
     # The planner first: a fact cited to the first source should not point at a fare page.
-    sources.sort(key=lambda s: s["title"].endswith(" fares"))
+    sources.sort(
+        key=lambda s: (not s["title"].startswith("Transitous"), s["title"].endswith(" fares"))
+    )
     return ToolResult(summary="\n".join(lines), data=data, sources=sources, map=layers)
 
 
