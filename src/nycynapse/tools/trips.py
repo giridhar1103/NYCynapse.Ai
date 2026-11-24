@@ -80,7 +80,7 @@ NAMED = {
     "atlantic terminal": ("Atlantic Terminal (LIRR)", 40.6840, -73.9776),
     "fulton center": ("Fulton Center", 40.7102, -74.0079),
     "oculus": ("World Trade Center Oculus", 40.7115, -74.0110),
-    "hudson yards": ("Hudson Yards", 40.7538, -74.0021),
+    "hudson yards": ("Hudson Yards", 40.7554, -74.0010),
     "moynihan": ("Moynihan Train Hall", 40.7516, -73.9962),
     "jamaica center": ("Jamaica Center-Parsons/Archer", 40.7022, -73.8010),
     "bed stuy": ("Bedford-Stuyvesant", 40.6872, -73.9418),
@@ -1276,6 +1276,12 @@ def trip_plan(
                 f"The {end} '{asked}' was placed at {got['name']}. If that is not where the reader "
                 "means, say so and ask for the address or a nearby station rather than treating it "
                 "as theirs."
+            )
+    for got, end in ((a, "start"), (b, "end")):
+        if got.get("around"):
+            notes_placed.append(
+                f"The {end}, {got['name']}, is a whole neighborhood: planned for {got['around']}, "
+                "in the middle of it. Say so in a few words."
             )
     lines = [
         f"Trip from {a['name']} to {b['name']}, "

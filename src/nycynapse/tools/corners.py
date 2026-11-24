@@ -88,6 +88,7 @@ def words(street: str) -> frozenset[str]:
     t = re.sub(r"['’.]", "", street.lower())
     t = re.sub(r"[^a-z0-9 ]+", " ", t)
     t = re.sub(r"\b(\d+)(?:st|nd|rd|th)\b", r"\1", t)
+    t = re.sub(r"\b(ma?c) +(?=[a-z]{3})", r"\1", t)  # the map has "MC GUINNESS", "MAC DOUGAL"
     return frozenset(_WORDS.get(w, w) for w in t.split()) - _DROP
 
 

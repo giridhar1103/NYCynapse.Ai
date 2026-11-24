@@ -898,10 +898,10 @@ class Agent:
         layers = [layer for r in t.results if r["result"].ok for layer in r["result"].map]
         trips = [x for x in layers if x.get("type") == "trip"]
         if trips:
-            # A trip answer shows one trip, the last one planned (earlier attempts were
-            # superseded), and nothing else that would compete with its route on the map.
+            # A trip answer shows one trip, the one it is about, and nothing else that would
+            # compete with its route on the map.
             layers = [x for x in layers if x.get("type") not in ("trip", "routes", "points")]
-            layers.append(trips[-1])
+            layers.append(_shown_trip(trips, answer))
         # Highlights a tool drew while working (the top neighborhoods by rent, say) are not
         # the answer's places: the final map keeps only what the answer names.
         layers = [x for x in layers if x.get("type") != "highlight"]
@@ -1058,6 +1058,26 @@ _HAPPENING = re.compile(
     r"closures?|accidents?|problems?))\b",
     re.I,
 )
+
+
+_CLOCK = re.compile(r"\b\d{1,2}:\d{2} [AP]M\b")
+
+
+def _shown_trip(trips: list[dict], answer: str) -> dict:
+    """The planned trip the answer talks about: the one whose first option's clock times it gives.
+    An answer about leaving at 1:15 also looked at 5 AM to see when the last train runs. When two
+    fit alike it is the one the answer comes to first; when none fit, the last one planned, since
+    earlier attempts were superseded."""
+    said: dict[str, int] = {}
+    for m in _CLOCK.finditer(re.sub(r"[\u00a0\u202f]", " ", answer or "")):
+        said.setdefault(m.group(), m.start())
+
+    def told(trip: dict) -> tuple[int, int]:
+        options = ((trip.get("modes") or {}).get("transit") or {}).get("options") or []
+        times = set(_CLOCK.findall(json.dumps(options[0] if options else trip))) & set(said)
+        return (len(times), -min(map(said.get, times), default=0))
+
+    return max(enumerate(trips), key=lambda x: (*told(x[1]), x[0]))[1]
 
 
 def _trip_prefetch(

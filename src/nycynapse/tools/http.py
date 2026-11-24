@@ -85,7 +85,14 @@ def get_json(
 
     def make():
         wait = {"timeout": timeout} if timeout else {}
-        r = _client.get(url, params=params, headers=headers, **wait)
+        try:
+            r = _client.get(url, params=params, headers=headers, **wait)
+            busy = r.status_code in (502, 503, 504)
+        except (httpx.RemoteProtocolError, httpx.ReadError):  # dropped, not slow
+            busy = True
+        if busy:
+            time.sleep(0.5)
+            r = _client.get(url, params=params, headers=headers, **wait)
         r.raise_for_status()
         if again and again(r.headers):
             try:

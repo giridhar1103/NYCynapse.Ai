@@ -4,6 +4,8 @@ map app lists well."""
 
 from __future__ import annotations
 
+import httpx
+
 from . import Tool, ToolResult, failed
 from .http import get_json
 from .trips import _metres, locate
@@ -71,14 +73,13 @@ def nearby(near: str, what: str = "restroom", n: int = 5) -> ToolResult:
     if not p:
         return failed(f"could not place {near!r}; name a station, landmark, address or area")
     lat, lon = round(p["lat"], 4), round(p["lon"], 4)
-    rows = get_json(
-        SOCRATA.format(kind["id"]),
-        {
-            "$where": f"{kind['where']} AND within_circle({kind['geo']}, {lat}, {lon}, {RADIUS_M})",
-            "$limit": 60,
-        },
-        ttl_s=6 * 3600,
-    )
+    around = f"{kind['where']} AND within_circle({kind['geo']}, {lat}, {lon}, {RADIUS_M})"
+    try:
+        rows = get_json(
+            SOCRATA.format(kind["id"]), {"$where": around, "$limit": 60}, ttl_s=6 * 3600
+        )
+    except httpx.HTTPError:
+        return failed("the city's data service did not answer; try once more")
     found = []
     for row in rows or []:
         pt = _point(row, kind["geo"])

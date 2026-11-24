@@ -986,7 +986,7 @@ function describe(name, args) {
   if (!args) return "";
   if (name === "ask_lake") return args.question ? `“${String(args.question).slice(0, 70)}”` : "";
   if (name === "weather") return args.days ? `next ${args.days} days` : args.hours ? `next ${args.hours} h` : "";
-  if (name === "area_stats") return [String(args.measure || "").replace("_", " "), args.borough].filter(Boolean).join(", ");
+  if (name === "area_stats") return [String(args.measure || "").replace("_", " "), args.area || args.borough].filter(Boolean).join(", ");
   if (name === "subway_alerts") return args.line ? `${args.line} line` : "all lines";
   if (name === "road_speeds" || name === "road_events") return args.borough || "all boroughs";
   if (name === "open_data") return args.dataset || "";

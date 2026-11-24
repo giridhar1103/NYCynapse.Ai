@@ -12,7 +12,7 @@ import json
 import re
 from functools import lru_cache
 
-from . import corners, railfares
+from . import centers, corners, railfares
 from . import trips as T
 from .http import get_json
 from .path_trains import PATH
@@ -94,6 +94,17 @@ def _inside(lat: float, lon: float) -> bool:
     return T.BOX[0] <= lon <= T.BOX[2] and T.BOX[1] <= lat <= T.BOX[3]
 
 
+def _middle(ring: list) -> tuple[float, float]:
+    """The center of an outline's area. The mean of its points leans to the wiggly shore."""
+    x0, y0 = ring[0][0], ring[0][1]
+    area = x = y = 0.0
+    for a, b in zip(ring, ring[1:], strict=False):
+        ax, ay, bx, by = a[0] - x0, a[1] - y0, b[0] - x0, b[1] - y0
+        k = ax * by - bx * ay
+        area, x, y = area + k, x + (ax + bx) * k, y + (ay + by) * k
+    return (x0 + x / (3 * area), y0 + y / (3 * area)) if area else (x0, y0)
+
+
 @lru_cache(maxsize=1)
 def _hoods() -> list[tuple[str, list[str], float, float]]:
     """Neighborhood names (and their parts, "Astoria (North)" is Astoria) with a middle point."""
@@ -106,15 +117,24 @@ def _hoods() -> list[tuple[str, list[str], float, float]]:
             if g["type"] == "Polygon"
             else max((p[0] for p in g["coordinates"]), key=len)
         )
-        lon = sum(c[0] for c in ring) / len(ring)
-        lat = sum(c[1] for c in ring) / len(ring)
+        lon, lat = _middle(ring)
         parts = [_norm(re.sub(r"\(.*?\)", "", x)) for x in re.split(r"[-/]", name)]
         out.append((name, parts, lat, lon))
     return out
 
 
-def _neighborhood(n: str) -> dict | None:
+def _neighborhood(n: str, boro: str | None = None) -> dict | None:
+    """The middle of a neighborhood: the corner people there know, or else of the city's outline."""
+    known = centers.find(n, boro)
+    if known:
+        return known
     hits = [(name, lat, lon) for name, parts, lat, lon in _hoods() if n in parts]
+    if boro:
+        hits = [
+            h
+            for h in hits
+            if (z := T.zone_of(h[1], h[2])) and (T._zone_borough(z[0]) or "").lower() == boro
+        ]
     if not hits:
         return None
     lat = sum(h[1] for h in hits) / len(hits)
@@ -1061,6 +1081,10 @@ def _locate(text: str) -> dict | None:
     # Well-known places before neighborhoods: Union Square is the park, not the middle of the
     # "Midtown South-Flatiron-Union Square" neighborhood.
     said = _borough_named(raw)
+    if bare not in T.NAMED:
+        hood = centers.find(bare or n, said)
+        if hood:  # before landmarks: Battery Park City is not a lawn in the Battery
+            return hood
     mark = _landmark(n) or (_landmark(bare) if bare else None)
     if mark and said:  # a landmark of that name in another borough
         z = T.zone_of(mark["lat"], mark["lon"])
@@ -1071,8 +1095,8 @@ def _locate(text: str) -> dict | None:
     inside = len(own) > 1 and _norm(own[0]) and not _known(own[0]) and not _borough_named(own[0])
     if mark and not (inside and _landmark(_norm(own[1]))):
         return mark
-    if bare and bare != n:
-        hood = _neighborhood(bare)
+    if bare and bare != n and bare not in T.NAMED:
+        hood = _neighborhood(bare, said)
         if hood:
             return hood
     # "Razza, Jersey City" or "Juniors in Downtown Brooklyn" is a place there, not the area.
@@ -1091,7 +1115,7 @@ def _locate(text: str) -> dict | None:
         stop = _stop(raw)
         if stop:
             return stop
-    hood = _neighborhood(n)
+    hood = _neighborhood(n, said)
     if hood:
         return hood
     # A street named without a house number is usually its station ("Metropolitan Av" on the

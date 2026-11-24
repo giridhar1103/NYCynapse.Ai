@@ -2809,3 +2809,85 @@ def test_a_bus_that_does_not_stop_there_is_marked(monkeypatch):
     lines = busalerts.changes(option, 0, 1)
     assert option["skipped"] == "the M10 does not stop at W 72 ST then"
     assert lines[0].startswith("Affects this ride on the M10 bus")
+
+
+# Neighborhoods
+
+
+def test_every_neighborhood_center_is_a_corner_in_its_borough():
+    from nycynapse.tools import centers
+
+    for named in centers._index().values():
+        for name, boro, at in named:
+            got = centers.find(name, boro)
+            assert got and got["borough"] == boro, (name, at)
+
+
+@pytest.mark.parametrize(
+    "said, lat, lon",
+    [
+        # These were up to seven kilometers off, at the middle of outlines that join several.
+        ("Cobble Hill", 40.6865, -73.9960),
+        ("Murray Hill, Manhattan", 40.7475, -73.9780),
+        ("Astoria", 40.7640, -73.9230),
+        ("Hudson Yards, Manhattan", 40.7545, -74.0010),
+        ("Sunnyside, Queens", 40.7435, -73.9200),
+        ("Battery Park City", 40.7115, -74.0158),
+        ("FiDi", 40.7075, -74.0100),
+        ("LIC", 40.7470, -73.9450),
+        ("Little Italy, Bronx", 40.8550, -73.8880),
+    ],
+)
+def test_neighborhoods_are_where_people_say_they_are(said, lat, lon):
+    from nycynapse.tools import trips as T, placenames as pn  # noqa: I001
+
+    got = pn._locate(said)
+    assert got and T._metres(got, {"lat": lat, "lon": lon}) < 500
+
+
+def test_zip_codes_of_a_neighborhood_lead_with_its_center():
+    from nycynapse.tools import areas
+
+    assert areas.zips_of("Sunnyside, Queens")["center"] == "11104"
+    assert areas.zips_of("Greenpoint")["zips"][0][0] == "11222"
+    assert areas.zips_of("Nolita")["center"] == "10012"
+    assert areas.zips_of("11222")["zips"] == [("11222", 1.0)]
+    assert "error" in areas.zips_of("Narnia")
+
+
+def test_the_map_shows_the_trip_the_answer_is_about():
+    from nycynapse.agent import core
+
+    def trip(*times):
+        options = [{"leave": t, "arrive": t} for t in times]
+        return {"type": "trip", "modes": {"transit": {"options": options}}}
+
+    asked, later = trip("1:22 AM", "5:02 AM"), trip("5:02 AM", "5:29 AM")
+    assert core._shown_trip([asked, later], "Leave at 1:22 AM.") is asked
+    assert core._shown_trip([asked, later], "Leave at 5:02 AM.") is later
+    assert core._shown_trip([asked, later], "1:22 AM, and the last at 5:02 AM.") is asked
+    assert core._shown_trip([later, asked], "1:22 AM, and the last at 5:02 AM.") is asked
+    assert core._shown_trip([asked, later], "About half an hour.") is later
+
+
+def test_a_service_that_is_briefly_busy_is_asked_again(monkeypatch):
+    import httpx
+
+    from nycynapse.tools import http
+
+    seen = []
+
+    def answer(request):
+        seen.append(request.url.path)
+        busy = request.url.path == "/down" or (request.url.path == "/busy" and len(seen) == 1)
+        return httpx.Response(503 if busy else 404 if request.url.path == "/no" else 200, json=[1])
+
+    monkeypatch.setattr(http, "_client", httpx.Client(transport=httpx.MockTransport(answer)))
+    monkeypatch.setattr(http.time, "sleep", lambda s: None)
+    assert http.get_json("https://x.test/busy", ttl_s=0) == [1] and len(seen) == 2
+    with pytest.raises(httpx.HTTPStatusError):
+        http.get_json("https://x.test/down", ttl_s=0)
+    assert len(seen) == 4
+    with pytest.raises(httpx.HTTPStatusError):  # a wrong question is not asked twice
+        http.get_json("https://x.test/no", ttl_s=0)
+    assert len(seen) == 5

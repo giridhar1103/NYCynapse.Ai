@@ -97,11 +97,15 @@ def find_place(text: str) -> dict:
 
 @server.tool(annotations=LIVE)
 def area_stats(
-    measure: str = "median_rent", borough: str | None = None, order: str = "low", n: int = 5
+    measure: str = "median_rent",
+    borough: str | None = None,
+    order: str = "low",
+    n: int = 5,
+    area: str | None = None,
 ) -> dict:
     """Rank NYC ZIP code areas by Census median_rent, median_income, population or
-    renter_share."""
-    return live.area_stats(measure, borough, order, n).as_dict()
+    renter_share, or give one neighborhood's (area)."""
+    return live.area_stats(measure, borough, order, n, area).as_dict()
 
 
 @server.tool(annotations=LIVE)

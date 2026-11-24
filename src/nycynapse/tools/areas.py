@@ -80,6 +80,79 @@ def _zips() -> dict[str, dict]:
     return {z.strip(): f for f in feats for z in f["properties"]["zips"].split(",")}
 
 
+def _inside(x: float, y: float, geometry: dict) -> bool:
+    polys = geometry["coordinates"]
+    for poly in polys if geometry["type"] == "MultiPolygon" else [polys]:
+        hit = False
+        for ring in poly:  # a hole turns it back
+            for (ax, ay, *_), (bx, by, *_) in zip(ring, ring[1:], strict=False):
+                if (ay > y) != (by > y) and x < (bx - ax) * (y - ay) / (by - ay) + ax:
+                    hit = not hit
+        if hit:
+            return True
+    return False
+
+
+def _box(geometry: dict) -> tuple[float, float, float, float]:
+    polys = geometry["coordinates"]
+    pts = [
+        p for poly in (polys if geometry["type"] == "MultiPolygon" else [polys]) for p in poly[0]
+    ]
+    return (
+        min(p[0] for p in pts),
+        min(p[1] for p in pts),
+        max(p[0] for p in pts),
+        max(p[1] for p in pts),
+    )
+
+
+@lru_cache(maxsize=128)
+def zips_of(text: str) -> dict:
+    """{zips: [(zip, share of the area)], center, note} for a neighborhood or ZIP code, or
+    {error}. The shares are by land, from a grid of points. The one at the neighborhood's center
+    comes first: Sunnyside's outline is half rail yard, in another ZIP code than its homes."""
+    from . import centers
+
+    area = outline(text)
+    zips = {f["properties"]["name"]: f["geometry"] for f in _zips().values()}
+    name, _, rest = text.partition(",")
+    boro = next((b for b in BOROUGHS if b.lower() in rest.lower()), None)
+    spot = centers.find(name, boro)
+    center = next(
+        (z for z, g in zips.items() if spot and _inside(spot["lon"], spot["lat"], g)), None
+    )
+    if area.get("error"):
+        if not center:
+            return {"error": f"{area['error'].partition(';')[0]}; use a ZIP code or another name"}
+        return {"zips": [(center, 1.0)], "center": center, "note": f"around {spot['around']}"}
+    if area["item"]["level"] == "zip":
+        z = area["item"]["key"]
+        return {"zips": [(z, 1.0)], "center": z, "note": area["note"]}
+    shapes = [_coarse()[x] for x in area["names"]]
+    boxes = {z: _box(g) for z, g in zips.items()}
+    count: dict[str, int] = {}
+    for g in shapes:
+        x0, y0, x1, y1 = _box(g)
+        step = max((x1 - x0) / 30, (y1 - y0) / 30, 1e-5)
+        for i in range(31):
+            for k in range(31):
+                x, y = x0 + i * step, y0 + k * step
+                if x > x1 or y > y1 or not _inside(x, y, g):
+                    continue
+                for z, (a, b, c, d) in boxes.items():
+                    if a <= x <= c and b <= y <= d and _inside(x, y, zips[z]):
+                        count[z] = count.get(z, 0) + 1
+                        break
+    total = sum(count.values())
+    if not total:
+        return {"error": f"no ZIP codes found for {text.strip()!r}"}
+    shares = sorted(
+        ((z, n / total) for z, n in count.items()), key=lambda t: (t[0] != center, -t[1])
+    )
+    keep = [s for s in shares if s[1] >= 0.12 or s[0] == center] or shares[:1]
+    return {"zips": keep, "center": center, "note": area["note"]}
+
+
 def _wkt(geometries: list[dict]) -> str:
     polys = []
     for g in geometries:

@@ -1214,12 +1214,26 @@ def _acs_values(d: dict) -> dict:
 
 
 def area_stats(
-    measure: str = "median_rent", borough: str | None = None, order: str = "low", n: int = 5
+    measure: str = "median_rent",
+    borough: str | None = None,
+    order: str = "low",
+    n: int = 5,
+    area: str | None = None,
 ) -> ToolResult:
-    """Rank NYC ZIP code areas by rent, income, population or share of renters (Census ACS)."""
+    """Rank NYC ZIP code areas by rent, income, population or share of renters (Census ACS), or
+    give the figures of the ZIP codes of one neighborhood."""
     if measure not in MEASURES:
         return failed(f"measure must be one of {', '.join(MEASURES)}")
     what, unit, note = MEASURES[measure]
+    inside = None
+    if area:
+        from . import areas
+
+        inside = areas.zips_of(area)
+        if inside.get("error"):
+            return failed(inside["error"])
+        shares = dict(inside["zips"])
+        borough, n = None, 10
     n = max(1, min(int(n or 5), 10))
     boro = _borough(borough)
     zips = _zip_areas()
@@ -1231,6 +1245,8 @@ def area_stats(
         z = geoid[-5:]
         meta = zips.get(z)
         if not meta or (boro and meta.get("borough") != boro):
+            continue
+        if inside and z not in shares:
             continue
         v = _acs_values(tables)
         if not v[measure] or (v["population"] or 0) < 1000:
@@ -1247,6 +1263,8 @@ def area_stats(
     if not rows:
         return failed("no ZIP code areas matched")
     rows.sort(key=lambda r: r["value"], reverse=order == "high")
+    if inside:
+        rows.sort(key=lambda r: (r["zip"] != inside["center"], -shares[r["zip"]]))
     top = rows[:n]
 
     def show(x) -> str:
@@ -1259,6 +1277,7 @@ def area_stats(
     where = boro or "New York City"
     lines = [
         f"{i + 1}. {r['area']} (ZIP {r['zip']}, {r['borough']}): {what} {show(r['value'])}"
+        + (f"; {shares[r['zip']]:.0%} of its land" if inside and len(shares) > 1 else "")
         + (
             f"; median rent ${r['median_rent']:,.0f}"
             if measure != "median_rent" and r["median_rent"]
@@ -1266,12 +1285,19 @@ def area_stats(
         )
         for i, r in enumerate(top)
     ]
+    heading = f"{'Lowest' if order != 'high' else 'Highest'} {what} by ZIP code area in {where}"
+    if inside:
+        heading = (
+            f"{what.capitalize()} in the ZIP codes of {area.strip()}, the one "
+            + ("at its center" if inside["center"] else "that covers most of it")
+            + " first; give that one, with its ZIP code, and the range when they differ much"
+        )
     summary = (
-        f"{'Lowest' if order != 'high' else 'Highest'} {what} by ZIP code area in {where} "
+        f"{heading} "
         f"({release}, {d['release']['years']}; US Census Bureau American Community Survey). "
         f"{note}\nCitywide: {what} {show(city[measure])}.\n"
         + "\n".join(lines)
-        + f"\n{len(rows)} ZIP code areas compared."
+        + ("" if inside else f"\n{len(rows)} ZIP code areas compared.")
     )
     return ToolResult(
         summary=summary,
@@ -1483,11 +1509,14 @@ def open_data(
         )
     url = f"https://data.cityofnewyork.us/resource/{ds}.json"
     try:
-        rows = get_json(url, params, _socrata_headers(), ttl_s=300, again=_behind)
+        try:
+            rows = get_json(url, params, _socrata_headers(), ttl_s=300, again=_behind, timeout=10)
+        except httpx.TransportError:  # some of the city's servers hang; another may not
+            rows = get_json(url, params, _socrata_headers(), ttl_s=300, again=_behind, timeout=15)
     except httpx.HTTPStatusError as e:
         return failed(_refused(e))
     except httpx.TransportError:
-        return failed("the city's data service did not answer in time; try once more")
+        return failed("the city's data service did not answer in time, asked twice")
     pts = [
         {
             "lat": float(r["latitude"]),
@@ -1636,11 +1665,14 @@ TOOLS = [
         "Rank New York City ZIP code areas (named by neighborhood) by Census figures: "
         "median_rent, median_income, population or renter_share, lowest or highest first, "
         "optionally within one borough. American Community Survey 5-year estimates. Use for "
-        "cheapest or priciest areas to rent, richest or poorest areas, most populated.",
+        "cheapest or priciest areas to rent, richest or poorest areas, most populated. For one "
+        "neighborhood or ZIP code set `area` ('Sunnyside, Queens', '11222'); to compare "
+        "neighborhoods call it once for each.",
         {
             "type": "object",
             "properties": {
                 "measure": {"type": "string", "enum": list(MEASURES)},
+                "area": {"type": "string"},
                 "borough": {"type": "string"},
                 "order": {"type": "string", "enum": ["low", "high"]},
                 "n": {"type": "integer", "minimum": 1, "maximum": 10},
