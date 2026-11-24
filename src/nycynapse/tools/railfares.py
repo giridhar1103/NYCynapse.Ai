@@ -1,11 +1,13 @@
 # ruff: noqa: E501
-"""One-way adult fares on the LIRR and Metro-North, from the MTA's own fare charts.
+"""One-way adult fares on the LIRR, Metro-North and NJ Transit, from the agencies' own fare charts.
 
 Sources (checked 24 November 2026), all linked from mta.info/fares-tolls/lirr-metro-north:
 LIRR document/194866, Harlem and Hudson 194931 and their intermediate fares 194936, New Haven
-210536 (New York stations 4 January 2026, Connecticut stations 1 July 2026). The schedule files
-the railroads publish carry no fares, so these tables are kept by hand: when the MTA changes its
-fares, replace them and move CHECKED. After VALID_UNTIL no price is given and the trip points to
+210536 (New York stations 4 January 2026, Connecticut stations 1 July 2026). NJ Transit: the chart of
+all fares to and from New York Penn Station, effective 1 July 2026, linked from
+njtransit.com/adjustedfares. It is the same on every train. The schedule files the railroads
+publish carry no fares, so these tables are kept by hand: when an agency changes its fares,
+replace them and move CHECKED. After VALID_UNTIL no price is given and the trip points to
 the fare page, as it does for anything this module cannot price.
 """
 
@@ -111,6 +113,45 @@ _MNR_BETWEEN = {
     9: (18.25, 16.75, 15.00, 13.00, 9.00, 7.00, 4.50, 3.50, 3.50),
     10: (19.50, 17.25, 15.75, 14.00, 10.75, 8.00, 5.00, 3.50, 3.50),
 }
+# NJ Transit to or from New York Penn Station, by the zone of the other station, in the spelling of
+# NJ Transit's schedule file. Not here, so not priced: the Metro-North stations past
+# Suffern and beyond Montvale, and trips that do not touch Penn Station.
+_NJT_STATIONS = {
+    5.05: "SECAUCUS UPPER LEVEL, SECAUCUS LOWER LEVEL",
+    6.30: "NEWARK PENN STATION, NEWARK BROAD ST, LYNDHURST",
+    6.60: "RUTHERFORD, DELAWANNA, WOOD-RIDGE",
+    8.15: "ORANGE, BRICK CHURCH, EAST ORANGE, GLEN RIDGE, BLOOMFIELD, WATSESSING AVENUE, GARFIELD, "
+    "WESMONT, PASSAIC, TETERBORO",
+    8.75: "ELIZABETH, NORTH ELIZABETH, UNION, SOUTH ORANGE, MOUNTAIN STATION, HIGHLAND AVENUE, "
+    "UPPER MONTCLAIR, WATCHUNG AVENUE, WALNUT STREET, BAY STREET, PLAUDERVILLE, CLIFTON, "
+    "ANDERSON STREET, ESSEX STREET",
+    9.40: "ROSELLE PARK, MAPLEWOOD, MSU, MONTCLAIR HEIGHTS, MOUNTAIN AVENUE, RADBURN, BROADWAY, "
+    "PATERSON, RIVER EDGE, NEW BRIDGE LANDING",
+    10.30: "LINDEN, CRANFORD, SHORT HILLS, MILLBURN, HAWTHORNE, ORADELL",
+    11.20: "RAHWAY, WESTFIELD, GARWOOD, LITTLE FALLS, GLEN ROCK BORO HALL, GLEN ROCK MAIN LINE, "
+    "EMERSON",
+    11.55: "HILLSDALE, WESTWOOD, MONTVALE, PARK RIDGE, WOODCLIFF LAKE",
+    11.80: "AVENEL, FANWOOD, NEW PROVIDENCE, SUMMIT, MOUNTAIN VIEW, "
+    "WAYNE/ROUTE 23 TRANSIT CENTER [RR], RIDGEWOOD",
+    13.05: "WOODBRIDGE, METROPARK, NETHERWOOD, MURRAY HILL, CHATHAM, LINCOLN PARK, WALDWICK, HOHOKUS",
+    14.30: "METUCHEN, PLAINFIELD, BERKELEY HEIGHTS, MADISON, TOWACO, ALLENDALE",
+    14.80: "SUFFERN, MAHWAH, RAMSEY, RAMSEY ROUTE 17 STATION",
+    14.85: "PERTH AMBOY, DUNELLEN, GILLETTE, CONVENT",
+    16.10: "SOUTH AMBOY, EDISON STATION",
+    # njtransit.com/ewr, undated, read 24 November 2026. It includes the AirTrain fee.
+    17.25: "NEWARK AIRPORT RAILROAD STATION",
+    17.00: "JERSEY AVE., NEW BRUNSWICK, BOUND BROOK, LYONS, MILLINGTON, STIRLING, MORRISTOWN, "
+    "MOUNTAIN LAKES, BOONTON",
+    17.95: "ABERDEEN-MATAWAN, BRIDGEWATER",
+    18.25: "HAZLET, BERNARDSVILLE, BASKING RIDGE, DENVILLE, MOUNT TABOR, MORRIS PLAINS",
+    18.50: "MIDDLETOWN NJ, RARITAN, SOMERVILLE, FAR HILLS, DOVER",
+    19.50: "RED BANK, NORTH BRANCH, GLADSTONE, PEAPACK, MONMOUTH PARK, LITTLE SILVER, PRINCETON JCT., "
+    "WHITE HOUSE, HACKETTSTOWN, MOUNT OLIVE, NETCONG, LAKE HOPATCONG, MOUNT ARLINGTON",
+    19.75: "ELBERON, LONG BRANCH, HAMILTON, ANNANDALE, LEBANON, BRADLEY BEACH, ASBURY PARK, "
+    "ALLENHURST, HIGH BRIDGE",
+    20.35: "BAY HEAD, POINT PLEASANT, MANASQUAN, SPRING LAKE, BELMAR, TRENTON TRANSIT CENTER",
+    21.60: "PRINCETON",
+}
 # Stations whose ticket depends on more than their zone.
 _SPECIAL = {"far rockaway", "belmont park"}
 _ABBR = {"mt": "mount", "ave": "avenue", "av": "avenue", "blvd": "boulevard", "hts": "heights",
@@ -126,8 +167,8 @@ def _norm(name: str) -> str:
     return " ".join(_ABBR.get(w, w) for w in words if w not in drop)
 
 
-def _index(table: dict[int, str]) -> dict[str, int]:
-    out: dict[str, int] = {}
+def _index(table: dict[float, str]) -> dict[str, float]:
+    out: dict[str, float] = {}
     for zone, names in table.items():
         for n in names.split(","):
             key = _norm(n)
@@ -139,6 +180,8 @@ def _index(table: dict[int, str]) -> dict[str, int]:
 
 _LIRR = _index(_LIRR_STATIONS)
 _MNR = _index(_MNR_STATIONS)
+_NJT = _index(_NJT_STATIONS)
+_NJT_PENN = _norm("NEW YORK PENN STATION")
 
 # Days that may run on a holiday fare: both prices are given rather than one guessed.
 _MAYBE_HOLIDAY = {(1, 1), (6, 19), (7, 3), (7, 4), (12, 24), (12, 25), (12, 31)}
@@ -201,6 +244,12 @@ def fare(railroad: str, start: str, end: str, depart: float, arrive: float) -> s
                 return None  # New Haven Line trips outside Manhattan have their own chart
             return f"${_MNR_BETWEEN[za][zb - 2]:.2f}"
         peak, off = _MNR_CITY[zb if za == 1 else za]
+    elif railroad == "NJ Transit":
+        if _NJT_PENN not in (a, b):
+            return None
+        peak = off = _NJT.get(b if a == _NJT_PENN else a)
+        if peak is None:
+            return None
     else:
         return None
     if peak == off:

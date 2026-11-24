@@ -167,6 +167,8 @@ _AGENCY = {
     "NYC Ferry": "NYC Ferry",
 }
 
+HBLR = "Hudson-Bergen Light Rail"
+
 
 def _leg_text(leg: dict, end: str) -> str:
     mode = leg.get("mode", "")
@@ -402,6 +404,8 @@ def _line(lg: dict, end: str) -> dict:
         if mode in ("subway", "bus")
         else _AGENCY.get(lg.get("agencyName") or "", lg.get("agencyName") or "")
     )
+    if mode == "tram" and lg.get("agencyName") == "NJ TRANSIT RAIL":
+        name = HBLR if lg.get("routeShortName") == "HBLR" else "NJ Transit light rail"
     to = end if lg["to"].get("name") == "END" else lg["to"].get("name")
     start = lg["from"].get("name")
     return {
@@ -1470,22 +1474,30 @@ def trip_plan(
 SOONER_S = 45 * 60
 
 # One-way fares as of November 2026 (MTA from Jan 4 2026, PATH from May 4 2026, NYC Ferry
-# from Oct 19 2026). Commuter rail is priced by zone and time, so it is named, not added.
+# from Oct 19 2026, Hudson-Bergen Light Rail from Jul 1 2026). Commuter rail is priced by zone and
+# time, in railfares.py.
 # The agencies' own fare pages, for the rides priced by zone and time of day.
 FARE_PAGES = {
     "LIRR": "https://www.mta.info/fares-tolls/lirr-metro-north",
     "Metro-North": "https://www.mta.info/fares-tolls/lirr-metro-north",
     "NJ Transit": "https://www.njtransit.com/fares",
 }
-FARES = {"local": 3.00, "express": 7.25, "path": 3.25, "nyc_ferry": 5.00, "airtrain": 8.75}
+FARES = {
+    "local": 3.00,
+    "express": 7.25,
+    "path": 3.25,
+    "nyc_ferry": 5.00,
+    "airtrain": 8.75,
+    "hblr": 2.65,
+}
 _EXPRESS = re.compile(r"^(?:BxM|BM|QM|SIM|X)\d", re.I)
 _MTA = re.compile(r"\bMTA\b|New York City Transit|NYCT|MTA Bus", re.I)
 _BUS_AGENCY = {"NJ TRANSIT BUS": "NJ Transit", "Greyhound-us": "Greyhound", "FlixBus-us": "FlixBus"}
 
 
 def _rail_prices(o: dict) -> dict[int, str | None]:
-    """The fare of each LIRR and Metro-North ride, by leg. One ticket covers trains changed on the
-    way, so the first leg carries the price and the rest an empty string."""
+    """The fare of each LIRR, Metro-North and NJ Transit ride, by leg. One ticket covers trains
+    changed on the way, so the first leg carries the price and the rest an empty string."""
     out: dict[int, str | None] = {}
     trip: list[dict] = []
 
@@ -1506,7 +1518,11 @@ def _rail_prices(o: dict) -> dict[int, str | None]:
     for x in o.get("lines") or []:
         if x.get("mode") == "walk":
             continue
-        rides = x.get("mode") == "train" and x.get("name") in ("LIRR", "Metro-North")
+        rides = x.get("mode") == "train" and x.get("name") in (
+            "LIRR",
+            "Metro-North",
+            "NJ Transit",
+        )
         if trip and (not rides or x["name"] != trip[-1]["name"]):
             close()
         if rides:
@@ -1518,7 +1534,7 @@ def _rail_prices(o: dict) -> dict[int, str | None]:
 def _fare(o: dict) -> str:
     """What one adult pays for an itinerary, as far as fixed fares go: "$3.00", or "$3.00 plus
     the LIRR fare" when a zone-priced train is in it. Empty when it cannot be said."""
-    total, rail, local, path, either = 0.0, [], False, False, []
+    total, rail, local, path, light, either = 0.0, [], False, False, False, []
     priced = _rail_prices(o)
     legs = [x for x in o.get("lines") or [] if x.get("mode") != "walk"]
     names = {x.get("name") or "" for x in legs}
@@ -1546,6 +1562,12 @@ def _fare(o: dict) -> str:
         elif mode == "bus" and _EXPRESS.match(name):
             total += FARES["express"]  # includes the transfer to a local bus or the subway
             local = True
+        elif mode == "tram" and x.get("agency") == "NJ TRANSIT RAIL":
+            if name != HBLR:
+                rail.append(name)
+            elif not light:  # changing light rail trains is free
+                total += FARES["hblr"]
+                light = True
         elif mode in ("subway", "bus", "tram"):
             if not local:  # one fare, with free transfers between subway and local buses
                 total += FARES["local"]

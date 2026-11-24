@@ -2442,7 +2442,25 @@ def test_one_rail_ticket_covers_a_change_of_trains():
         == "plus the LIRR fare"
     )
     nj = leg("NJ Transit", "NEW YORK PENN STATION", "SECAUCUS UPPER LEVEL", "2026-12-08T08:00", 9)
-    assert _fare({"lines": [subway, nj]}) == "$3.00 plus the NJ Transit fare"
+    assert _fare({"lines": [subway, nj]}) == "$8.05"
+    to_jersey = leg("NJ Transit", "SECAUCUS LOWER LEVEL", "RIDGEWOOD", "2026-12-08T08:20", 25)
+    assert _fare({"lines": [subway, nj, to_jersey]}) == "$14.80"
+    far = leg("NJ Transit", "SECAUCUS LOWER LEVEL", "PORT JERVIS", "2026-12-08T08:20", 120)
+    assert _fare({"lines": [nj, far]}) == "plus the NJ Transit fare"
+    within = leg(
+        "NJ Transit", "NEWARK PENN STATION", "TRENTON TRANSIT CENTER", "2026-12-08T08:00", 45
+    )
+    assert _fare({"lines": [within]}) == "plus the NJ Transit fare"
+    air = leg("NJ Transit", "NEW YORK PENN STATION", "NEWARK AIRPORT RAILROAD STATION",
+              "2026-12-08T08:00", 27)  # fmt: skip
+    assert _fare({"lines": [air, {"mode": "train", "name": "AirTrain"}]}) == "$17.25"
+    later = leg("NJ Transit", "NEW YORK PENN STATION", "TRENTON TRANSIT CENTER",
+                "2027-07-06T08:00", 80)  # fmt: skip
+    assert _fare({"lines": [later]}) == "plus the NJ Transit fare"
+    light = {"mode": "tram", "name": "Hudson-Bergen Light Rail", "agency": "NJ TRANSIT RAIL"}
+    assert _fare({"lines": [{"mode": "train", "name": "PATH"}, light, light]}) == "$5.90"
+    newark = {"mode": "tram", "name": "NJ Transit light rail", "agency": "NJ TRANSIT RAIL"}
+    assert _fare({"lines": [newark]}) == "plus the NJ Transit light rail fare"
     text = _fare({"lines": [subway, leg("LIRR", "Jamaica", "Huntington", "2026-12-08T08:00", 50)]})
     assert text == "$3.00 plus LIRR $13.25 peak or $9.75 off-peak"
 
