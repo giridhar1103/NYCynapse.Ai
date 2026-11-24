@@ -519,6 +519,8 @@ _PLACE_WORDS = {
     "college",
     "university",
     "field",
+    *("cafe", "deli", "diner", "bakery", "restaurant", "pizza", "bar", "grill", "tavern"),
+    "bookstore",
 }
 
 
@@ -625,14 +627,14 @@ def locate(text: str) -> dict | None:
             found = _locate(plain)
         if found and (not area or T._metres(found, area) < 4000):
             return {**found, "name": f"{head.strip()} ({found['name']})"}
-    found = _locate(raw)
+    found = _place_in(raw) or _locate(raw)
     if found:
         return found
     # "The Met on Fifth Avenue", "Washington Square in Larchmont": the part after on or in
     # says which one, like a comma would.
     parts = [p.strip() for p in re.split(r",|\s+(?:on|in)\s+(?=[A-Z0-9])", raw) if p.strip()]
     if len(parts) < 2:
-        return None
+        return _only_one(raw)
     boroughs = {
         "brooklyn",
         "queens",
@@ -721,6 +723,128 @@ def locate(text: str) -> dict | None:
         if found:
             return checked(found, p)
     return town and {**town, "name": f"near {town['name']}"}
+
+
+# Words a shop's full name may add to what people call it ("Peter Luger" Steak House).
+_KIND = {
+    *("steak", "house", "steakhouse", "restaurant", "deli", "delicatessen", "bar", "cafe"),
+    *("coffee", "pizza", "pizzeria", "bakery", "cinema", "theater", "theatre", "club", "store"),
+    *("shop", "bookstore", "books", "grill", "diner", "tavern", "pub", "kitchen", "brooklyn"),
+    *("manhattan", "queens", "bronx", "and", "co", "company", "new", "york"),
+}
+
+_ROAD = re.compile(
+    r"\b(?:st|street|ave?|avenue|blvd|boulevard|rd|road|pl|place|pkwy|parkway|sq|square)\b", re.I
+)
+
+
+def _shops(name: str, at: dict) -> list[dict]:
+    """Shops, restaurants and venues of that name, as the trip planner's place search lists
+    them around a point, the closest name first."""
+    want = set(_norm(name).split())
+    if not want - _KIND:  # "the bakery"
+        return []
+    texts = [name]
+    if "'" not in name and "\u2019" not in name:  # "Juniors" is written Junior's
+        texts.append(re.sub(r"^(\w{3,})s\b", r"\1's", name))
+    for text in dict.fromkeys(texts):
+        try:
+            hits = get_json(
+                GEOCODE, {"text": text, "place": f"{at['lat']:.4f},{at['lon']:.4f}"}, ttl_s=86400
+            )
+        except Exception:  # noqa: BLE001
+            return []
+        fits = []
+        for h in hits or []:
+            got = set(_norm(h.get("name") or "").split())
+            if h.get("type") != "PLACE" or T._metres(h, at) > 40000:
+                continue
+            if want <= got and got - want <= _KIND:
+                fits.append((len(got - want), T._metres(h, at), h))
+        if fits:
+            return [h for *_, h in sorted(fits, key=lambda x: x[:2])]
+    return []
+
+
+def _place_in(raw: str) -> dict | None:
+    """ "Katz's Deli, Lower East Side", "Joe's Pizza in Greenwich Village": the place of that
+    name in that area. Not for streets, stations or places known by their own name."""
+    m = re.match(r"(.+?)(?:\s*,\s*|\s+(?:in|at)\s+(?:the\s+)?(?=[A-Z]))(.+)$", raw)
+    if not m:
+        return None
+    name, area = m.group(1).strip(), m.group(2).strip()
+    n = _norm(name)
+    exact = [x for x in (name, area) if _EXACT.search(x) or _HINT.search(x) or _ROAD.search(x)]
+    if exact == [area] and _landmark(_norm(area)):
+        exact = []  # Union Square
+    if not n or exact or re.match(r"[\d-]|(?:pier|gate|building|hall)\b", area, re.I):
+        return None
+    if _known(name):
+        return None
+    if "," not in raw and _corner(raw):
+        return None
+    boro = _borough_named(area)
+    bare = _norm(re.sub(r"\b(?:new york|nyc?|usa)\b", " ", area, flags=re.I))
+    if boro and bare in _BORO_CENTER:
+        # Only the borough is known: good enough when it has just one place of that name.
+        lat, lon = _BORO_CENTER[boro]
+        fits = [
+            h
+            for h in _shops(name, {"lat": lat, "lon": lon})
+            if (z := T.zone_of(h["lat"], h["lon"]))
+            and (T._zone_borough(z[0]) or "").lower() == boro
+        ]
+        if not fits or any(T._metres(h, fits[0]) > 200 for h in fits):
+            return None
+        return {"name": fits[0]["name"], "lat": fits[0]["lat"], "lon": fits[0]["lon"]}
+    at = _locate(area)
+    if not at or at["name"].startswith("near "):
+        return None
+    town = not T.zone_of(at["lat"], at["lon"])
+    reach = 5000 if town else 800 if _landmark(_norm(area)) else 2200
+    apart: list[dict] = []
+    for h in _shops(name, at):
+        if T._metres(h, at) < reach and all(T._metres(h, x) > 150 for x in apart):
+            apart.append(h)
+    if not apart:
+        return None
+    h, around = apart[0], area.split(",")[0]
+    # The name says when there are several, or when it is in the neighborhood next door.
+    notes = [f"one of {len(apart)} around {around}"] if len(apart) > 1 else []
+    z = None if town or reach == 800 else T.zone_of(h["lat"], h["lon"])
+    if z and T._metres(h, at) > 600 and not _words(_norm(str(z[1]))) & _words(_norm(around)):
+        notes.insert(0, f"in {z[1]}")
+    more = f" ({', '.join(notes)})" if notes else ""
+    return {"name": h["name"] + more, "lat": h["lat"], "lon": h["lon"]}
+
+
+def _only_one(name: str) -> dict | None:
+    """A place named without its area ("Peter Luger"), when the city has just one."""
+    if _ROAD.search(name) or _HINT.search(name) or re.search(r"\d", name) or len(name) < 5:
+        return None
+    fits = [
+        h
+        for h in _shops(name, {"lat": 40.73, "lon": -73.95})
+        if h.get("category") not in (None, "none") and T.zone_of(h["lat"], h["lon"])
+    ]
+    if not fits or any(T._metres(h, fits[0]) > 200 for h in fits):
+        return None
+    return {"name": fits[0]["name"], "lat": fits[0]["lat"], "lon": fits[0]["lon"]}
+
+
+def _known(name: str) -> bool:
+    """A landmark, neighborhood, station or airport in its own right."""
+    n = _norm(name)
+    low = name.lower()
+    return bool(
+        _landmark(n)
+        or _neighborhood(n)
+        or _path_station(n)
+        or railfares.station(name)
+        or n in _BORO_CENTER
+        or n in T.NAMED
+        or any(re.search(rf"\b{k}\b", low) for k in T.AIRPORT_WORDS)
+    )
 
 
 def _no_article(q: str) -> str:
@@ -875,7 +999,10 @@ def _locate(text: str) -> dict | None:
     # Well-known places before neighborhoods: Union Square is the park, not the middle of the
     # "Midtown South-Flatiron-Union Square" neighborhood.
     mark = _landmark(n) or (_landmark(bare) if bare else None)
-    if mark:
+    # "Strand Bookstore, Union Square" is the shop, not the park.
+    own = re.split(r",|\s(?:in|at)\s", raw, maxsplit=1)
+    inside = len(own) > 1 and _norm(own[0]) and not _known(own[0]) and not _borough_named(own[0])
+    if mark and not (inside and _landmark(_norm(own[1]))):
         return mark
     if bare and bare != n:
         hood = _neighborhood(bare)
@@ -943,7 +1070,8 @@ def _locate(text: str) -> dict | None:
         # ("Bloomfield Ave, Montclair" is not 73 Bloomfield Avenue on Staten Island).
         town = raw.partition(",")[2].strip()
         foreign = town and not _borough_named(town) and not _neighborhood(_norm(town))
-        if want and not foreign and (want == got or len(want) >= 3 and len(want ^ got) <= 1):
+        close = len(want) >= 3 and len(want ^ got) <= 1 and not (want - got) & _KIND
+        if want and not foreign and (want == got or close):
             return {"name": label.split(",")[0], "lat": lat, "lon": lon}
     stop = _stop(raw)
     if stop:

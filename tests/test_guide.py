@@ -2492,3 +2492,50 @@ def test_a_place_that_was_not_found_does_not_become_the_middle_of_its_town(monke
     assert not any(q.lower().startswith("the ") for q in asked)
     for text in ("Jersey City", "Jersey City, NJ", "Hoboken, NJ", "downtown Jersey City"):
         assert not pn.locate(text)["name"].startswith("near "), text
+
+
+def test_a_named_place_is_looked_for_in_the_area_the_reader_named(monkeypatch):
+    from nycynapse.tools import placenames as pn
+
+    def shop(name, lat, lon, **kw):
+        return {"type": "PLACE", "category": "restaurant_14", "name": name, "lat": lat, "lon": lon}
+
+    listed = {
+        "Katz's Deli": [shop("Katz's Deli", 40.7223, -73.9874), shop("Katz's Deli", 43.2, -70.87)],
+        "Peter Luger": [
+            shop("Peter Luger Steak House", 40.7099, -73.9626),
+            shop("Peter Luger Steak House", 40.7774, -73.7277),  # Great Neck
+        ],
+        "Levain Bakery": [
+            shop("Levain Bakery", 40.7815, -73.9793),
+            shop("Levain Bakery", 40.7799, -73.9803),
+        ],
+        "Juniors": [shop("Juniors", 43.2, -70.87)],
+        "Junior's": [shop("Junior's", 40.6901, -73.9822), shop("Junior's", 40.7582, -73.9866)],
+        "Strand Bookstore": [shop("Strand Bookstore", 40.7333, -73.9909)],
+        "Los Tacos": [shop("Los Tacos", 40.7422, -74.005), shop("Los Tacos", 40.7547, -74.0)],
+        "Sea Cloud": [shop("Sea Cloud Barber", 40.7223, -73.9874)],
+    }
+
+    def answer(url, params=None, **kw):
+        if "geosearch" in url:
+            return {"features": []}
+        return listed.get((params or {}).get("text"), []) if url == pn.GEOCODE else []
+
+    monkeypatch.setattr(pn, "get_json", answer)
+
+    def at(text):
+        got = pn.locate(text)
+        return got and (got["name"], round(got["lat"], 4))
+
+    assert at("Katz's Deli, Lower East Side") == ("Katz's Deli", 40.7223)
+    assert at("Katz's Deli") == ("Katz's Deli", 40.7223)
+    assert at("Peter Luger, Williamsburg") == ("Peter Luger Steak House", 40.7099)
+    assert at("Juniors in Downtown Brooklyn") == ("Junior's", 40.6901)
+    assert at("Juniors") is None  # there are two
+    assert at("Strand Bookstore, Union Square") == ("Strand Bookstore", 40.7333)
+    assert at("Los Tacos, Chelsea Market") == ("Los Tacos", 40.7422)
+    assert "one of 2 around Upper West Side" in at("Levain Bakery, Upper West Side")[0]
+    assert at("Sea Cloud, Lower East Side")[0].startswith("near ")  # the barber is another place
+    assert at("Union Square, Manhattan")[0] == "Union Square Park"
+    assert at("Peter Luger, Tribeca")[0].startswith("near ")
