@@ -219,8 +219,10 @@ export class GuideMap {
     }
     // The route draws itself leg by leg, each line with its outline.
     reveal.flat().forEach((id) => this.map.setPaintProperty(id, "line-opacity", 0));
+    // Another trip may be drawn meanwhile, with the same layer names for other things.
+    const drawing = this.drawing = {};
     reveal.forEach((ids, k) => setTimeout(() => ids.forEach((id) => {
-      if (!this.map.getLayer(id)) return;
+      if (this.drawing !== drawing || !this.map.getLayer(id)) return;
       this.map.setPaintProperty(id, "line-opacity-transition", { duration: 380 });
       this.map.setPaintProperty(id, "line-opacity", 1);
     }), reduced() ? 0 : 160 + k * 240));

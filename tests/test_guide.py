@@ -2891,3 +2891,23 @@ def test_a_service_that_is_briefly_busy_is_asked_again(monkeypatch):
     with pytest.raises(httpx.HTTPStatusError):  # a wrong question is not asked twice
         http.get_json("https://x.test/no", ttl_s=0)
     assert len(seen) == 5
+
+
+def test_weather_of_one_day_is_by_the_hour_with_gusts(monkeypatch):
+    from datetime import date
+
+    from nycynapse.tools import live
+
+    hours = [f"2026-11-26T{h:02d}:00" for h in range(24)]
+    asked = {}
+
+    def get(url, params, ttl_s):
+        asked.update(params)
+        flat = {k: [10.0] * 24 for k in params["hourly"].split(",")}
+        return {"hourly": {"time": hours, **flat, "wind_gusts_10m": [40.4] * 24}}
+
+    monkeypatch.setattr(live, "get_json", get)
+    text = live._by_hour("Manhattan", 40.78, -73.97, date(2026, 11, 26))
+    assert asked["start_date"] == asked["end_date"] == "2026-11-26"
+    assert "9 AM: 10F (feels 10F), 10.0% chance of rain, 10.00 in, wind 10 mph, gusts 40" in text
+    assert "3 AM:" not in text.split("5 AM")[0]

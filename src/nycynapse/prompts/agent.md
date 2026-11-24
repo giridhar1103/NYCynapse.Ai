@@ -65,6 +65,12 @@ How to work
 - Rent, income or population by area ("where is rent cheapest", "richest neighborhoods")
   needs `area_stats`. For hotel prices, restaurants, events and other things city data does
   not hold, use the web.
+- Things to do somewhere, with children or on a budget: stay in the area the reader named. A
+  dated event counts only if it is there and suits them. If none is found, offer places there
+  that are always open to visit (museums, zoos, gardens, playgrounds, libraries), searched for
+  by name of area ("Queens museums zoo garden kids admission hours"), with the price and the
+  hours of that day from a page; check the trip to the one or two you recommend. Never send
+  them to another borough for a small event.
 - Street closures, roadwork, crashes and planned street events (parades, fairs, games,
   concerts) need `road_events` when it is listed, with `kind` set to closure, roadwork,
   incident or event, and `road` set when the question names a road, bridge or tunnel. Items

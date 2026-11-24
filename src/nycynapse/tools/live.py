@@ -16,7 +16,7 @@ import re
 import threading
 import time
 from contextlib import suppress
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -111,10 +111,46 @@ def _icon(code: int | None) -> str:
     return "clear"
 
 
-def weather(hours: int = 6, days: int = 0, near: str | None = None) -> ToolResult:
-    """Weather now, the next hours by borough, and (with `days`) a daily forecast up to a week
-    ahead, plus active weather alerts. With `near`, that place comes first (Newark, a beach, a
-    stadium) and the daily forecast is for it."""
+def _by_hour(name: str, lat: float, lon: float, day: date) -> str:
+    """One day's forecast hour by hour, with gusts: for the hours of a parade, a run, a game."""
+    d = get_json(
+        "https://api.open-meteo.com/v1/forecast",
+        {
+            "latitude": lat,
+            "longitude": lon,
+            "hourly": "temperature_2m,apparent_temperature,precipitation_probability,"
+            "precipitation,wind_speed_10m,wind_gusts_10m",
+            "start_date": day.isoformat(),
+            "end_date": day.isoformat(),
+            "timezone": "America/New_York",
+            "temperature_unit": "fahrenheit",
+            "precipitation_unit": "inch",
+            "wind_speed_unit": "mph",
+        },
+        ttl_s=1800,
+    )["hourly"]
+    out = []
+    for i, t in enumerate(d["time"]):
+        at = datetime.fromisoformat(t)
+        if 5 <= at.hour and d["temperature_2m"][i] is not None:
+            out.append(
+                f"{at:%-I %p}: {d['temperature_2m'][i]:.0f}F (feels "
+                f"{d['apparent_temperature'][i]:.0f}F), "
+                f"{d['precipitation_probability'][i] or 0}% chance of rain, "
+                f"{d['precipitation'][i] or 0:.2f} in, wind {d['wind_speed_10m'][i] or 0:.0f} mph, "
+                f"gusts {d['wind_gusts_10m'][i] or 0:.0f} mph"
+            )
+    return f"Hour by hour on {day:%a %b %-d} ({name}; the rain is that of the hour before):\n" + (
+        "\n".join(out) or "not forecast yet"
+    )
+
+
+def weather(
+    hours: int = 6, days: int = 0, near: str | None = None, day: str | None = None
+) -> ToolResult:
+    """Weather now, the next hours by borough, (with `days`) a daily forecast up to a week ahead
+    and (with `day`) one day hour by hour, plus active weather alerts. With `near`, that place
+    comes first (Newark, a beach, a stadium) and the forecasts are for it."""
     hours = max(1, min(int(hours or 6), 48))
     days = max(0, min(int(days or 0), 7))
     points = dict(BOROUGHS)
@@ -208,6 +244,14 @@ def weather(hours: int = 6, days: int = 0, near: str | None = None) -> ToolResul
                 for x in daily
             )
         )
+    if day:
+        from .trips import parse_when
+
+        at = parse_when(day)
+        if at and 0 <= (at.date() - _now_ny().date()).days <= 14:
+            first = next(iter(points))
+            with suppress(Exception):  # the rest of the forecast stands without it
+                lines.append(_by_hour(first, *points[first], at.date()))
     alerts = weather_alerts()
     summary = (
         f"Weather in New York City at {as_of} local time (Open-Meteo model data):\n"
@@ -1573,12 +1617,15 @@ TOOLS = [
         "Weather now and for the next hours in each borough (temperature, conditions, rain "
         "chance and amount), a daily forecast up to 7 days ahead when `days` is set, and "
         "active National Weather Service alerts. Use for current or upcoming weather; the lake "
-        "only has past weather. For 'this week', 'Friday' or 'the next 5 days' set days.",
+        "only has past weather. For 'this week', 'Friday' or 'the next 5 days' set days. For "
+        "some hours of a day (a parade, a game, a run, an evening) also set `day` (Thursday, "
+        "2026-11-26): it gives that day hour by hour with wind gusts.",
         {
             "type": "object",
             "properties": {
                 "hours": {"type": "integer", "minimum": 1, "maximum": 48},
                 "days": {"type": "integer", "minimum": 0, "maximum": 7},
+                "day": {"type": "string"},
                 "near": {
                     "type": "string",
                     "description": "a place outside Manhattan's weather (Newark, Rockaway "

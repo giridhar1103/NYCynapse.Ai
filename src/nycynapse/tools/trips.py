@@ -1482,6 +1482,11 @@ def trip_plan(
                     else "."
                 )
             )
+            rides = [o["minutes"][0] for o in data.get("transit") or []]
+            if label == "walk" and rides and r["minutes"] <= min(rides):
+                lines.append(
+                    "Walking the whole way is as fast as any transit option above: say so."
+                )
         elif mode == label:
             lines.append(f"No {label} route was found between these places.")
     if mode in ("both", "drive"):

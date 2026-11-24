@@ -86,10 +86,11 @@ def road_speeds(borough: str | None = None) -> dict:
 
 
 @mcp.tool(annotations=READ)
-def weather(hours: int = 6, days: int = 0, near: str | None = None) -> dict:
+def weather(hours: int = 6, days: int = 0, near: str | None = None, day: str | None = None) -> dict:
     """Weather now and for the next hours in each borough (and near a place), a daily forecast
-    up to 7 days ahead when `days` is set, and National Weather Service alerts."""
-    return live.weather(hours, days, near).as_dict()
+    up to 7 days ahead when `days` is set, one day hour by hour with gusts when `day` is set
+    (Thursday, 2026-11-26), and National Weather Service alerts."""
+    return live.weather(hours, days, near, day).as_dict()
 
 
 @mcp.tool(annotations=READ)

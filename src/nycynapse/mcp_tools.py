@@ -33,10 +33,11 @@ server = MCPServer(
 
 
 @server.tool(annotations=LIVE)
-def weather(hours: int = 6, days: int = 0, near: str | None = None) -> dict:
+def weather(hours: int = 6, days: int = 0, near: str | None = None, day: str | None = None) -> dict:
     """Weather now and for the next hours in each borough (and a place `near`, first), a daily
-    forecast up to 7 days ahead when `days` is set, plus National Weather Service alerts."""
-    return live.weather(hours, days, near).as_dict()
+    forecast up to 7 days ahead when `days` is set, one day hour by hour when `day` is set, plus
+    National Weather Service alerts."""
+    return live.weather(hours, days, near, day).as_dict()
 
 
 @server.tool(annotations=LIVE)
