@@ -1101,6 +1101,18 @@ def _subway_station(raw: str, loose: bool = False) -> dict | None:
     return None
 
 
+def _station_in_hood(raw: str) -> dict | None:
+    """ "Bay Ridge 86th street": a neighborhood and the station of that name there."""
+    words = raw.replace(",", " ").split()
+    for k in range(1, min(4, len(words))):
+        for hood, rest in ((words[:k], words[k:]), (words[-k:], words[:-k])):
+            if centers.find(" ".join(hood)):
+                hit = _subway_station(f"{' '.join(rest)}, {' '.join(hood)}", loose=True)
+                if hit:
+                    return hit
+    return None
+
+
 def _locate(text: str) -> dict | None:
     raw = (text or "").strip()[:120]
     if not raw:
@@ -1190,7 +1202,7 @@ def _locate(text: str) -> dict | None:
     if re.search(
         r"\b(?:av|ave|avenue|st|street|blvd|boulevard|pkwy|parkway|rd|road|plaza)\b", n
     ) and not (re.search(r"\d+\s*-?\d*\s+\w", raw.strip()[:6]) and raw.strip()[0].isdigit()):
-        stop = _subway_station(raw, loose=True) or _stop(raw)
+        stop = _station_in_hood(raw) or _subway_station(raw, loose=True) or _stop(raw)
         if stop:
             return stop
     outside = re.search(

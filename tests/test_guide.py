@@ -3088,3 +3088,98 @@ def test_a_borough_is_not_a_place_to_plan_a_trip_to():
     from nycynapse.agent import core
 
     assert core._trip_prefetch("next L from union square station to brooklyn", None) is None
+
+
+def test_subway_alerts_count_only_in_the_direction_of_the_ride(monkeypatch):
+    from nycynapse.tools import access, trips as T  # noqa: I001
+
+    def entity(stop, way="0", route="R"):
+        return {"route_id": route, "stop_id": stop, "direction_id": way}
+
+    head = "In Brooklyn, Manhattan-bound [R] skips 25 St, Prospect Av, 4 Av-9 St and Union St"
+    al = {
+        "header_text": {"translation": [{"language": "en", "text": head}]},
+        "transit_realtime.mercury_alert": {"alert_type": "Planned - Stops Skipped"},
+        "informed_entity": [entity(f"R{n}") for n in (36, 35, 34, 33, 32, 31)],
+        "active_period": [{"start": 0, "end": 9_999_999_999}],
+    }
+    monkeypatch.setattr(T, "get_json", lambda *a, **k: {"entity": [{"alert": al}]})
+    at = {"R36": ("36 St", 40.655), "R32": ("Union St", 40.677), "R31": ("Atlantic Av", 40.684)}
+    rows = [
+        {"gtfs_stop_id": k, "stop_name": n, "gtfs_latitude": str(y), "gtfs_longitude": "-73.98"}
+        for k, (n, y) in at.items()
+    ]
+    monkeypatch.setattr(access, "_stations", lambda: rows)
+
+    def ride(way, a, b, lat_a, lat_b):
+        leg = {"mode": "subway", "name": "R", "direction": way, "from": a, "to": b, "via": []}
+        leg["coords"] = [[-73.98, lat_a], [-73.98, lat_b]]
+        return {"lines": [leg], "leave_ts": 1000, "arrive_ts": 2000}
+
+    when = T._now()
+    away = ride("1", "Atlantic Av", "Union St", 40.684, 40.677)
+    assert T._line_changes(away, when) == [] and "skipped" not in away and "affected" not in away
+    toward = ride("0", "36 St", "Union St", 40.655, 40.677)
+    assert T._line_changes(toward, when) and toward["skipped"].endswith("Union St then")
+    # The stations at either end of the stretch are served.
+    past = ride("0", "36 St", "Atlantic Av", 40.655, 40.684)
+    assert T._line_changes(past, when) and "skipped" not in past
+    unknown = ride(None, "36 St", "Atlantic Av", 40.655, 40.684)
+    assert T._line_changes(unknown, when)
+
+
+def test_stop_names_in_an_alert():
+    from nycynapse.tools import trips as T
+
+    assert T._same_stop("176 St", "176 st all trains board from the platform")
+    assert T._same_stop("161 St-Yankee Stadium", "161 st")
+    assert not T._same_stop("5 Av", "45 av") and not T._same_stop("9 St", "9 st-prospect")
+
+
+def test_a_skipped_station_is_planned_around_on_foot(monkeypatch):
+    from nycynapse.tools import access, trips as T  # noqa: I001
+
+    def row(name, lat):
+        return {"stop_name": name, "gtfs_latitude": str(lat), "gtfs_longitude": "-73.98"}
+
+    monkeypatch.setattr(
+        access,
+        "_stations",
+        lambda: [row("Union St", 40.6770), row("Atlantic Av", 40.6843), row("86 St", 40.6224)],
+    )
+    monkeypatch.setattr(
+        T,
+        "direct",
+        lambda a, b, how: {"minutes": 14, "coords": [[-73.98, 40.684], [-73.98, 40.677]]},
+    )
+    ride = {"mode": "subway", "name": "R", "agency": "MTA", "coords": [[-73.98, 40.62]] * 2}
+    plain = {
+        "minutes": (22, 22),
+        "leave_ts": 1_000_000,
+        "arrive_ts": 1_000_000 + 22 * 60,
+        "leave": "x",
+        "arrive": "y",
+        "walk_minutes": 2,
+        "transfers": 0,
+        "steps": ["R train"],
+        "lines": [ride],
+    }
+    asked = []
+
+    def transit(a, b, when, arrive_by):
+        asked.append((a["name"], b["name"], when))
+        return [dict(plain)], []
+
+    monkeypatch.setattr(T, "_transit", transit)
+    monkeypatch.setattr(T, "_changes", lambda o, t: [])
+    a = {"name": "86 St", "lat": 40.6224, "lon": -73.98}
+    b = {"name": "Union St and 4th Ave", "lat": 40.6771, "lon": -73.98}
+    bad = {**plain, "skipped": "the R does not stop at Union St then", "skipped_stop": "Union St"}
+    when = T._now()
+    [(o, _)] = T._around_skipped(a, b, when, True, [bad])
+    assert asked[0][1] == "Atlantic Av" and (when - asked[0][2]).total_seconds() == 14 * 60
+    assert o["minutes"] == (36, 36) and o["arrive_ts"] == plain["arrive_ts"] + 14 * 60
+    assert o["steps"][-1] == "walk 14 min from Atlantic Av to Union St and 4th Ave"
+    [(back, _)] = T._around_skipped(b, a, when, False, [bad])
+    assert back["steps"][0] == "walk 14 min to Atlantic Av"
+    assert back["leave_ts"] == plain["leave_ts"] - 14 * 60 and back["lines"][0]["mode"] == "walk"

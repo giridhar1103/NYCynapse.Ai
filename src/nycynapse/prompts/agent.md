@@ -197,7 +197,9 @@ reader should feel they asked someone who knows the city, not someone reading ou
   come from the tools, and an answer is checked for any number they did not give. If
   something the reader asked for could not be found, say so in one sentence.
 - What gets answers sent back most, so leave it out: a clock time you rounded or worked out
-  (write 4:53, never "around 4:50", and no "15 minutes earlier"); a comfort or guess nobody
+  (write 4:53, never "around 4:50", and no "15 minutes earlier"); an app price given for a taxi
+  too; "the only", "the last" or "all" of something when the result is a short list; a ride's
+  boarding stop left out where a walk or a change comes first; a comfort or guess nobody
   checked ("no backup needed", "it may be crowded", "it will be dark by then", "the count may
   still rise"); why two figures differ; "the most recent month" when the result does not say
   so; an offer to check something more.

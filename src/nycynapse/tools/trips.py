@@ -442,6 +442,7 @@ def _line(lg: dict, end: str) -> dict:
         "minutes": max(1, round(lg.get("duration", 0) / 60)),
         "stops": len(lg.get("intermediateStops") or []) + 1 if mode != "walk" else None,
         "headsign": lg.get("headsign"),
+        "direction": lg.get("directionId"),
         "live": bool(lg.get("realTime")),
         "coords": _coords(lg),
         "via": [x.get("name") for x in lg.get("intermediateStops") or [] if x.get("name")],
@@ -1080,29 +1081,64 @@ def _station_key(name: str) -> str:
     return re.sub(r"[^a-z0-9]", "", (name or "").lower().replace("street", "st"))
 
 
+def _same_stop(name: str, said: str) -> bool:
+    """ "176 St All trains board from..." says 176 St, and "161 St" is 161 St-Yankee Stadium."""
+    name = name.lower()
+    return bool(re.match(rf"{re.escape(name)}(?![\w-])", said)) or name.startswith(said + "-")
+
+
 def _skipped_end(al: dict, head: str, legs: list[dict]) -> str | None:
-    """The station where this ride boards or gets off that its line does not stop at, when the
-    alert says trains skip it both ways ("F skips 57 St in both directions")."""
+    """The station where this ride boards or gets off that its line does not stop at: the alert
+    says trains skip it both ways, or in the direction of the ride."""
     from . import access
 
     kind = (al.get("transit_realtime.mercury_alert") or {}).get("alert_type") or ""
-    if not re.search(r"skip", f"{kind} {head}", re.I) or "both directions" not in head.lower():
+    skips = re.search(r"\bskips?\b(.*)", head, re.I | re.S)
+    if not skips or not re.search(r"skip", f"{kind} {head}", re.I):
         return None
-    gone = {(x.get("route_id"), x.get("stop_id")) for x in al.get("informed_entity") or []}
+    both = "both directions" in head.lower()
+    named = [
+        x.strip().lower()
+        for x in re.split(r",|;|\band\b|\bin both directions\b", skips.group(1))
+        if x.strip()
+    ]
+    gone = {
+        (x.get("route_id"), x.get("stop_id"), x.get("direction_id"))
+        for x in al.get("informed_entity") or []
+    }
     try:
         stops = {r.get("gtfs_stop_id"): r for r in access._stations()}
     except Exception:  # noqa: BLE001
         return None
     for lg in legs:
         ends = (lg["coords"][0], lg["coords"][-1]) if lg.get("coords") else ()
-        for route, stop in gone:
+        for route, stop, way in gone:
             r = stops.get(stop)
             if route != lg.get("name") or not r:
+                continue
+            if not both and (way is None or str(way) != str(lg.get("direction"))):
+                continue
+            # The stops listed include the ones at either end, which are served.
+            if not any(_same_stop(r["stop_name"], x) for x in named):
                 continue
             spot = {"lat": float(r["gtfs_latitude"]), "lon": float(r["gtfs_longitude"])}
             if any(_metres({"lat": lat, "lon": lon}, spot) < 250 for lon, lat in ends):
                 return str(r["stop_name"])
     return None
+
+
+def _for_leg(al: dict, leg: dict) -> bool:
+    """Whether an alert is about the line a leg rides, in the direction it rides it: work on the
+    Manhattan-bound R says nothing about a ride away from Manhattan."""
+    ways = {
+        x.get("direction_id")
+        for x in al.get("informed_entity") or []
+        if x.get("route_id") == leg.get("name")
+    }
+    if not ways:
+        return False
+    known = leg.get("direction") is not None and None not in ways
+    return not known or str(leg["direction"]) in {str(w) for w in ways}
 
 
 def _changes(option: dict, at: datetime) -> list[str]:
@@ -1143,14 +1179,15 @@ def _line_changes(option: dict, at: datetime) -> list[str]:
     out = []
     for ent in d.get("entity", []):
         al = ent.get("alert", {})
-        hit = {x.get("route_id") for x in al.get("informed_entity") or []} & routes
+        hit = {lg.get("name") for lg in legs if _for_leg(al, lg)}
         # An alert with no end is about now (delays): it says nothing about a trip hours away.
         soon = t0 - time.time() < 90 * 60
         during = any(
             int(p.get("start") or 0) <= t1 and (t0 < int(p["end"]) if p.get("end") else soon)
             for p in al.get("active_period") or [{}]
         )
-        head = _plain(al.get("header_text", {}).get("translation"))[:220]
+        full = _plain(al.get("header_text", {}).get("translation"))
+        head = full[:220]
         if "AirTrain" in head:
             continue  # the AirTrain's own alerts are read against its leg, not the subway line
         if hit and during and head:
@@ -1162,13 +1199,103 @@ def _line_changes(option: dict, at: datetime) -> list[str]:
             )
             if touches:
                 option["affected"] = True
-            skipped = _skipped_end(al, head, legs)
+            skipped = _skipped_end(al, full, legs)
             if skipped:
                 option["skipped"] = f"the {'/'.join(sorted(hit))} does not stop at {skipped} then"
+                option["skipped_stop"] = skipped
             if line not in out:
                 out.append(line)
     out.sort(key=lambda x: not x.startswith("Affects"))
     return out[:3]
+
+
+def _around_skipped(
+    a: dict, b: dict, t: datetime, arrive_by: bool, unusable: list[dict]
+) -> list[tuple[dict, list[str]]]:
+    """When trains do not stop at the station of one end: rides to (or from) the nearest stations
+    that are served, with the walk between. Each with its service changes."""
+    from . import access
+
+    stop = next((o["skipped_stop"] for o in unusable if o.get("skipped_stop")), None)
+    leg = next((lg for o in unusable for lg in o["lines"] if lg.get("mode") == "subway"), None)
+    if not stop or not leg:
+        return []
+    # Which end it is: the one the skipped station is next to.
+    try:
+        rows = access._stations()
+    except Exception:  # noqa: BLE001
+        return []
+
+    def spot(r: dict) -> dict:
+        return {
+            "name": r["stop_name"],
+            "lat": float(r["gtfs_latitude"]),
+            "lon": float(r["gtfs_longitude"]),
+        }
+
+    here = [spot(r) for r in rows if r.get("stop_name") == stop]
+    if not here:
+        return []
+    at_end = min(_metres(b, s) for s in here) <= min(_metres(a, s) for s in here)
+    end = b if at_end else a
+    near = sorted(
+        (s for s in map(spot, rows) if s["name"] != stop and _metres(end, s) < 2200),
+        key=lambda s: _metres(end, s),
+    )
+    out, tried = [], []
+    for s in near:
+        if len(out) == 2 or len(tried) == 5:
+            break
+        if any(_metres(s, x) < 250 for x in tried):
+            continue
+        tried.append(s)
+        try:
+            walk = direct(s, b, "WALK") if at_end else direct(a, s, "WALK")
+            if not walk or walk["minutes"] > 35:
+                continue
+            gap = timedelta(minutes=walk["minutes"])
+            if at_end:
+                rides, _ = _transit(a, s, t - gap if arrive_by else t, arrive_by)
+            else:
+                rides, _ = _transit(s, b, t if arrive_by else t + gap, arrive_by)
+        except Exception:  # noqa: BLE001 - another station may do
+            continue
+        for o in _sane(rides)[:2]:
+            found = _changes(o, t)
+            if not o.get("skipped"):
+                out.append((_with_walk(o, walk, s["name"], end["name"], at_end), found))
+                break
+    return sorted(out, key=lambda x: (x[0]["minutes"][0], x[0]["walk_minutes"]))
+
+
+def _with_walk(o: dict, walk: dict, station: str, place: str, after: bool) -> dict:
+    """An option with a walk added at one end."""
+    m = walk["minutes"]
+    lo, hi = o["minutes"]
+    line = {
+        **dict.fromkeys(next(iter(o["lines"]), {})),
+        "mode": "walk",
+        "name": "",
+        "agency": "",
+        "from": station if after else place,
+        "to": place if after else station,
+        "minutes": m,
+        "live": False,
+        "coords": walk["coords"],
+        "via": [],
+    }
+    o = {**o, "minutes": (lo + m, hi + m), "walk_minutes": o["walk_minutes"] + m}
+    if after:
+        ts = o["arrive_ts"] + 60 * m
+        step = f"walk {m} min from {station} to {place}"
+        o |= {"arrive_ts": ts, "arrive": datetime.fromtimestamp(ts, NY).strftime("%-I:%M %p")}
+        o |= {"steps": [*o["steps"], step], "lines": [*o["lines"], line]}
+    else:
+        ts = o["leave_ts"] - 60 * m
+        step = f"walk {m} min to {station}"
+        o |= {"leave_ts": ts, "leave": datetime.fromtimestamp(ts, NY).strftime("%-I:%M %p")}
+        o |= {"steps": [step, *o["steps"]], "lines": [line, *o["lines"]]}
+    return o
 
 
 def _step_free_first(options: list[dict]) -> list[dict]:
@@ -1352,9 +1479,16 @@ def trip_plan(
                 options = [o for o in options if not o.get("skipped")]
                 notes.append(f"Left out, not possible at that time: {why}.")
             else:
+                around = _around_skipped(a, b, t, arrive_by, unusable)
+                changes.update({id(o): found for o, found in around})
+                options = [o for o, _ in around]
                 notes.append(
-                    f"None of these work at that time: {why}. Plan again from or to "
-                    "another station."
+                    f"The direct rides do not work at that time: {why}. "
+                    + (
+                        "The options above use the nearest station with service and walk the rest."
+                        if options
+                        else "Plan again from or to another station."
+                    )
                 )
         if options and step_free:
             options = _step_free_first(options)
@@ -1538,7 +1672,7 @@ def trip_plan(
                 if not d.get(k)
             ]
             if fares and gone:
-                fares += f" (no typical {' or '.join(gone)} fare for this pair)"
+                fares += f" (that is not a {' or '.join(gone)} price: none is known for this pair)"
             lines.append(
                 f"By taxi or car: usually {med} min ({p25} to {p75} min for most trips) from "
                 f"{d['from_zone']} to {d['to_zone']} around {_hour(d['hour'])} on a {d['day']}, "
