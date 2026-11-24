@@ -1574,12 +1574,37 @@ def trip_plan(
                 )
             else:
                 lines.append("No car trip time is available for this pair of places.")
+    quickest = _by_time(data)
+    if quickest:
+        lines.append(quickest)
     layers.append(_trip_layer(a, b, t, arrive_by, mode, data))
     # The planner first: a fact cited to the first source should not point at a fare page.
     sources.sort(
         key=lambda s: (not s["title"].startswith("Transitous"), s["title"].endswith(" fares"))
     )
     return ToolResult(summary="\n".join(lines), data=data, sources=sources, map=layers)
+
+
+def _by_time(data: dict) -> str | None:
+    """The ways to go in order of time, so "fastest" is never said of the wrong one."""
+    times = {}
+    if data.get("transit"):
+        times["transit"] = min(o["minutes"][0] for o in data["transit"])
+    if data.get("car"):
+        times["car"] = data["car"]["minutes"]
+    elif data.get("drive"):
+        times["car"] = data["drive"]["minutes"][1]
+    for how in ("bike", "walk"):
+        if data.get(how):
+            times["walking" if how == "walk" else how] = data[how]["minutes"]
+    if len(times) < 2:
+        return None
+    ranked = sorted(times.items(), key=lambda x: x[1])
+    return (
+        "Door to door, quickest first: "
+        + ", ".join(f"{how} {m} min" for how, m in ranked)
+        + f". Only {ranked[0][0]} may be called the fastest way."
+    )
 
 
 SOONER_S = 45 * 60

@@ -12,7 +12,7 @@ import json
 import re
 from functools import lru_cache
 
-from . import centers, corners, railfares
+from . import centers, corners, osm, railfares
 from . import trips as T
 from .http import get_json
 from .path_trains import PATH
@@ -59,7 +59,7 @@ __all__ = [
 
 
 def _norm(s: str) -> str:
-    s = re.sub(r"[^a-z0-9 ]+", " ", s.lower().replace("'", ""))
+    s = re.sub(r"[^a-z0-9 ]+", " ", re.sub(r"['’]", "", s.lower()))
     return " ".join(w for w in s.split() if w not in {"the", "airport", "nyc", "ny"})
 
 
@@ -75,6 +75,8 @@ _ABBR = {
     "e": "east",
     "w": "west",
     "centre": "center",
+    "theatre": "theater",
+    "saint": "street",  # as "st" is: St. Patrick's and Saint Patrick's are one
 }
 
 
@@ -529,6 +531,8 @@ def _same_address(features: list[dict], said: str | None) -> dict | None:
     def first(f: dict) -> str:
         return (f["properties"].get("label") or "").split(",")[0].strip().lower()
 
+    if not said and not re.match(r"\d", first(top)):
+        return top  # a name, not an address: Pratt Institute's first match is Brooklyn's
     want = said or "manhattan"
     for f in features:
         if first(f) == first(top) and (f["properties"].get("borough") or "").lower() == want:
@@ -593,6 +597,7 @@ _PLACE_WORDS = {
     "field",
     *("cafe", "deli", "diner", "bakery", "restaurant", "pizza", "bar", "grill", "tavern"),
     "bookstore",
+    *("zoo", "aquarium", "ps1", "theater", "theatre", "arena", "stadium", "bowl", "cathedral"),
 }
 
 
@@ -937,20 +942,7 @@ def _no_article(q: str) -> str:
 def _osm(q: str) -> dict | None:
     """The first OpenStreetMap match for a query, inside the region."""
     q = _no_article(q)
-    try:
-        hits = get_json(
-            "https://nominatim.openstreetmap.org/search",
-            {
-                "q": q,
-                "format": "jsonv2",
-                "limit": 1,
-                "viewbox": ",".join(str(x) for x in T.BOX),
-                "bounded": 1,
-            },
-            ttl_s=86400,
-        )
-    except Exception:  # noqa: BLE001
-        return None
+    hits = osm.search(q)
     if not hits:
         return None
     h = hits[0]
@@ -1086,7 +1078,8 @@ def _locate(text: str) -> dict | None:
         if hood:  # before landmarks: Battery Park City is not a lawn in the Battery
             return hood
     mark = _landmark(n) or (_landmark(bare) if bare else None)
-    if mark and said:  # a landmark of that name in another borough
+    # A landmark of that name in another borough. (The Staten Island Ferry leaves Manhattan.)
+    if mark and said and n not in _landmarks():
         z = T.zone_of(mark["lat"], mark["lon"])
         if z and (T._zone_borough(z[0]) or "").lower() != said:
             mark = None
@@ -1198,20 +1191,7 @@ def _locate(text: str) -> dict | None:
         )
         queries.append(f"{m.group(1)}, {town}")
     for k, q in enumerate(queries):
-        try:
-            hits = get_json(
-                "https://nominatim.openstreetmap.org/search",
-                {
-                    "q": q,
-                    "format": "jsonv2",
-                    "limit": 1,
-                    "viewbox": ",".join(str(x) for x in T.BOX),
-                    "bounded": 1,
-                },
-                ttl_s=86400,
-            )
-        except Exception:  # noqa: BLE001
-            hits = []
+        hits = osm.search(q)
         if not hits:
             continue
         h = hits[0]

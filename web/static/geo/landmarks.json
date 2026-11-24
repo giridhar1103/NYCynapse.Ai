@@ -423,5 +423,195 @@
 "name": "Brooklyn Navy Yard (Sands St gate)",
 "lat": 40.69985,
 "lon": -73.97965
+},
+"moma ps1": {
+"name": "MoMA PS1",
+"lat": 40.7456,
+"lon": -73.9472
+},
+"ps1": {
+"name": "MoMA PS1",
+"lat": 40.7456,
+"lon": -73.9472
+},
+"ellis island": {
+"name": "Ellis Island",
+"lat": 40.6992,
+"lon": -74.0398
+},
+"central park zoo": {
+"name": "Central Park Zoo",
+"lat": 40.7677,
+"lon": -73.9718
+},
+"prospect park zoo": {
+"name": "Prospect Park Zoo",
+"lat": 40.6655,
+"lon": -73.9645
+},
+"queens zoo": {
+"name": "Queens Zoo",
+"lat": 40.745,
+"lon": -73.849
+},
+"green wood cemetery": {
+"name": "Green-Wood Cemetery, main entrance",
+"lat": 40.6583,
+"lon": -73.9951
+},
+"greenwood cemetery": {
+"name": "Green-Wood Cemetery, main entrance",
+"lat": 40.6583,
+"lon": -73.9951
+},
+"industry city": {
+"name": "Industry City",
+"lat": 40.6563,
+"lon": -74.0073
+},
+"billie jean king tennis center": {
+"name": "USTA Billie Jean King National Tennis Center",
+"lat": 40.7497,
+"lon": -73.8467
+},
+"usta billie jean king tennis center": {
+"name": "USTA Billie Jean King National Tennis Center",
+"lat": 40.7497,
+"lon": -73.8467
+},
+"usta billie jean king national tennis center": {
+"name": "USTA Billie Jean King National Tennis Center",
+"lat": 40.7497,
+"lon": -73.8467
+},
+"national tennis center": {
+"name": "USTA Billie Jean King National Tennis Center",
+"lat": 40.7497,
+"lon": -73.8467
+},
+"arthur ashe stadium": {
+"name": "Arthur Ashe Stadium",
+"lat": 40.7499,
+"lon": -73.847
+},
+"newyork presbyterian weill cornell": {
+"name": "NewYork-Presbyterian Weill Cornell",
+"lat": 40.7647,
+"lon": -73.954
+},
+"new york presbyterian weill cornell": {
+"name": "NewYork-Presbyterian Weill Cornell",
+"lat": 40.7647,
+"lon": -73.954
+},
+"weill cornell": {
+"name": "NewYork-Presbyterian Weill Cornell",
+"lat": 40.7647,
+"lon": -73.954
+},
+"weill cornell medical center": {
+"name": "NewYork-Presbyterian Weill Cornell",
+"lat": 40.7647,
+"lon": -73.954
+},
+"columbia presbyterian": {
+"name": "NewYork-Presbyterian Columbia",
+"lat": 40.8408,
+"lon": -73.9424
+},
+"columbia presbyterian hospital": {
+"name": "NewYork-Presbyterian Columbia",
+"lat": 40.8408,
+"lon": -73.9424
+},
+"newyork presbyterian columbia": {
+"name": "NewYork-Presbyterian Columbia",
+"lat": 40.8408,
+"lon": -73.9424
+},
+"new york presbyterian columbia": {
+"name": "NewYork-Presbyterian Columbia",
+"lat": 40.8408,
+"lon": -73.9424
+},
+"columbia university irving medical center": {
+"name": "NewYork-Presbyterian Columbia",
+"lat": 40.8408,
+"lon": -73.9424
+},
+"columbia university medical center": {
+"name": "NewYork-Presbyterian Columbia",
+"lat": 40.8408,
+"lon": -73.9424
+},
+"brooklyn methodist": {
+"name": "NewYork-Presbyterian Brooklyn Methodist",
+"lat": 40.6678,
+"lon": -73.979
+},
+"brooklyn methodist hospital": {
+"name": "NewYork-Presbyterian Brooklyn Methodist",
+"lat": 40.6678,
+"lon": -73.979
+},
+"new york methodist hospital": {
+"name": "NewYork-Presbyterian Brooklyn Methodist",
+"lat": 40.6678,
+"lon": -73.979
+},
+"newyork presbyterian brooklyn methodist": {
+"name": "NewYork-Presbyterian Brooklyn Methodist",
+"lat": 40.6678,
+"lon": -73.979
+},
+"methodist hospital": {
+"name": "NewYork-Presbyterian Brooklyn Methodist",
+"lat": 40.6678,
+"lon": -73.979
+},
+"manhattan criminal court": {
+"name": "Manhattan Criminal Court, 100 Centre St",
+"lat": 40.7162,
+"lon": -74.0013
+},
+"manhattan criminal courthouse": {
+"name": "Manhattan Criminal Court, 100 Centre St",
+"lat": 40.7162,
+"lon": -74.0013
+},
+"st johns university": {
+"name": "St. John's University, Queens",
+"lat": 40.7224,
+"lon": -73.7943
+},
+"saint johns university": {
+"name": "St. John's University, Queens",
+"lat": 40.7224,
+"lon": -73.7943
+},
+"pratt institute": {
+"name": "Pratt Institute",
+"lat": 40.6913,
+"lon": -73.9632
+},
+"beacon theatre": {
+"name": "Beacon Theatre",
+"lat": 40.7805,
+"lon": -73.9811
+},
+"beacon theater": {
+"name": "Beacon Theatre",
+"lat": 40.7805,
+"lon": -73.9811
+},
+"st patricks cathedral": {
+"name": "St. Patrick's Cathedral",
+"lat": 40.7586,
+"lon": -73.9763
+},
+"saint patricks cathedral": {
+"name": "St. Patrick's Cathedral",
+"lat": 40.7586,
+"lon": -73.9763
 }
 }

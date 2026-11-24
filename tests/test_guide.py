@@ -2485,6 +2485,7 @@ def test_a_place_that_was_not_found_does_not_become_the_middle_of_its_town(monke
         return {"features": []} if "geosearch" in url else []
 
     monkeypatch.setattr(pn, "get_json", nothing)
+    monkeypatch.setattr(pn.osm, "search", lambda q: asked.append(q) or [])
     for text in ("the Sea Cloud Cafe, Jersey City", "Razza, Jersey City", "Razza in Jersey City"):
         got = pn.locate(text)
         assert got["name"].startswith("near "), (text, got)
@@ -2522,6 +2523,7 @@ def test_a_named_place_is_looked_for_in_the_area_the_reader_named(monkeypatch):
         return listed.get((params or {}).get("text"), []) if url == pn.GEOCODE else []
 
     monkeypatch.setattr(pn, "get_json", answer)
+    monkeypatch.setattr(pn.osm, "search", lambda q: [])
 
     def at(text):
         got = pn.locate(text)
@@ -2911,3 +2913,72 @@ def test_weather_of_one_day_is_by_the_hour_with_gusts(monkeypatch):
     assert asked["start_date"] == asked["end_date"] == "2026-11-26"
     assert "9 AM: 10F (feels 10F), 10.0% chance of rain, 10.00 in, wind 10 mph, gusts 40" in text
     assert "3 AM:" not in text.split("5 AM")[0]
+
+
+def test_place_search_has_a_spare_and_rests(monkeypatch):
+    import httpx
+
+    from nycynapse.tools import osm
+    from nycynapse.tools import trips as T  # noqa: F401, I001
+
+    asked = []
+
+    def nominatim(q):
+        asked.append(q)
+        raise httpx.ConnectError("refused")
+
+    monkeypatch.setattr(osm, "_state", {"next": 0.0, "rest_until": 0.0})
+    monkeypatch.setattr(osm, "_nominatim", nominatim)
+    monkeypatch.setattr(osm, "_photon", lambda q: [{"name": q, "lat": 40.7, "lon": -74.0}])
+    assert osm.search("some place one")[0]["name"] == "some place one"
+    assert osm.search("some place two")[0]["name"] == "some place two"
+    assert asked == ["some place one"]  # it rests after a refusal
+    assert osm.search("some place one") and len(asked) == 1  # kept
+
+    def down(q):
+        raise httpx.ConnectError("down")
+
+    monkeypatch.setattr(osm, "_photon", down)
+    assert osm.search("some place three") == []
+
+
+def test_place_search_waits_its_turn(monkeypatch):
+    from nycynapse.tools import trips as T, osm  # noqa: F401, I001
+
+    monkeypatch.setattr(osm, "_state", {"next": 0.0, "rest_until": 0.0})
+    waits = [osm._turn() for _ in range(5)]
+    assert waits[0] == 0 and 1 < waits[1] < 1.2 and 2.1 < waits[2] < 2.3
+    assert waits[3] is None  # too far off: the spare is asked instead
+
+
+@pytest.mark.parametrize(
+    "said, lat, lon",
+    [
+        ("MoMA PS1", 40.7456, -73.9471),
+        ("St. John's University", 40.7224, -73.7943),
+        ("Central Park Zoo", 40.7678, -73.9718),
+        ("St. Patrick’s Cathedral", 40.7585, -73.9760),
+        ("Staten Island Ferry", 40.7013, -74.0131),
+        ("Beacon Theater", 40.7805, -73.9811),
+    ],
+)
+def test_landmarks_are_not_the_place_they_are_named_after(said, lat, lon):
+    from nycynapse.tools import trips as T, placenames as pn  # noqa: I001
+
+    got = pn._locate(said)
+    assert got and T._metres(got, {"lat": lat, "lon": lon}) < 300
+
+
+def test_the_fastest_way_is_worked_out_by_the_tool():
+    from nycynapse.tools import trips as T
+
+    data = {
+        "transit": [{"minutes": [45, 45]}, {"minutes": [42, 47]}],
+        "car": {"minutes": 39},
+        "drive": {"minutes": [30, 35, 50]},
+        "bike": {"minutes": 36},
+        "walk": None,
+    }
+    line = T._by_time(data)
+    assert "bike 36 min, car 39 min, transit 42 min. Only bike may" in line
+    assert T._by_time({"transit": data["transit"]}) is None
