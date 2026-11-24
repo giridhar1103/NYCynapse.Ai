@@ -157,3 +157,123 @@ def test_a_query_the_city_refuses_says_why(monkeypatch):
     assert not r.ok and "no such column x" in r.error and "MULTIPOLYGON" not in r.error
     monkeypatch.setattr(live, "get_json", answer(503))
     assert "503" in live.open_data("311", "count(*)").error
+
+
+def _visit(
+    day, score=None, grade=None, code=None, kind="Cycle Inspection / Initial Inspection", **kw
+):
+    return {
+        "camis": "1",
+        "dba": "TEST'S KITCHEN",
+        "boro": "Queens",
+        "building": "1",
+        "street": "MAIN STREET",
+        "cuisine_description": "Thai",
+        "inspection_date": f"{day}T00:00:00.000",
+        "inspection_type": kind,
+        "score": score,
+        "grade": grade,
+        "violation_code": code,
+        "violation_description": "x" if code else None,
+        "action": kw.get("action", "Violations were cited in the following area(s)."),
+    }
+
+
+def test_a_restaurants_grade_is_its_newest_graded_inspection():
+    from nycynapse.tools import restaurants as R
+
+    r = R._summed(
+        [
+            _visit("2026-09-10", "0", kind="Inter-Agency Task Force / Initial Inspection"),
+            _visit("2026-09-01", "30", code="04L"),
+            _visit("2026-09-01", "30", code="04K"),
+            _visit("2026-09-01", kind="Administrative Miscellaneous / Initial Inspection"),
+            _visit("2026-02-01", "12", "A", "10F", kind="Cycle Inspection / Re-inspection"),
+            _visit("2024-01-01", "40", "C", "04M"),
+        ],
+        since="2025-11-24",
+    )
+    assert (r["grade"], r["grade_day"], r["grade_score"]) == ("A", "2026-02-01", 12)
+    # A task force visit is not the inspection that leads to a grade.
+    assert (r["newest"], r["newest_score"], r["visits"]) == ("2026-09-01", 30, 2)
+    assert r["pests"] == {"mice": ["2026-09-01"], "rats": ["2026-09-01"], "roaches": []}
+    line = R._line(r)
+    assert "grade A (score 12, Feb 1, 2026)" in line and "score 30, not graded" in line
+    assert line.startswith("Test's Kitchen, 1 Main Street, Queens (Thai)")
+
+
+def test_a_closure_stands_until_a_later_visit():
+    from nycynapse.tools import restaurants as R
+
+    shut = _visit(
+        "2026-10-07", "90", action="Establishment Closed by DOHMH. Violations were cited."
+    )
+    r = R._summed([shut], since="2025-11-24")
+    assert r["closed"] == "2026-10-07" and not r["reopened"] and "no reopening yet" in R._line(r)
+    back = _visit(
+        "2026-10-12",
+        "2",
+        "P",
+        kind="Cycle Inspection / Reopening Inspection",
+        action="Establishment re-opened by DOHMH.",
+    )
+    r = R._summed([shut, back], since="2025-11-24")
+    assert r["reopened"] == "2026-10-12" and "grade pending since Oct 12, 2026" in R._line(r)
+
+
+def test_restaurant_names_are_matched_by_word(monkeypatch):
+    from nycynapse.tools import restaurants as R
+
+    asked = []
+    monkeypatch.setattr(R, "get_json", lambda url, p, *a, **k: asked.append(p) or [])
+    R.restaurant_inspections(name="Joe's Shanghai'; drop", where="Chinatown")
+    where = asked[0]["$where"]
+    assert "upper(dba) like '%JOE%'" in where and "like '%SHANGHAI%'" in where
+    assert "';" not in where and "within_polygon" in where
+    assert not R.restaurant_inspections().ok
+    assert not R.restaurant_inspections(where="Queens").ok
+    assert not R.restaurant_inspections(where="Chinatown", problem="dragons").ok
+
+
+def test_a_dearer_train_two_minutes_later_is_not_first():
+    from datetime import datetime
+
+    from nycynapse.tools import trips as T
+
+    when = datetime(2026, 11, 25, 5, 30, tzinfo=T.NY)
+    end = when.timestamp()
+
+    def option(leave, arrive, transfers, *lines):
+        return {
+            "leave_ts": end - 60 * leave,
+            "arrive_ts": end - 60 * arrive,
+            "minutes": (leave - arrive, leave - arrive),
+            "transfers": transfers,
+            "lines": [{"mode": m, "name": n} for m, n in lines],
+        }
+
+    rail = option(88, 3, 2, ("subway", "2"), ("train", "LIRR"), ("bus", "Q70-SBS"))
+    plain = option(90, 13, 2, ("bus", "B41"), ("subway", "F"), ("bus", "Q70-SBS"))
+    assert T._for_deadline([rail, plain], when, True) == [plain, rail]
+    # Half an hour more at home is worth the fare.
+    rail["leave_ts"] += 1800
+    assert T._for_deadline([plain, rail], when, True)[0] is rail
+    # A ride with no known price does not make the total look complete.
+    amtrak = option(60, 10, 1, ("train", "Amtrak"), ("subway", "2"))
+    assert T._fare(amtrak) == "$3.00 plus the Amtrak fare"
+    assert T._dollars(amtrak) == 23.0
+
+
+def test_inside_zone_one_the_terminal_tells_the_direction():
+    from datetime import datetime
+
+    from nycynapse.tools import railfares as R
+
+    def at(h, m):
+        return datetime(2026, 11, 25, h, m, tzinfo=R.NY).timestamp()
+
+    assert R.fare("LIRR", "Forest Hills", "Penn Station", at(8, 20), at(8, 40)) == "$7.25"
+    assert R.fare("LIRR", "Forest Hills", "Penn Station", at(11, 20), at(11, 40)) == "$5.25"
+    assert R.fare("LIRR", "Penn Station", "Woodside", at(4, 45), at(4, 56)) == "$5.25"
+    assert R.fare("LIRR", "Penn Station", "Woodside", at(17, 45), at(17, 56)) == "$7.25"
+    assert " or " in R.fare("LIRR", "Woodside", "Forest Hills", at(17, 45), at(17, 55))

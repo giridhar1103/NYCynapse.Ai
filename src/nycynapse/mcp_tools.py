@@ -11,7 +11,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp_types import ToolAnnotations
 
 from .tools import alerts as city_alerts
-from .tools import arrivals, citynow, live, trips, web
+from .tools import arrivals, citynow, live, restaurants, trips, web
 from .tools import nearby as amenities
 from .tools.http import load_keys
 
@@ -125,6 +125,16 @@ def nearby(near: str, what: str = "restroom", n: int = 5) -> dict:
     """The nearest public restrooms (hours, access, changing tables) or drinking fountains to
     a place, from NYC Open Data. `what` is restroom or drinking_fountain."""
     return amenities.nearby(near, what, n).as_dict()
+
+
+@server.tool(annotations=LIVE)
+def restaurant_inspections(
+    where: str = "", name: str = "", problem: str = "any", cuisine: str = "", n: int = 10
+) -> dict:
+    """Health inspections of restaurants by name, or the worst in a neighborhood, ZIP code or
+    around a place: current grade, pests found, closures. `problem` is any, mice, rats, roaches,
+    low_grade or closed."""
+    return restaurants.restaurant_inspections(where, name, problem, cuisine, n).as_dict()
 
 
 @server.tool(annotations=LIVE)

@@ -78,16 +78,18 @@ def get_json(
     headers: dict | None = None,
     ttl_s: float = 60,
     again=None,
+    timeout: float | None = None,
 ) -> object:
     """GET a known API (not user-supplied URLs) and parse JSON, with caching. `again` looks at
     the headers and says whether to ask once more."""
 
     def make():
-        r = _client.get(url, params=params, headers=headers)
+        wait = {"timeout": timeout} if timeout else {}
+        r = _client.get(url, params=params, headers=headers, **wait)
         r.raise_for_status()
         if again and again(r.headers):
             try:
-                other = _client.get(url, params=params, headers=headers)
+                other = _client.get(url, params=params, headers=headers, **wait)
                 other.raise_for_status()
                 r = other
             except httpx.HTTPError:

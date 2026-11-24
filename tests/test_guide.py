@@ -2647,3 +2647,23 @@ def test_railroad_holidays():
     ):
         assert not _holiday(d), d
     assert _maybe_holiday(date(2026, 7, 3)) and not _maybe_holiday(date(2026, 12, 24))
+
+
+def test_a_trip_to_a_flight_is_planned_by_when_it_must_get_there():
+    plan = {"origin": "Park Slope", "destination": "LaGuardia Airport", "when": "Wednesday 5:00 AM"}
+    q = "flying out of LaGuardia tomorrow at 7:30am, domestic, from Park Slope"
+    got = core._flight_margin(q, plan)
+    assert (got["when"], got["arrive_by"]) == ("Wednesday 5:30 AM", True)
+    got = core._flight_margin("my flight from JFK is at 1 pm, international", plan)
+    assert got["when"] == "Wednesday 10:00 AM"
+    for other in (
+        "my mom's flight lands at 7:30am, how do i get to LaGuardia",
+        "my flight is at 7:30am, what if i leave at 5 am",
+        "my flight is at 1am from LaGuardia",
+        "how do i get to LaGuardia at 7:30am",
+    ):
+        assert core._flight_margin(other, plan) == plan
+    home = {**plan, "destination": "Park Slope"}
+    assert core._flight_margin(q, home) == home
+    own = {**plan, "arrive_by": True}
+    assert core._flight_margin(q, own) == own

@@ -22,6 +22,7 @@ from ..tools import arrivals as arrival_tools
 from ..tools import citynow as now_tools
 from ..tools import live as live_tools
 from ..tools import nearby as nearby_tools
+from ..tools import restaurants as restaurant_tools
 from ..tools import trips as trip_tools
 from ..tools import web as web_tools
 
@@ -50,6 +51,7 @@ class MCPHost:
             for t in live_tools.TOOLS
             + trip_tools.TOOLS
             + nearby_tools.TOOLS
+            + restaurant_tools.TOOLS
             + alert_tools.TOOLS
             + now_tools.TOOLS
             + arrival_tools.TOOLS

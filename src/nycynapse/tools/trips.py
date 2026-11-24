@@ -151,6 +151,8 @@ _MODE = {
     "METRO": "subway",
     "BUS": "bus",
     "REGIONAL_RAIL": "train",
+    "LONG_DISTANCE": "train",  # Amtrak
+    "HIGHSPEED_RAIL": "train",
     "RAIL": "train",
     "SUBURBAN": "train",
     "FERRY": "ferry",
@@ -497,16 +499,38 @@ def _add_airtrain(option: dict, key: str, to_airport: bool) -> None:
         option["lines"].insert(0, line)
 
 
+def _dollars(o: dict) -> float:
+    """About what an itinerary costs one adult, for ordering: the lower of two prices, and a
+    commuter train's usual city fare when its own is not known."""
+    fare = _fare(o)
+    if fare in ("", "free"):
+        return 0.0
+    paid = 0.0
+    for part in fare.split(" plus "):
+        prices = [float(x) for x in re.findall(r"\$(\d+\.\d\d)", part)]
+        paid += min(prices) if prices else 20.0 if "Amtrak" in part else 5.25
+    return paid
+
+
+def _effort(o: dict, cheapest: float) -> float:
+    """What an option costs beyond its hours, in seconds: five minutes for each change, since
+    people prefer one seat, and two for each dollar over the cheapest way there."""
+    return 300 * o.get("transfers", 0) + 120 * (_dollars(o) - cheapest)
+
+
 def _for_deadline(options: list[dict], when: datetime, arrive_by: bool) -> list[dict]:
-    """Arriving by a time: drop options that get in after it, latest leave first."""
+    """Arriving by a time: drop options that get in after it, latest leave first unless a few
+    minutes more at home cost another change or a dearer train."""
     if not arrive_by:
         return options
     ok = [o for o in options if o["arrive_ts"] <= when.timestamp() + 60]
     if not ok:
         return options
-    ok.sort(key=lambda o: -o["leave_ts"])
+    cheapest = min(_dollars(o) for o in ok)
+    ok.sort(key=lambda o: _effort(o, cheapest) - o["leave_ts"])
     # A train hours before the one that still makes it is no plan (1:44 AM for 8:30 AM).
-    return [o for o in ok if o["leave_ts"] >= ok[0]["leave_ts"] - 45 * 60]
+    latest = max(o["leave_ts"] for o in ok)
+    return [o for o in ok if o["leave_ts"] >= latest - 45 * 60]
 
 
 def _newark(a: dict, b: dict, when: datetime, arrive_by: bool) -> tuple[list[dict], list[str]]:
@@ -676,12 +700,13 @@ def _transit(a: dict, b: dict, when: datetime, arrive_by: bool) -> tuple[list[di
             "scheduled ride times between stations plus a typical wait."
         )
 
+    cheapest = min((_dollars(o) for o in options + by_path), default=0.0)
+
     # Best first: soonest arrival, or with a deadline the latest departure that makes it.
-    # Each change costs five minutes either way, since people prefer one seat.
     def best(o: dict) -> float:
         if arrive_by and o["arrive_ts"] <= when.timestamp() + 60:
-            return -o.get("leave_ts", 0) + 300 * o["transfers"]
-        return o["arrive_ts"] + 300 * o["transfers"] + (1e9 if arrive_by else 0)
+            return -o.get("leave_ts", 0) + _effort(o, cheapest)
+        return o["arrive_ts"] + _effort(o, cheapest) + (1e9 if arrive_by else 0)
 
     options.sort(key=best)
     by_path.sort(key=best)
@@ -698,6 +723,10 @@ def _transit(a: dict, b: dict, when: datetime, arrive_by: bool) -> tuple[list[di
             and easy["minutes"][0] <= slowest_ok
         ):
             out = out[:3] + [easy]
+        # So does the quickest ride, which an earlier or dearer train can be.
+        quick = min(pool, key=lambda o: o["minutes"][1])
+        if quick["minutes"][1] + 8 <= min(o["minutes"][1] for o in out):
+            out = out[:3] + [quick]
     return out, notes
 
 
@@ -1508,6 +1537,8 @@ def trip_plan(
             else:
                 lines.append("No car trip time is available for this pair of places.")
     layers.append(_trip_layer(a, b, t, arrive_by, mode, data))
+    # The planner first: a fact cited to the first source should not point at a fare page.
+    sources.sort(key=lambda s: s["title"].endswith(" fares"))
     return ToolResult(summary="\n".join(lines), data=data, sources=sources, map=layers)
 
 
@@ -1622,6 +1653,8 @@ def _fare(o: dict) -> str:
                 either.append(f"{name} {price}")
             else:
                 total += float(price.lstrip("$"))
+        else:  # nothing known about it, so the total must not look complete
+            rail.append(name or "other")
     if not legs:
         return ""
     if not total and not rail and not either:

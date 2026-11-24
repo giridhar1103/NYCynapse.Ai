@@ -689,6 +689,8 @@ class Agent:
                 # The reader said they cannot do stairs: every route must say so, whatever the
                 # model remembered to ask for.
                 args = {**args, "step_free": True}
+            if name == "trip_plan":
+                args = _flight_margin(t.question, args)
             out.append({"id": uuid.uuid4().hex[:8], "tool": name, "args": args})
         return out
 
@@ -1143,6 +1145,44 @@ _STAIRS = re.compile(
     r"\s+(?:the\s+)?stairs|elevators?|accessible route)\b",
     re.I,
 )
+
+
+_CLOCK = re.compile(r"\b(\d{1,2})(?::(\d\d))?\s*([ap])\.?m\b", re.I)
+_FLYING = re.compile(
+    r"\b(?:fly(?:ing)? (?:out|from|to|home)|(?:my|our|the|a) (?:[\w:]+ ){0,3}flight|"
+    r"flight (?:is|at|leaves|departs)|takes? off)\b",
+    re.I,
+)
+_MEETING = re.compile(
+    r"\b(?:land(?:s|ing|ed)?|arriv\w+|pick(?:ing)? \w+(?: \w+)? up|pick up)\b", re.I
+)
+_LEAVING = re.compile(r"\b(?:if i leave|leaving (?:at|by|around)|leave at)\b", re.I)
+_AIRPORT = re.compile(r"\b(?:jfk|kennedy|lga|la ?guardia|ewr|newark (?:liberty|airport))\b", re.I)
+
+
+def _flight_margin(question: str, args: dict) -> dict:
+    """A trip to a flight is planned by when it must get there. Planned by a leaving time, the
+    route found can come too late and make it look as if none is in time."""
+    times = _CLOCK.findall(question)
+    if (
+        args.get("arrive_by")
+        or len(times) != 1
+        or not _AIRPORT.search(str(args.get("destination") or ""))
+        or not _FLYING.search(question)
+        or _MEETING.search(question)
+        or _LEAVING.search(question)
+    ):
+        return args
+    hour, minute, half = times[0]
+    start = (int(hour) % 12 + (12 if half.lower() == "p" else 0)) * 60 + int(minute or 0)
+    by = start - (180 if re.search(r"\binternational\b", question, re.I) else 120)
+    when = str(args.get("when") or "")
+    # Only the time changes: the day is the one the model read. Without one, or before midnight
+    # of the day before, it stays the model's plan.
+    if by < 0 or not _CLOCK.search(when):
+        return args
+    clock = f"{(by // 60 - 1) % 12 + 1}:{by % 60:02d} {'AM' if by < 720 else 'PM'}"
+    return {**args, "arrive_by": True, "when": _CLOCK.sub(clock, when, count=1)}
 
 
 def _no_stairs(t: Turn) -> bool:

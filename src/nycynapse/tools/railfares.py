@@ -262,8 +262,10 @@ def fare(railroad: str, start: str, end: str, depart: float, arrive: float) -> s
         return both
     end_at = datetime.fromtimestamp(arrive, NY)
     inbound, outbound = zb == 1, za == 1
-    if inbound and outbound:
-        return both
+    if inbound and outbound:  # Forest Hills and Penn are in one zone: the terminal tells
+        inbound, outbound = b in _TERMINALS, a in _TERMINALS
+        if inbound == outbound:
+            return both
     # The hours are those at the terminal. At a stop short of it the train is there up to half an
     # hour earlier or later, so near the edge of the window either may apply.
     slack = 0 if (b if inbound else a) in _TERMINALS else 30
