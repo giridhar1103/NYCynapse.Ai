@@ -386,7 +386,8 @@ def tools(lake: Lake, as_of: Callable[[], str], emit_for: Callable[[], Callable 
             "a governed SQL query over taxi and app rides, subway (ridership, live arrivals "
             "and delays, alerts), Citi Bike (trips, live dock status), 311, crashes, road "
             "speeds and past weather since January 2024, and returns rows. Cheapest and most "
-            "trusted source; ask one thing per call.",
+            "trusted source; ask one thing per call. What a ride costs is asked as the typical "
+            "(median) total or fare, never the average, unless the reader asks for an average.",
             {
                 "type": "object",
                 "properties": {"question": {"type": "string"}},
