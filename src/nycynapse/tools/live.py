@@ -23,7 +23,7 @@ import httpx
 
 from ..config import REPO
 from . import Tool, ToolResult, areas, failed
-from .http import UA, cached, env, get_json
+from .http import UA, cached, checked, env, get_json
 
 NY = ZoneInfo("America/New_York")
 
@@ -533,7 +533,7 @@ def _ny511_fetch() -> None:
             headers={"User-Agent": UA},
             timeout=httpx.Timeout(45.0, connect=8.0),
         )
-        r.raise_for_status()
+        checked(r)
         rows = [e for e in r.json() if set(e.get("counties") or []) & NY511_COUNTIES.keys()]
         with _ny511_lock:
             _ny511.update(at=time.time(), rows=rows)
@@ -1739,7 +1739,8 @@ TOOLS = [
         "open_data",
         "live",
         "Query a NYC Open Data dataset directly with SoQL (select, where, group, order, limit "
-        "up to 50). Datasets: "
+        "up to 50). Slow at times: 311 and crash counts for past periods, by borough or citywide, "
+        "come from ask_lake; use this for them only around a place or in an area. Datasets: "
         + "; ".join(f"{k}: {v[1]} (columns: {v[2]})" for k, v in DATASETS.items())
         + ". For a neighborhood or ZIP code set `area` ('Washington Heights', 'Murray Hill, "
         "Queens', '11102') with "

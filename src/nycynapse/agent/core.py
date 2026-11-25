@@ -1093,7 +1093,10 @@ def _trip_prefetch(
     m = _FROM_TO.search(question) or _TO_FROM.search(question)
     if not m:
         return None
-    a, b = m.group("a").strip(), m.group("b").strip()
+    # "to LaGuardia terminal B thursday at 7am": the day is not part of the name.
+    a, b = (_WHEN.split(m.group(x), maxsplit=1)[0].strip() for x in ("a", "b"))
+    if len(a) < 2 or len(b) < 2:
+        return None
     if _HERE.match(a):
         if not where:
             return None

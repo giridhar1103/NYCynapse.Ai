@@ -7,9 +7,15 @@ The same functions are served over MCP by `nycynapse.mcp_tools`, so any MCP clie
 
 from __future__ import annotations
 
+import functools
+import logging
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from typing import Any
+
+import httpx
+
+log = logging.getLogger(__name__)
 
 SUMMARY_LIMIT = 4000
 
@@ -32,6 +38,25 @@ class ToolResult:
 
 def failed(message: str) -> ToolResult:
     return ToolResult(summary=f"Tool failed: {message}", ok=False, error=message)
+
+
+def safely(fn: Callable[..., dict]) -> Callable[..., dict]:
+    """A served tool that answers with a plain failure when a data service does not, so nothing
+    of how it is called (addresses, code) reaches the one who asked."""
+
+    @functools.wraps(fn)
+    def run(*args, **kwargs) -> dict:
+        try:
+            return fn(*args, **kwargs)
+        except httpx.HTTPStatusError as e:
+            return failed(f"{e}; try once more").as_dict()
+        except httpx.HTTPError:
+            return failed("a data service did not answer in time; try once more").as_dict()
+        except Exception:  # noqa: BLE001 - the log has what happened
+            log.exception("tool %s", fn.__name__)
+            return failed("the tool ran into a problem").as_dict()
+
+    return run
 
 
 @dataclass

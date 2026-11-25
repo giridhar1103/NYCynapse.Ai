@@ -3211,3 +3211,58 @@ def test_exact_arithmetic_on_rows_is_traced():
     share = ToolResult(summary="share 0.7356593007355495", data={})
     assert _untraced_numbers("73.6% of trips", [share]) == []
     assert _untraced_numbers("75.6% of trips", [share]) == ["75.6"]
+
+
+def test_addresses_and_keys_stay_out_of_errors_and_logs(monkeypatch):
+    import logging
+
+    import httpx
+
+    from nycynapse.tools import http, safely
+
+    down = httpx.MockTransport(lambda request: httpx.Response(500))
+    monkeypatch.setattr(http, "_client", httpx.Client(transport=down))
+    monkeypatch.setattr(http.time, "sleep", lambda s: None)
+
+    @safely
+    def tool(near: str, n: int = 5) -> dict:
+        """What it does."""
+        return http.get_json(f"https://maps.test/{near}", {"key": "s3cret"}, ttl_s=0)
+
+    got = tool("here")
+    assert got["ok"] is False and "maps.test answered with error 500" in got["error"]
+    assert "s3cret" not in str(got) and "https://" not in got["error"]
+    with pytest.raises(httpx.HTTPStatusError) as e:
+        http.get_json("https://maps.test/x", {"key": "s3cret"}, ttl_s=0)
+    assert "s3cret" not in str(e.value)
+
+    @safely
+    def broken() -> dict:
+        raise ValueError("s3cret")
+
+    assert "s3cret" not in str(broken())
+    assert logging.getLogger("httpx").getEffectiveLevel() >= logging.WARNING
+
+
+def test_served_tools_keep_their_arguments():
+    import asyncio
+
+    from nycynapse.connect import server
+
+    tools = {t.name: t for t in asyncio.run(server.mcp.list_tools())}
+    schema = getattr(tools["weather"], "input_schema", None) or tools["weather"].inputSchema
+    assert {"hours", "days", "near", "day"} <= set(schema["properties"])
+    assert "hour by hour" in tools["weather"].description
+
+
+def test_the_day_is_not_part_of_the_place(monkeypatch):
+    import json
+
+    from nycynapse.agent import core
+    from nycynapse.tools import trips as T
+
+    monkeypatch.setattr(T, "locate", lambda text: {"name": text, "lat": 40.7, "lon": -73.9})
+    q = "how long to drive from Park Slope to LaGuardia terminal B thursday at 7am"
+    args = json.loads(core._trip_prefetch(q, None)["args"])
+    assert args["destination"] == "LaGuardia terminal B" and args["origin"] == "Park Slope"
+    assert "thursday" in args["when"].lower()

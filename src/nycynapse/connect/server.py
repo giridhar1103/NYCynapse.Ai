@@ -17,7 +17,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp_types import ToolAnnotations
 
-from ..tools import alerts, arrivals, citynow, live, nearby, trips
+from ..tools import alerts, arrivals, citynow, live, nearby, safely, trips
 from ..tools.http import load_keys
 from .store import Access
 
@@ -37,7 +37,11 @@ mcp = MCPServer(
 )
 
 
-@mcp.tool(annotations=READ)
+def tool(fn):
+    return mcp.tool(annotations=READ)(safely(fn))
+
+
+@tool
 def trip_plan(
     origin: str,
     destination: str,
@@ -54,7 +58,7 @@ def trip_plan(
     return trips.trip_plan(origin, destination, mode, when, arrive_by, step_free).as_dict()
 
 
-@mcp.tool(annotations=READ)
+@tool
 def subway_alerts(line: str | None = None, days: int = 0) -> dict:
     """MTA subway alerts in effect now, with the hours each applies, and planned changes in the
     next 12 hours, or the next `days` days (up to 7) for the weekend or later this week. `line`
@@ -62,14 +66,14 @@ def subway_alerts(line: str | None = None, days: int = 0) -> dict:
     return live.subway_alerts(line, days).as_dict()
 
 
-@mcp.tool(annotations=READ)
+@tool
 def transit_changes(system: str | None = None, route: str | None = None) -> dict:
     """Service changes on the subway, buses, LIRR, Metro-North, NJ Transit and PATH, ongoing or
     starting in the next 7 days. `system` is subway, bus, lirr, metro-north, nj-transit or path."""
     return live.transit_changes(system, route).as_dict()
 
 
-@mcp.tool(annotations=READ)
+@tool
 def road_events(
     borough: str | None = None, kind: str | None = None, road: str | None = None
 ) -> dict:
@@ -79,13 +83,13 @@ def road_events(
     return live.road_events(borough, kind, road).as_dict()
 
 
-@mcp.tool(annotations=READ)
+@tool
 def road_speeds(borough: str | None = None) -> dict:
     """Latest road speeds from city sensors by borough, and the slowest segments."""
     return live.road_speeds(borough).as_dict()
 
 
-@mcp.tool(annotations=READ)
+@tool
 def weather(hours: int = 6, days: int = 0, near: str | None = None, day: str | None = None) -> dict:
     """Weather now and for the next hours in each borough (and near a place), a daily forecast
     up to 7 days ahead when `days` is set, one day hour by hour with gusts when `day` is set
@@ -93,20 +97,20 @@ def weather(hours: int = 6, days: int = 0, near: str | None = None, day: str | N
     return live.weather(hours, days, near, day).as_dict()
 
 
-@mcp.tool(annotations=READ)
+@tool
 def citibike_now(near: str, n: int = 5) -> dict:
     """Bikes, e-bikes and open docks right now at the Citi Bike stations nearest a place."""
     return trips.citibike_now(near, n).as_dict()
 
 
-@mcp.tool(annotations=READ)
+@tool
 def nearby_amenities(near: str, what: str = "restroom", n: int = 5) -> dict:
     """The nearest public restrooms (with hours, access and baby changing tables) or drinking
     fountains to a place, from city data. `what` is restroom or drinking_fountain."""
     return nearby.nearby(near, what, n).as_dict()
 
 
-@mcp.tool(annotations=READ)
+@tool
 def alerts_near(near: str, radius_m: int = 1000, since_minutes: int | None = None) -> dict:
     """Road incidents and closures, subway station alerts and weather warnings in effect right
     now near a place, closest first. since_minutes limits to alerts posted in the last that many
@@ -114,35 +118,35 @@ def alerts_near(near: str, radius_m: int = 1000, since_minutes: int | None = Non
     return alerts.alerts_near(near, radius_m, since_minutes).as_dict()
 
 
-@mcp.tool(annotations=READ)
+@tool
 def street_closures(near: str, radius_m: int = 500, days_ahead: int = 7) -> dict:
     """Streets closed for construction near a place, in effect now or starting within days_ahead
     days, from NYC DOT permits."""
     return citynow.street_closures(near, radius_m, days_ahead).as_dict()
 
 
-@mcp.tool(annotations=READ)
+@tool
 def air_quality(near: str | None = None) -> dict:
     """Air quality now and for the next hours, citywide or near a place: the US AQI with what it
     means for being outdoors, fine particles (PM2.5) and ozone."""
     return citynow.air_quality(near).as_dict()
 
 
-@mcp.tool(annotations=READ)
+@tool
 def next_trains(station: str, line: str | None = None, n: int = 3) -> dict:
     """The next trains at a subway station right now, by line and direction (where each train is
     headed), with minutes away and clock times, live from the MTA's real-time feeds."""
     return arrivals.next_trains(station, line, n).as_dict()
 
 
-@mcp.tool(annotations=READ)
+@tool
 def find_place(text: str) -> dict:
     """Find an NYC address, landmark, station or intersection: coordinates, borough and
     neighborhood."""
     return live.find_place(text).as_dict()
 
 
-@mcp.tool(annotations=READ)
+@tool
 def open_data(
     dataset: str,
     select: str = "",

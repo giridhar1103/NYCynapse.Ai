@@ -846,7 +846,9 @@ def drive(a: dict, b: dict, when: datetime) -> dict | None:
     za, zb = zone_of(a["lat"], a["lon"]), zone_of(b["lat"], b["lon"])
     if not za or not zb or za[0] == zb[0]:
         return None
-    day = "weekend" if when.weekday() >= 5 else "weekday"
+    # A holiday's traffic is a weekend's.
+    quiet = when.weekday() >= 5 or railfares._holiday(when.date())
+    day = "weekend" if quiet else "weekday"
     rows = (
         _lake()
         .execute(

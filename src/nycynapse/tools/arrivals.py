@@ -9,7 +9,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from . import Tool, ToolResult, failed
-from .http import _client, cached
+from .http import _client, cached, checked
 
 NY = ZoneInfo("America/New_York")
 BASE = "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/"
@@ -92,7 +92,7 @@ def _feed(key: str):
 
     def make():
         r = _client.get(BASE + key, timeout=10)
-        r.raise_for_status()
+        checked(r)
         msg = gtfs_realtime_pb2.FeedMessage()
         msg.ParseFromString(r.content)
         return msg

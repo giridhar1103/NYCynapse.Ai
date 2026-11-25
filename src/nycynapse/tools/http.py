@@ -11,6 +11,7 @@ and stops reading after a size limit.
 from __future__ import annotations
 
 import ipaddress
+import logging
 import os
 import socket
 import threading
@@ -57,6 +58,22 @@ def load_keys(path: str = "/root/.secrets/nycynapse-tools.env") -> None:
                 os.environ.setdefault(k.strip(), v.strip())
 
 
+# Its log lines hold the whole address of each request, and some addresses hold a key.
+for _name in ("httpx", "httpcore"):
+    logging.getLogger(_name).setLevel(logging.WARNING)
+
+
+def checked(r: httpx.Response) -> httpx.Response:
+    """The response, or an error that names the service and not the address asked."""
+    if r.is_error:
+        raise httpx.HTTPStatusError(
+            f"{r.request.url.host} answered with error {r.status_code}",
+            request=r.request,
+            response=r,
+        )
+    return r
+
+
 def cached(key: tuple, ttl_s: float, make):
     now = time.time()
     with _cache_lock:
@@ -93,11 +110,11 @@ def get_json(
         if busy:
             time.sleep(0.5)
             r = _client.get(url, params=params, headers=headers, **wait)
-        r.raise_for_status()
+        checked(r)
         if again and again(r.headers):
             try:
                 other = _client.get(url, params=params, headers=headers, **wait)
-                other.raise_for_status()
+                checked(other)
                 r = other
             except httpx.HTTPError:
                 pass  # the first answer is better than none
@@ -109,8 +126,7 @@ def get_json(
 
 def post_json(url: str, body: dict, headers: dict | None = None, ttl_s: float = 300) -> object:
     def make():
-        r = _client.post(url, json=body, headers=headers)
-        r.raise_for_status()
+        r = checked(_client.post(url, json=body, headers=headers))
         return r.json()
 
     key = ("POST", url, repr(sorted(body.items())))
