@@ -381,6 +381,7 @@ class Guide {
           if (ev === "chat") { this.chat = d.id; this.maxTurns = d.max_turns || 6; }
           else if (ev === "queue") view.queue(d.position);
           else if (ev === "status") view.status(d.text);
+          else if (ev === "urgent") view.urgent(d.text);
           else if (ev === "draft") view.draft(d.text);
           else if (ev === "tool") view.tool(d);
           else if (ev === "lake") view.lake(d);
@@ -673,6 +674,13 @@ class TurnView {
     this.draftEl?.remove(); this.draftEl = null;
   }
 
+  // The number to call for someone in danger. It stays until an answer that begins with it is
+  // there, and for good when there is none.
+  urgent(text) {
+    this.urgentEl = el("div", { class: "urgent-card", role: "alert" }, ...renderText(text || "", {}));
+    this.box.prepend(this.urgentEl);
+  }
+
   // The answer as first written, shown faded while it is checked against the sources. The
   // checked answer takes its place.
   draft(text) {
@@ -731,6 +739,7 @@ class TurnView {
     const srcs = (d.sources || []).filter((x) => x.title);
     const numbered = Object.fromEntries(srcs.filter((x) => x.n).map((x) => [x.n, x]));
     this.fold(d, srcs.length);
+    this.urgentEl?.remove();
     const card = el("div", { class: "answer-card" + (d.declined ? " declined" : "") });
     card.append(...renderText(d.text || "", { sources: numbered, places: d.places || [], onPlace }));
     // The longest forecast when the answer looked at the weather more than once.

@@ -33,6 +33,14 @@ _NAMES = re.compile(
 )
 
 
+# Numbers to call are known without a tool: emergency, crisis line, city services, poison control.
+_HELP_LINES = re.compile(
+    r"(?<![\w$.,-])(?:911|988|311|511)(?![\d%]|[.,-]\d)"
+    r"|(?:\b1[-. ]?)?\(?\b800\)?[-. ]222[-. ]1222\b|\(?\b212\)?[-. ](?:764[-. ]7667|poisons)\b",
+    re.I,
+)
+
+
 def _numbers(text: str) -> list[tuple[str, float, float]]:
     """(as written, value, how far a rounded figure may be off) for each number in a text."""
     out = []
@@ -139,7 +147,7 @@ def _untraced_numbers(answer: str, results: list[ToolResult], memory: str = "") 
                 values.append(abs(x - y) / abs(y) * 100)
     exact = _worked_out(results, texts)
     out = []
-    for written, x, step in _numbers(_NAMES.sub(" ", answer)):
+    for written, x, step in _numbers(_NAMES.sub(" ", _HELP_LINES.sub(" ", answer))):
         if written in _SMALL or (len(written) == 4 and written.startswith("20")):
             continue
         slack = step / 2 + 0.051

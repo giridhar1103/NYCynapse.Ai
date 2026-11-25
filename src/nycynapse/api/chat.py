@@ -25,6 +25,7 @@ import psycopg
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import StreamingResponse
 
+from ..agent import urgent
 from ..agent.chats import IDLE_MINUTES, MAX_TURNS, ChatError, Chats, Slot
 from ..agent.examples import EXAMPLES
 from ..catalog import store
@@ -308,6 +309,11 @@ async def _turn(
     def err(code: str, message: str | None = None) -> bytes:
         return _sse("error", {"code": code, "message": message or MESSAGES[code]})
 
+    # Someone in danger sees the number at once: before any limit, line or model, and whatever
+    # becomes of the answer.
+    call = urgent.number(question)
+    if call:
+        yield _sse("urgent", {"call": call, "text": urgent.with_number(None, call)})
     if not 3 <= len(question) <= 400:
         yield err("length")
         return

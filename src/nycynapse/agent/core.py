@@ -32,6 +32,7 @@ from ..llm.client import LLMError, ProviderLimit
 from ..prompts import prompt as load_prompt
 from ..tools import Tool, ToolResult, failed
 from . import places as place_index
+from . import urgent
 from .citations import _cite, _registry, _source_key, _uncite
 from .grounding import _drop_untraced, _untraced_clocks, _untraced_numbers
 from .host import MCPHost
@@ -149,7 +150,7 @@ _DRAFT_SMELLS = [
             r"|\baccording to\b|\bpublished (?:text|wording)\b|\bI (?:found|have no|can't tell)\b"
             r"|\b(?:trip )?planner\b|\bavailable to me\b|\bmy (?:tools?|data|numbers|search)\b"
             r"|\bI (?:searched|pulled|ran|queried)\b|\b(?:tool|search) (?:returned|results?)\b"
-            r"|\bwouldn't load\b"
+            r"|\bwouldn't load\b|\bdid(?:n't| not) come (?:up|back)\b"
             r"|\b(?:weren't|were not|wasn't|was not|isn't|aren't|not yet) (?:checked|confirmed)\b",
             re.I,
         ),
@@ -241,6 +242,7 @@ class Turn:
     timeline: list[dict] = field(default_factory=list)  # every model and tool call, timed
     where: tuple[float, float] | None = None  # the reader's location, if they shared it
     places: dict[str, tuple[float, float]] | None = None  # home and work saved on their device
+    urgent: str | None = None  # the number the reader should call, when someone is in danger
 
 
 class Agent:
@@ -327,6 +329,7 @@ class Agent:
         places: dict[str, tuple[float, float]] | None = None,
     ) -> dict:
         t = Turn(question=question, history=history, emit=emit, where=where, places=places)
+        t.urgent = urgent.number(question)
         system = load_prompt("agent")
         static = (
             f"Now: {now_as_of()} (New York).\n\nTools:\n{self._tool_text()}\n\n"
@@ -396,6 +399,7 @@ class Agent:
                 and not step.get("declined")
                 and not t.unchecked
                 and not force
+                and not t.urgent
                 and len(t.question) > 20
             ):
                 # An answer about the city written without checking anything is a guess, and
@@ -403,7 +407,7 @@ class Agent:
                 t.unchecked = True
                 t.steps.append({"note": "asked to check before answering"})
                 continue
-            style = [] if step.get("declined") else _draft_issues(answer)
+            style = [] if step.get("declined") or t.urgent else _draft_issues(answer)
             loose: list[str] = []
             factual: list[str] = []
             found: list[str] = []
@@ -424,6 +428,7 @@ class Agent:
                 and not calls
                 and t.results
                 and self.verify_answers
+                and not t.urgent
                 and not step.get("declined")
                 and (t.verified == 0 or (t.verified == 1 and t.redrafts == 1 and t.had_facts))
                 and round_no < MAX_ROUNDS
@@ -943,6 +948,9 @@ class Agent:
             # or list lines that hold them rather than publish a made-up number.
             answer = _drop_untraced(answer, untraced)
             untraced = self._untraced(t, answer)
+        if t.urgent:
+            answer = urgent.with_number(answer, t.urgent)
+            declined, error = False, None
         return {
             "answer": answer,
             "follow_ups": [f.strip() for f in follow_ups if f.strip()][:3],

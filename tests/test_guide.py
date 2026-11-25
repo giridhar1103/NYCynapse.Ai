@@ -3382,3 +3382,75 @@ def test_small_hours_belong_to_the_night_before(monkeypatch, said, day, hour):
     monkeypatch.setattr(T, "_now", lambda: datetime(2026, 11, 25, 15, 0, tzinfo=T.NY))
     got = T.parse_when(said)
     assert (got.day, got.hour) == (day, hour)
+
+
+# Someone in danger
+
+
+@pytest.mark.parametrize(
+    "question, call",
+    [
+        (
+            "my friend took something at a party in bushwick and wont wake up, closest hospital",
+            "911",
+        ),
+        ("a guy is following me on the L train what do i do", "911"),
+        ("my dad has chest pain, how fast can we get to Maimonides by uber", "911"),
+        ("there’s a fire in my building in Astoria", "911"),
+        ("she is not breathing", "911"),
+        ("someone just pulled a knife at 125th street station", "911"),
+        ("i think i smell gas in my apartment", "911"),
+        ("i don’t want to live anymore", "988"),
+        ("how many people overdosed in the Bronx this year", None),
+        ("what are the stats on people shot in Brownsville", None),
+        ("is the Museum of Fire worth it, my son is on fire about trucks this year", None),
+        ("my friend won't wait, quickest way to JFK", None),
+        ("where can i get a good knife sharpened in Chinatown", None),
+        ("which hospital has the shortest ER wait near Park Slope", None),
+    ],
+)
+def test_the_number_to_call(question, call):
+    from nycynapse.agent import urgent
+
+    assert urgent.number(question) == call
+
+
+def test_the_number_comes_first_and_stays():
+    from nycynapse.agent import urgent
+    from nycynapse.agent.grounding import _drop_untraced, _untraced_numbers
+
+    text = "Call 911 now. Stay with them.\n\nPoison Control is 1-800-222-1222, or call 988."
+    assert _untraced_numbers(text, []) == []  # the number check once took these out
+    assert _drop_untraced(text, _untraced_numbers(text, [])) == text
+    assert _untraced_numbers("The ER wait is 47 minutes.", []) == ["47"]
+    assert urgent.with_number("Call 911 now. Stay.", "911") == "Call 911 now. Stay."
+    late = "Paramedics start at once. " * 8 + "Tell 911 the address."
+    assert urgent.with_number(late, "911").startswith("**Call 911 now.**\n\nParamedics")
+    assert "911" in urgent.with_number(None, "911") and "988" in urgent.with_number(None, "988")
+
+
+def test_the_number_is_sent_before_any_limit_or_model(monkeypatch):
+    import asyncio
+
+    from nycynapse.api import chat
+
+    monkeypatch.setattr(chat, "PAUSED", True)  # nothing can be answered at all
+
+    async def first(question):
+        return [x async for x in chat._turn(question, None, "t", "c", None)]
+
+    events = asyncio.run(first("my friend wont wake up"))
+    assert b"event: urgent" in events[0] and b"911" in events[0]
+    assert not any(b"urgent" in e for e in asyncio.run(first("how do i get to the Met")))
+
+
+def test_an_answer_for_someone_in_danger_begins_with_the_number():
+    from nycynapse.agent.core import Agent, Turn
+
+    agent = Agent.__new__(Agent)
+    agent.tools = lambda: []
+    t = Turn(question="my friend wont wake up", history=[], emit=lambda *a: None, urgent="911")
+    out = agent._finish(t, "Paramedics start treating them on the spot.", [], declined=False)
+    assert out["answer"].startswith("**Call 911 now.**") and not out["declined"]
+    out = agent._finish(t, None, [], declined=False, error="busy")  # no model answered
+    assert out["answer"].startswith("**Call 911 now.**") and out["error"] is None
