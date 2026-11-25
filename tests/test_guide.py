@@ -3454,3 +3454,48 @@ def test_an_answer_for_someone_in_danger_begins_with_the_number():
     assert out["answer"].startswith("**Call 911 now.**") and not out["declined"]
     out = agent._finish(t, None, [], declined=False, error="busy")  # no model answered
     assert out["answer"].startswith("**Call 911 now.**") and out["error"] is None
+
+
+@pytest.mark.parametrize(
+    "said, name, lat, lon",
+    [
+        ("Brooklyn Bridge, Manhattan side", "Brooklyn Bridge, Manhattan side", 40.7127, -74.0044),
+        (
+            "the Brooklyn Bridge (Brooklyn entrance)",
+            "Brooklyn Bridge, Brooklyn side",
+            40.6997,
+            -73.9898,
+        ),
+        (
+            "Brooklyn Bridge, Brooklyn side entrance",
+            "Brooklyn Bridge, Brooklyn side",
+            40.6997,
+            -73.9898,
+        ),
+        ("Manhattan Bridge Brooklyn side", "Manhattan Bridge, Brooklyn side", 40.6995, -73.9868),
+        ("59th street bridge, Queens side", "Queensboro Bridge, Queens side", 40.7510, -73.9403),
+        ("GWB, Fort Lee side", "George Washington Bridge, New Jersey side", 40.8541, -73.9665),
+    ],
+)
+def test_bridges_are_entered_at_their_ends(said, name, lat, lon):
+    from nycynapse.tools import trips as T, bridges  # noqa: I001
+
+    got = bridges.find(said)
+    assert got["name"] == name and T._metres(got, {"lat": lat, "lon": lon}) < 170
+
+
+def test_a_bridge_without_a_side_is_the_end_nearer_the_trip():
+    from nycynapse.tools import trips as T, bridges  # noqa: I001
+
+    bridge = bridges.find("Brooklyn Bridge")
+    dumbo, soho = {"lat": 40.7033, "lon": -73.9890}, {"lat": 40.7235, "lon": -74.0}
+    assert bridges.nearer(bridge, dumbo, T._metres)["name"].endswith("Brooklyn side")
+    assert bridges.nearer(bridge, soho, T._metres)["name"].endswith("Manhattan side")
+    for other in (
+        "Brooklyn Bridge Park",
+        "Brooklyn Bridge-City Hall station",
+        "GWB bus station",
+        "Brooklyn Bridge Park, Pier 6",
+        "Manhattan Bridge Arch Plaza",
+    ):
+        assert bridges.find(other) is None, other

@@ -24,7 +24,7 @@ from functools import lru_cache
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from . import Tool, ToolResult, failed, railfares
+from . import Tool, ToolResult, bridges, failed, railfares
 from .http import env, get_json
 
 NY = ZoneInfo("America/New_York")
@@ -1378,6 +1378,8 @@ def trip_plan(
         return failed("mode must be all, transit, drive, walk or bike")
     a, b = locate(origin), locate(destination)
     notes_placed: list[str] = []
+    if a and b:  # a bridge is entered on the side one comes from, and left on the side one goes
+        a, b = bridges.nearer(a, b, _metres), bridges.nearer(b, a, _metres)
     if not a or not b:
         missing = origin if not a else destination
         return failed(f"could not place {missing!r}; name a station, landmark, address or area")

@@ -12,7 +12,7 @@ import json
 import re
 from functools import lru_cache
 
-from . import centers, corners, osm, railfares
+from . import bridges, centers, corners, osm, railfares
 from . import trips as T
 from .http import get_json
 from .path_trains import PATH
@@ -606,6 +606,9 @@ def locate(text: str) -> dict | None:
     "Church Av station on the F" is that line's station; "Wave Hill, 4900 Independence Ave"
     or "Jackson Heights, 74th St and 37th Ave" falls back to its address or corner part."""
     raw = (text or "").strip()[:120]
+    bridge = bridges.find(raw)
+    if bridge:
+        return bridge
     m = re.match(
         r"(.+?)\s+(?:station\s+|stop\s+)?on the\s+"
         r"([A-Z0-9](?:(?:\s*(?:,|/|and|&)\s*|\s+)[A-Z0-9])*)"
