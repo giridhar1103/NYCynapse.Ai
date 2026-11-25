@@ -3194,3 +3194,20 @@ def test_crashes_are_not_counted_by_the_columns_the_city_leaves_blank(monkeypatc
     assert not by_borough.ok and not in_one.ok and "ask_lake" in in_one.error
     assert live.open_data("collisions", "count(*)", "crash_date >= '2026-01-01'").ok
     assert live.open_data("311", "count(*)", "borough = 'QUEENS'").ok
+
+
+def test_exact_arithmetic_on_rows_is_traced():
+    from nycynapse.agent.grounding import _untraced_numbers
+    from nycynapse.tools import ToolResult
+
+    def rows(a, b):
+        data = [{"descriptor": "ENTIRE BUILDING", "count": a}, {"descriptor": "ONE", "count": b}]
+        return ToolResult(summary=f"ENTIRE BUILDING {a}; ONE {b}", data=data)
+
+    now, before = rows("6597", "2896"), rows("7749", "4055")
+    text = "9,493 this year against 11,804 last year, 2,311 fewer."
+    assert _untraced_numbers(text, [now, before]) == []
+    assert _untraced_numbers("11,904 last year", [now, before]) == ["11904"]
+    share = ToolResult(summary="share 0.7356593007355495", data={})
+    assert _untraced_numbers("73.6% of trips", [share]) == []
+    assert _untraced_numbers("75.6% of trips", [share]) == ["75.6"]

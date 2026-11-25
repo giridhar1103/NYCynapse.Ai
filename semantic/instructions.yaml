@@ -32,6 +32,13 @@ instructions:
     text: >
       NYPD publishes crash reports months late. Say so when a question reaches into the last
       four months, and check coverage before calling a recent drop real.
+  - id: worst_line
+    applies_to: [subway]
+    text: >
+      Which line or station is late the most, worst or least reliable is judged by the share of
+      its scheduled arrivals that were late, not by their number: a line with more trains has
+      more late ones. Leave out lines with fewer than 1,000 arrivals in the period. Give the
+      share, the late arrivals and all arrivals.
   - id: subway_capture_window
     applies_to: [subway]
     text: >
@@ -57,8 +64,6 @@ instructions:
     text: >
       What a ride usually or typically costs, and whether it costs more than before, is the median
       (typical taxi total, typical app fare). Use the average only when the question says average.
-      In some months of 2025 the totals of cash taxi trips are recorded wrongly and raise the
-      average.
   - id: ambiguous_safety
     applies_to: [safety, city_services]
     text: >

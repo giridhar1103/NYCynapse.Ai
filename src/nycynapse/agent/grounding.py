@@ -85,6 +85,30 @@ def _untraced_clocks(answer: str, results: list[ToolResult], memory: str = "") -
     return out
 
 
+def _worked_out(results: list[ToolResult], texts: list[str]) -> list[float]:
+    """What follows exactly from the figures: the total of each column of counts in a list of
+    rows, the differences and shares of those totals, and a share of 0.7357 as 73.57 percent."""
+    totals: list[float] = []
+    for r in results:
+        rows = r.data if r.ok and isinstance(r.data, list) else []
+        if len(rows) < 2 or not all(isinstance(row, dict) for row in rows):
+            continue
+        for key in rows[0]:
+            try:
+                col = [float(row[key]) for row in rows]
+            except (KeyError, TypeError, ValueError):
+                continue  # a name, or a figure some rows do not have
+            totals.append(sum(col))
+    out = list(totals)
+    for i, a in enumerate(totals):
+        for b in totals[i + 1 :]:
+            out.append(abs(a - b))
+            out += [abs(a - b) / x * 100 for x in (a, b) if x]
+    for t in texts:
+        out += [v * 100 for w, v, _ in _numbers(t) if 0 < v < 1 and len(w) >= 5]
+    return out
+
+
 def _untraced_numbers(answer: str, results: list[ToolResult], memory: str = "") -> list[str]:
     """Numbers in the answer that cannot be traced to what the tools returned (or to earlier
     turns), allowing rounding, "4.1 million" style figures, totals, averages, differences and
@@ -113,12 +137,15 @@ def _untraced_numbers(answer: str, results: list[ToolResult], memory: str = "") 
             if x != y:
                 values.append(abs(x - y))
                 values.append(abs(x - y) / abs(y) * 100)
+    exact = _worked_out(results, texts)
     out = []
     for written, x, step in _numbers(_NAMES.sub(" ", answer)):
         if written in _SMALL or (len(written) == 4 and written.startswith("20")):
             continue
         slack = step / 2 + 0.051
         if any(abs(x - v) <= slack + abs(v) * 0.01 for v in values):
+            continue
+        if any(abs(x - v) <= step / 2 + 1e-6 for v in exact):
             continue
         out.append(written)
     return out[:8]

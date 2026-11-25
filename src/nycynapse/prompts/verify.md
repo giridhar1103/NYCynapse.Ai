@@ -26,6 +26,9 @@ List only real problems, at most four, each with the exact words from the draft 
   museum hours", "a scheduled ride gives you a confirmed car"); fix it by saying it was not
   checked, or by leaving it out
 
+Exact arithmetic on figures in the tool results is supported when it is right: the total of the
+parts listed, a difference, a percentage, a share of 0.7357 as 74%. Work it out before listing it.
+
 Do not list style, length or tone. Do not list stable general knowledge about the city that is
 correct. Do not ask for hedges: a plain statement the tools support is right. If the draft is
 sound, return an empty list.

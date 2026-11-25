@@ -1563,7 +1563,7 @@ def open_data(
         try:
             rows = get_json(url, params, _socrata_headers(), ttl_s=300, again=_behind, timeout=10)
         except httpx.TransportError:  # some of the city's servers hang; another may not
-            rows = get_json(url, params, _socrata_headers(), ttl_s=300, again=_behind, timeout=15)
+            rows = get_json(url, params, _socrata_headers(), ttl_s=300, again=_behind, timeout=10)
     except httpx.HTTPStatusError as e:
         return failed(_refused(e))
     except httpx.TransportError:

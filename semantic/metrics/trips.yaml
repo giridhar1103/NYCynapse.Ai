@@ -126,7 +126,7 @@ metrics:
 
   - id: median_taxi_total_usd
     label: Typical taxi total
-    description: Median total charged per taxi trip, with tolls, fees and card tips, without cash tips. What a cab usually costs; some months hold wrongly recorded cash totals that move the average and not the median.
+    description: Median total charged per taxi trip, with tolls, fees and card tips, without cash tips. What a cab usually costs; a few very long or wrongly recorded trips do not move it.
     unit: dollars
     format: currency
     additivity: non_additive
