@@ -259,19 +259,6 @@ def _plan(a: dict, b: dict, when: datetime, arrive_by: bool, n: int = 5) -> list
         except Exception:  # noqa: BLE001
             pass
 
-    # Every bus kneels or has a ramp: the one sure way without stairs, however long the walk.
-    if _STEP_FREE.get():
-        buses = {"transitModes": "BUS", "maxPreTransitTime": 1800, "maxPostTransitTime": 1800}
-        try:
-            its += (
-                get_json(TRANSITOUS, {**base, **buses, "numItineraries": n}, ttl_s=120).get(
-                    "itineraries"
-                )
-                or []
-            )
-        except Exception:  # noqa: BLE001 - the other options stand without it
-            pass
-
     its = [it for it in its if not _cancelled(it)]
     out, seen = [], set()
 
@@ -1273,9 +1260,74 @@ def _around_skipped(
         (s for s in map(spot, rows) if s["name"] != stop and _metres(end, s) < 2200),
         key=lambda s: _metres(end, s),
     )
+    return _by_stations(a, b, t, arrive_by, near, at_end, lambda *x: _transit(*x)[0], want=2)
+
+
+def _around_stairs(a: dict, b: dict, t: datetime, arrive_by: bool) -> list[tuple[dict, list[str]]]:
+    """When every ride found has stairs or is upset by a service change: rides to (or from) the
+    nearest stations with elevators, with the walk between. The planner only knows the stops next
+    door, so Columbus Circle is never offered for a place at 72nd Street."""
+    from . import access
+
+    try:
+        rows = [r for r in access._stations() if str(r.get("ada")) == "1"]
+        spots = [
+            {
+                "name": r["stop_name"],
+                "lat": float(r["gtfs_latitude"]),
+                "lon": float(r["gtfs_longitude"]),
+            }
+            for r in rows
+        ]
+    except Exception:  # noqa: BLE001 - what was found stands
+        return []
+    for end, at_end in ((b, True), (a, False)):
+        near = sorted((s for s in spots if _metres(end, s) < 1500), key=lambda s: _metres(end, s))
+        if not near or _metres(end, near[0]) < 200:
+            continue  # this end has an elevator: the other one is the trouble
+        found = _by_stations(
+            a,
+            b,
+            t,
+            arrive_by,
+            near,
+            at_end,
+            lambda *x: _only("SUBWAY", *x),
+            want=1,
+            good=lambda o: bool(_sure([o])),
+        )
+        if found:
+            return found
+    # Every bus kneels or has a ramp: the last sure way without stairs, however long the walk.
+    try:
+        return [(o, _changes(o, t)) for o in _sane(_only("BUS", a, b, t, arrive_by))]
+    except Exception:  # noqa: BLE001 - what was found stands
+        return []
+
+
+def _sure(options: list[dict]) -> list[dict]:
+    """The options with no stairs, no elevator out and no service change in the way."""
+    found = [o for o in options if not o.get("affected") and not o.get("skipped")]
+    return [o for o in _step_free_first(found) if o.get("step_free_ok")]
+
+
+def _by_stations(
+    a: dict,
+    b: dict,
+    t: datetime,
+    arrive_by: bool,
+    near: list[dict],
+    at_end: bool,
+    ride,
+    want: int,
+    good=lambda o: not o.get("skipped"),
+) -> list[tuple[dict, list[str]]]:
+    """Rides to (or from) the first stations of a list that work out, and the walk there. One after
+    another: the public planner answers one request at a time."""
+    end = b if at_end else a
     out, tried = [], []
     for s in near:
-        if len(out) == 2 or len(tried) == 5:
+        if len(out) == want or len(tried) == want + 2:
             break
         if any(_metres(s, x) < 250 for x in tried):
             continue
@@ -1286,17 +1338,34 @@ def _around_skipped(
                 continue
             gap = timedelta(minutes=walk["minutes"])
             if at_end:
-                rides, _ = _transit(a, s, t - gap if arrive_by else t, arrive_by)
+                rides = ride(a, s, t - gap if arrive_by else t, arrive_by)
             else:
-                rides, _ = _transit(s, b, t if arrive_by else t + gap, arrive_by)
+                rides = ride(s, b, t if arrive_by else t + gap, arrive_by)
         except Exception:  # noqa: BLE001 - another station may do
             continue
-        for o in _sane(rides)[:2]:
+        for o in _sane(rides)[:3]:
             found = _changes(o, t)
-            if not o.get("skipped"):
+            if good(o):
                 out.append((_with_walk(o, walk, s["name"], end["name"], at_end), found))
                 break
     return sorted(out, key=lambda x: (x[0]["minutes"][0], x[0]["walk_minutes"]))
+
+
+def _only(mode: str, a: dict, b: dict, t: datetime, arrive_by: bool) -> list[dict]:
+    """A few options with one kind of ride (SUBWAY, BUS), in a single small request."""
+    params = {
+        "fromPlace": f"{a['lat']:.5f},{a['lon']:.5f}",
+        "toPlace": f"{b['lat']:.5f},{b['lon']:.5f}",
+        "time": t.astimezone(NY).isoformat(timespec="minutes"),
+        "arriveBy": "true" if arrive_by else "false",
+        "transitModes": mode,
+        "numItineraries": 3,
+        **_slack(),
+    }
+    if mode == "BUS":
+        params |= {"maxPreTransitTime": 1800, "maxPostTransitTime": 1800}
+    its = get_json(TRANSITOUS, params, ttl_s=120).get("itineraries") or []
+    return [_itinerary(it, b["name"]) for it in its if not _cancelled(it)]
 
 
 def _with_walk(o: dict, walk: dict, station: str, place: str, after: bool) -> dict:
@@ -1539,7 +1608,20 @@ def trip_plan(
                 )
         if options and step_free:
             options = _step_free_first(options)
-        else:  # for a step-free trip, the order by access stands
+            if not any(o.get("step_free_ok") and not o.get("affected") for o in options):
+                token = _STEP_FREE.set(True)
+                try:
+                    around = _around_stairs(a, b, t, arrive_by)
+                finally:
+                    _STEP_FREE.reset(token)
+                changes.update({id(o): found for o, found in around})
+                sure = _sure([o for o, _ in around])
+                if sure:  # what has stairs is left out now, what a change upsets goes last
+                    options = sure + [o for o in options if o.get("step_free_ok")]
+            # The order by access stands, unless all of them are sure to be step-free.
+            if all(o.get("step_free_ok") for o in options):
+                options = _affected_last(options, arrive_by)
+        else:
             options = _affected_last(options, arrive_by)
         data["transit"] = options
         late = _hours_away(options, t, arrive_by)

@@ -3647,3 +3647,31 @@ def test_coverage_ends_on_a_whole_day():
     assert last_day(datetime(2026, 11, 11, 23)) == "2026-11-11"  # the last hour of that day
     assert last_day(datetime(2026, 8, 31, 0)) == "2026-08-31"
     assert last_day(datetime(2026, 11, 25, 13, 14)) == "2026-11-25 (last whole day 2026-11-24)"
+
+
+def test_a_bus_sent_through_another_transverse_is_affected():
+    from nycynapse.tools import busalerts
+
+    leg = {"coords": [(-73.9635, 40.7668), (-73.9786, 40.7725)]}
+    alert = {"kind": "", "head": "M66 buses will detour to 97th Transverse in both directions"}
+    assert busalerts.check(leg, alert) == "affects"
+
+
+def test_step_free_trips_ask_for_more_only_when_nothing_is_sure(monkeypatch):
+    from datetime import datetime
+
+    from nycynapse.tools import trips
+
+    asked = []
+    monkeypatch.setattr(trips, "_changes", lambda o, t: [])
+    monkeypatch.setattr(trips, "direct", lambda a, b, how: None)
+    monkeypatch.setattr(trips, "_only", lambda mode, *x: asked.append(mode) or [])
+    t = datetime(2026, 11, 27, 11, tzinfo=trips.NY)
+    a, b = {"name": "A", "lat": 40.75, "lon": -73.98}, {"name": "B", "lat": 40.77, "lon": -73.97}
+    monkeypatch.setattr("nycynapse.tools.access._stations", lambda: [])
+    assert trips._around_stairs(a, b, t, False) == []
+    assert asked == ["BUS"]  # no elevator station near: buses, the last sure way
+    rail = {"lines": [{"mode": "train", "name": "LIRR", "from": "A", "to": "B"}]}
+    bus = {"lines": [{"mode": "bus"}]}
+    assert trips._sure([rail, {**bus, "affected": True}]) == []
+    assert trips._sure([rail, bus]) == [bus]

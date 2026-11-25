@@ -149,6 +149,9 @@ def check(leg: dict, alert: dict) -> str | None:
         return "closed"
     if side[0] is False and side[1] is False:
         return None
+    # A crosstown bus sent through another park transverse is on other streets on both sides.
+    if re.search(r"\bdetour\w*\b.*\btransverse\b", alert["head"], re.I):
+        return "affects"
     where = _where(alert["head"], ride)
     if not where:
         return "affects" if cut else "passes"
