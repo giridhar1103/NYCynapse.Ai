@@ -229,6 +229,16 @@ footer a { color: var(--ink-2); }
   .timeline li { min-width: 0; }
   .hbar { grid-template-columns: minmax(60px, 32%) 1fr 48px; }
 }
+/* The header on a phone: everything fits down to 360, below that the links scroll and the theme
+   button stays. */
+@media (max-width: 420px) {
+  .band .wrap { gap: 6px; padding: 0 12px; }
+  .nav { gap: 0; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .nav::-webkit-scrollbar { display: none; }
+  .nav a { padding: 6px 6px; font-size: 13px; flex: none; }
+  .brand, .theme-toggle { flex: none; }
+  .theme-toggle { width: 32px; height: 32px; }
+}
 
 .lb { display: grid; gap: 4px; }
 .lb-row { display: grid; grid-template-columns: 190px 1fr 92px; gap: 14px; align-items: center;

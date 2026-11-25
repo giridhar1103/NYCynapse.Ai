@@ -73,9 +73,9 @@ AIRPORT_WORDS = {
     "newark international": EWR,
 }
 NAMED = {
-    "lga": ("LaGuardia Airport", 40.7746, -73.8719),
-    "laguardia": ("LaGuardia Airport", 40.7746, -73.8719),
-    "la guardia": ("LaGuardia Airport", 40.7746, -73.8719),
+    "lga": ("LaGuardia Airport", 40.7729, -73.8725),
+    "laguardia": ("LaGuardia Airport", 40.7729, -73.8725),
+    "la guardia": ("LaGuardia Airport", 40.7729, -73.8725),
     "jamaica station": ("Jamaica station (LIRR, AirTrain)", 40.6996, -73.8085),
     "atlantic terminal": ("Atlantic Terminal (LIRR)", 40.6840, -73.9776),
     "fulton center": ("Fulton Center", 40.7102, -74.0079),
@@ -1409,6 +1409,11 @@ def trip_plan(
                 "as theirs."
             )
     for got, end in ((a, "start"), (b, "end")):
+        if got["name"] == "LaGuardia Airport":
+            notes_placed.append(
+                f"No terminal was named for the {end}: planned for Terminal B. Say so in a few "
+                "words; Terminals A and C have stops of their own."
+            )
         if got.get("around"):
             notes_placed.append(
                 f"The {end}, {got['name']}, is a whole neighborhood: planned for {got['around']}, "
