@@ -697,11 +697,11 @@ def test_a_plain_trip_question_is_planned_before_the_first_model_call(monkeypatc
     assert (a["origin"], a["destination"], a["when"]) == (
         "Penn Station",
         "the Met",
-        "tomorrow at 10am",
+        "tomorrow 10am",
     )
     a = args("fastest way to get to JFK Terminal 4 from Columbia University by 6pm")
     assert a["destination"] == "JFK Terminal 4" and a["arrive_by"] is True
-    assert args("from Penn Station to the Met by 7am monday")["when"] == "7am monday"
+    assert args("from Penn Station to the Met by 7am monday")["when"] == "monday 7am"
     assert args("from Penn Station to the Met tomorrow at noon")["when"] == "tomorrow at noon"
     assert args("from Penn Station to the Met sometime tomorrow") is None  # "tomorrow" alone
     assert args("from here to the Met?", (40.7527, -73.9772))["origin"] == "40.7527,-73.9772"
@@ -3266,3 +3266,119 @@ def test_the_day_is_not_part_of_the_place(monkeypatch):
     args = json.loads(core._trip_prefetch(q, None)["args"])
     assert args["destination"] == "LaGuardia terminal B" and args["origin"] == "Park Slope"
     assert "thursday" in args["when"].lower()
+
+
+@pytest.mark.parametrize(
+    "question, a, b, when, by",
+    [
+        (
+            "way home from the Met to Bay Ridge if we leave around 1:15am saturday night",
+            "the Met",
+            "Bay Ridge",
+            "saturday night 1:15am",
+            None,
+        ),
+        (
+            "leaving the Comedy Cellar at 1:20am sunday, how do i get to Bay Ridge 86th street, "
+            "and "
+            "when is the next one",
+            "the Comedy Cellar",
+            "Bay Ridge 86th street",
+            "sunday 1:20am",
+            None,
+        ),
+        (
+            "how do i get home to Astoria from St. John's University saturday at noon",
+            "St John's University",
+            "Astoria",
+            "saturday at noon",
+            None,
+        ),
+        (
+            "fastest way to get to LaGuardia from Columbia University by 7am monday",
+            "Columbia University",
+            "LaGuardia",
+            "monday 7am",
+            True,
+        ),
+        (
+            "how do i get from grand central to maman in tribeca",
+            "grand central",
+            "maman in tribeca",
+            "now",
+            None,
+        ),
+        (
+            "flight at 6pm friday from Newark terminal C, im in Crown Heights. when should i leave",
+            "Crown Heights",
+            "Newark Airport terminal C",
+            "friday 6pm",
+            None,
+        ),
+        (
+            "how bad will the wind be thursday afternoon, my flight out of laguardia is at 3pm. "
+            "when "
+            "should i leave Jackson Heights and will the Q70 run",
+            "Jackson Heights",
+            "laguardia",
+            "thursday afternoon 3pm",
+            None,
+        ),
+        (
+            "is today a gridlock day? i need to drive from Forest Hills to Newark airport around "
+            "2pm "
+            "wednesday",
+            "Forest Hills",
+            "Newark airport",
+            "wednesday 2pm",
+            None,
+        ),
+    ],
+)
+def test_trips_people_describe_are_looked_up_first(monkeypatch, question, a, b, when, by):
+    import json
+
+    from nycynapse.agent import core
+    from nycynapse.tools import trips as T
+
+    monkeypatch.setattr(T, "locate", lambda text: {"name": text, "lat": 40.7, "lon": -73.9})
+    args = json.loads(core._trip_prefetch(question, None)["args"])
+    assert (args["origin"], args["destination"], args["when"]) == (a, b, when)
+    assert args.get("arrive_by") == by
+
+
+def test_no_trip_is_looked_up_when_in_doubt(monkeypatch):
+    from nycynapse.agent import core
+    from nycynapse.tools import trips as T
+
+    monkeypatch.setattr(T, "locate", lambda text: {"name": text, "lat": 40.7, "lon": -73.9})
+    for q in (
+        "7pm show at Lincoln Center, coming from Brookfield Place to it around 5:45pm",
+        "flying out of JFK tomorrow from Park Slope, when do i leave",  # no time
+        "landing at JFK at 9:40pm, best way to Bushwick",
+        "how did rents change from 2024 to now?  open from 9am to 5pm",
+    ):
+        assert core._trip_prefetch(q, None) is None, q
+
+
+@pytest.mark.parametrize(
+    "said, day, hour",
+    [
+        ("saturday night 1am", 29, 1),
+        ("1:15am saturday night", 29, 1),
+        ("1am saturday", 28, 1),
+        ("friday midnight", 28, 0),
+        ("after midnight into friday", 27, 0),
+        ("friday night 11pm", 27, 23),
+        ("friday night", 27, 20),
+        ("tomorrow night 2am", 27, 2),
+    ],
+)
+def test_small_hours_belong_to_the_night_before(monkeypatch, said, day, hour):
+    from datetime import datetime
+
+    from nycynapse.tools import trips as T
+
+    monkeypatch.setattr(T, "_now", lambda: datetime(2026, 11, 25, 15, 0, tzinfo=T.NY))
+    got = T.parse_when(said)
+    assert (got.day, got.hour) == (day, hour)

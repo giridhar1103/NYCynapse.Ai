@@ -962,7 +962,7 @@ def parse_when(text: str | None) -> datetime | None:
         pass
     day, named = now.date(), False
     raw, dated = _take_date(raw, now.date())
-    small = re.search(r"\b([0-4])(?::\d\d)?\s*a\.?m\b|\bmidnight\b", raw)
+    small = re.search(r"\b(12|[0-4])(?::\d\d)?\s*a\.?m\b|\bmidnight\b", raw)
     weekday = any(re.search(rf"\b{d[:3]}\w*\b", raw) for d in _DAYS)
     if (
         not dated
@@ -983,6 +983,11 @@ def parse_when(text: str | None) -> datetime | None:
         else:
             if "tomorrow" in raw:
                 day = day + timedelta(days=1)
+        # "Saturday night 1 AM" and "Friday at midnight" are after that day's evening. ("1 AM
+        # Saturday" and "after midnight into Friday" are that day's small hours.)
+        night = re.search(r"\bnight\b(?<!tonight)", raw) and (named or "tomorrow" in raw)
+        if small and (night or (named and "midnight" in raw and not re.search(r"into|after", raw))):
+            day += timedelta(days=1)
     words = {
         "noon": (12, 0),
         "midnight": (0, 0),
@@ -990,6 +995,7 @@ def parse_when(text: str | None) -> datetime | None:
         "afternoon": (14, 0),
         "evening": (18, 0),
         "tonight": (20, 0),
+        "night": (20, 0),
     }
     m = re.search(r"\b(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?", raw)
     if m and int(m.group(1)) <= 24:

@@ -1014,16 +1014,42 @@ _LATER = re.compile(
 
 _STOP = (
     r"(?=\s+(?:at|by|on|around|before|after|tomorrow|tonight|today|this|next|leaving|"
-    r"arriving|for|with|and|so|because|asap|now|right now)\b|\s*[?.!,;]|\s*$)"
+    r"arriving|for|with|and|so|because|asap|now|right now|if|when|but|is|do|does|can|how|"
+    r"what|which|via|under|without|instead|while|should|would)\b|\s*[?.!,;(]|\s*$)"
 )
 _FROM_TO = re.compile(
     rf"\bfrom\s+(?P<a>[^?.!,;]{{2,60}}?)\s+to\s+(?P<b>[^?.!,;]{{2,60}}?){_STOP}", re.I
 )
 _TO_FROM = re.compile(
-    rf"\b(?:get|go|getting|going|head|heading|travel|commute)\s+to\s+(?P<b>[^?.!,;]{{2,60}}?)"
-    rf"\s+from\s+(?P<a>[^?.!,;]{{2,60}}?){_STOP}",
+    rf"\b(?:get|go|getting|going|head|heading|travel|commute|way)\s+(?:home\s+|back\s+)?to\s+"
+    rf"(?P<b>[^?.!,;]{{2,60}}?)\s+from\s+(?P<a>[^?.!,;]{{2,60}}?){_STOP}",
     re.I,
 )
+# "leaving the Comedy Cellar at 1:20am, how do I get to Bay Ridge"
+_LEAVE_TO = re.compile(
+    rf"\bleaving\s+(?:from\s+)?(?P<a>[^?.!,;]{{2,60}}?){_STOP}.{{0,60}}?"
+    rf"\b(?:get|go|getting|going|way)\s+(?:home\s+|back\s+)?to\s+"
+    rf"(?P<b>[^?.!,;]{{2,60}}?){_STOP}",
+    re.I,
+)
+# A flight out: the airport with its terminal, and where the reader starts.
+_FLIGHT_OUT = re.compile(
+    r"\b(?:fly(?:ing)?|flight)\b[^?.!;]{0,40}?\b(?:out of|from|at)\s+"
+    r"(?P<b>(?:jfk|kennedy|lga|la ?guardia|ewr|newark)(?: airport)?(?: terminal [a-c1-8])?)\b",
+    re.I,
+)
+_START = re.compile(
+    rf"\b(?:from|leaving(?: from)?|leave|i'?m (?:in|at|near)|we'?re (?:in|at|near)|"
+    rf"staying (?:in|at|near)|live (?:in|at|near))\s+"
+    rf"(?P<a>(?!jfk|kennedy|lga|la ?guardia|ewr|newark|at\b|by\b|home\b)[^?.!,;]{{2,50}}?){_STOP}",
+    re.I,
+)
+_DAY = re.compile(
+    r"\b(?:tomorrow|tonight|today|(?:mon|tues|wednes|thurs|fri|satur|sun)day)"
+    r"(?:\s+(?:morning|afternoon|evening|night))?\b",
+    re.I,
+)
+_AT = re.compile(r"\b\d{1,2}(?::\d\d)?\s*(?:am|pm)\b", re.I)
 _WHEN = re.compile(
     # "7am monday", "6:30 pm tomorrow": a time with its day after it
     r"\b\d{1,2}(?::\d\d)?\s*(?:am|pm)\s+(?:tomorrow|tonight|today|"
@@ -1090,11 +1116,20 @@ def _trip_prefetch(
     places. The model still reads the question and can plan again with other details."""
     from ..tools.trips import locate
 
-    m = _FROM_TO.search(question) or _TO_FROM.search(question)
-    if not m:
+    question = re.sub(r"\bSt\.\s", "St ", question)  # not the end of a sentence
+    m = _FROM_TO.search(question) or _TO_FROM.search(question) or _LEAVE_TO.search(question)
+    flight = None if m else _FLIGHT_OUT.search(question)
+    start = _START.search(question) if flight else None
+    if not m and not start:
         return None
     # "to LaGuardia terminal B thursday at 7am": the day is not part of the name.
-    a, b = (_WHEN.split(m.group(x), maxsplit=1)[0].strip() for x in ("a", "b"))
+    said = (m.group("a"), m.group("b")) if m else (start.group("a"), flight.group("b"))
+    a, b = (_DAY.split(_WHEN.split(x, maxsplit=1)[0], maxsplit=1)[0].strip() for x in said)
+    b = re.sub(r"^(?:get|go|getting|going)\s+(?:home\s+|back\s+)?to\s+", "", b, flags=re.I)
+    if flight and re.match(r"(?:ewr|newark)\b(?! airport)", b, re.I):
+        b = re.sub(r"^\w+", "Newark Airport", b)  # a flight from Newark, not a trip to the city
+    if len(a.split()) > 7 or len(b.split()) > 7:
+        return None
     if len(a) < 2 or len(b) < 2:
         return None
     if _HERE.match(a):
@@ -1122,6 +1157,16 @@ def _trip_prefetch(
 
     w = _WHEN.search(question)
     when = w.group(0) if w else "now"
+    # The day and the clock time can be far apart ("thursday afternoon, my flight is at 3pm").
+    at = list(_AT.finditer(question))
+    if len({x.group(0).lower() for x in at}) > 1:
+        return None  # which one is the trip's is for the model to read
+    if at:
+        days = [x for x in _DAY.finditer(question) if x.group(0).lower() != "today"]
+        day = min(days, key=lambda x: abs(x.start() - at[0].start()), default=None)
+        when = f"{day.group(0)} {at[0].group(0)}" if day else at[0].group(0)
+    elif start:
+        return None  # a flight without a time
     if parse_when(when) is None:
         return None  # a time the tool cannot read: the model words it itself
     args = {"origin": a, "destination": b, "mode": "all", "when": when}
