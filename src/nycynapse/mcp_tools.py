@@ -140,7 +140,7 @@ def restaurant_inspections(
 ) -> dict:
     """Health inspections of restaurants by name, or the worst in a neighborhood, ZIP code or
     around a place: current grade, pests found, closures. `problem` is any, mice, rats, roaches,
-    low_grade or closed."""
+    low_grade, closed, or clean for the ones that passed, best first."""
     return restaurants.restaurant_inspections(where, name, problem, cuisine, n).as_dict()
 
 

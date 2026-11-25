@@ -202,6 +202,20 @@ def test_a_restaurants_grade_is_its_newest_graded_inspection():
     assert line.startswith("Test's Kitchen, 1 Main Street, Queens (Thai)")
 
 
+def test_a_clean_place_passed_its_newest_visit_without_pests():
+    from nycynapse.tools import restaurants as R
+
+    def place(*visits):
+        return R._summed(list(visits), since="2025-11-24")
+
+    passed = _visit("2026-10-06", "7", "A", "10F")
+    assert R._wanted("clean", place(passed))
+    assert not R._wanted("clean", place(_visit("2026-10-06", "7", "A", "04L")))  # mice
+    # An A that a later visit put in doubt, and a B.
+    assert not R._wanted("clean", place(_visit("2026-11-01", "22"), passed))
+    assert not R._wanted("clean", place(_visit("2026-10-06", "16", "B", "10F")))
+
+
 def test_a_closure_stands_until_a_later_visit():
     from nycynapse.tools import restaurants as R
 

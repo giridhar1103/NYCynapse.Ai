@@ -23,7 +23,7 @@ DATASET = "43nn-pn8j"
 RADIUS_M = 500
 MONTHS = 36  # a good restaurant is seen about once a year, some later
 PESTS = {"04L": "mice", "04K": "rats", "04M": "roaches"}
-PROBLEMS = ("any", "mice", "rats", "roaches", "low_grade", "closed")
+PROBLEMS = ("any", "mice", "rats", "roaches", "low_grade", "closed", "clean")
 _COLUMNS = (
     "camis, dba, boro, building, street, cuisine_description, inspection_date, "
     "inspection_type, action, violation_code, score, grade, latitude, longitude"
@@ -147,7 +147,15 @@ def _badness(r: dict) -> float:
     return shut + {"C": 8, "B": 4}.get(r["grade"], 0) + 3 * vermin + newest / 10
 
 
+def _clean(r: dict) -> bool:
+    """Passed its newest inspection with an A, and no pests or closure in twelve months."""
+    passed = r["grade"] == "A" and r["newest"] == r["grade_day"] and (r["newest_score"] or 0) <= 13
+    return passed and not any(r["pests"].values()) and not r["closed"]
+
+
 def _wanted(problem: str, r: dict) -> bool:
+    if problem == "clean":
+        return _clean(r)
     if problem == "low_grade":
         return r["grade"] in ("B", "C")
     if problem == "closed":
@@ -236,14 +244,23 @@ def restaurant_inspections(
         lines = [f"Restaurants matching {name!r} ({about}): {len(found)}"]
     else:
         hits = [r for r in found if _wanted(problem, r)]
-        by = (lambda r: r["closed"]) if problem == "closed" else _badness
-        shown = sorted(hits, key=by, reverse=True)[:n]
+        if problem == "clean":
+            # The lowest score first, the newer inspection before the older.
+            hits.sort(key=lambda r: r["newest"], reverse=True)
+            shown = sorted(hits, key=lambda r: r["newest_score"] or 0)[:n]
+        else:
+            by = (lambda r: r["closed"]) if problem == "closed" else _badness
+            shown = sorted(hits, key=by, reverse=True)[:n]
         grades = {g: sum(r["grade"] == g for r in found) for g in "ABC"}
         none = len(found) - sum(grades.values())  # or pending
-        what = {"any": "problems", "low_grade": "a B or C", "closed": "a closure"}.get(
-            problem, problem
-        )
-        first = "newest" if problem == "closed" else "worst"
+        what = {
+            "any": "problems",
+            "low_grade": "a B or C",
+            "closed": "a closure",
+            "clean": "an A at the newest inspection and no mice, rats, roaches or closure in the "
+            "last 12 months",
+        }.get(problem, problem)
+        first = {"closed": "newest", "clean": "best"}.get(problem, "worst")
         lines = [
             f"{len(found)} restaurants inspected, area: {about}. Grades now: {grades['A']} A, "
             f"{grades['B']} B, {grades['C']} C, {none} pending or without one. "
@@ -307,7 +324,8 @@ TOOLS = [
         "Health inspections of restaurants, one line each with the current grade, pests found and "
         "closures: the ones named (`name`), or the worst in a neighborhood, ZIP code or around a "
         "place (`where`), optionally of one `cuisine`. Use for 'is X clean', 'bad grades in', "
-        "'mice', 'closed by the health department'. Set both `name` and `where` for one "
+        "'mice', 'closed by the health department'. For places that passed or are clean set "
+        "problem=clean: the best come first. Set both `name` and `where` for one "
         "restaurant in a known area. Use open_data only for other counts.",
         {
             "type": "object",

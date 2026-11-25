@@ -46,7 +46,8 @@ How to work
 - Bikes or docks right now needs `citibike_now`; the lake's Citi Bike figures are history.
 - Whether a restaurant is clean, its grade, or bad kitchens in an area needs
   `restaurant_inspections`; give the grade with its date, and answer each part asked (grades,
-  pests, closures).
+  pests, closures). A place to eat that is clean or passed needs its problem=clean, and the
+  answer names those places; a grade says nothing about the food.
 - A restroom or drinking fountain nearby needs `nearby`; check its listed hours against when
   the reader will be there.
 - "Anything going on near", "why is it backed up around", "is something happening at" needs
