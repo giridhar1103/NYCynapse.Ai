@@ -37,6 +37,25 @@ _TAIL = re.compile(
 )
 
 
+# An entrance by its street: the walkway from Brooklyn begins at Tillary and Adams.
+_DOORS = {("Brooklyn Bridge", "tillary"): (B, ("Adams St", "Tillary St"))}
+
+
+def _door(title: str, rest: str) -> dict | None:
+    """A walkway's entrance named with its street or its side ("entrance at Tillary St")."""
+    low = rest.lower()
+    if not re.search(r"\b(?:entrance|walkway|promenade|path)\b", low) or "station" in low:
+        return None
+    for (bridge, street), (side, at) in _DOORS.items():
+        if bridge == title and street in low:
+            hit = next((c for c in corners.find(*at) if c["borough"] == side), None)
+            if hit:
+                name = f"{title}, {side} entrance at {at[1]}"
+                return {"name": name, "lat": hit["lat"], "lon": hit["lon"]}
+    sides = {v for k, v in _SIDES.items() if re.search(rf"\b{k}\b", low)} & set(_ENDS[title])
+    return _spot(title, sides.pop()) if len(sides) == 1 else None
+
+
 def _spot(title: str, side: str) -> dict | None:
     at = _ENDS[title][side]
     if isinstance(at[0], float):
@@ -59,6 +78,9 @@ def find(text: str) -> dict | None:
             tail = _TAIL.match(re.sub(r"\s*\([^()]*\)\s*$", "", t[m.end() :]))
             if tail and not tail.group("side"):
                 tail = None
+        door = _door(title, t[m.end() :]) if m else None
+        if door and not (tail and tail.group("side")):
+            return door
         if not tail:
             continue
         side = _SIDES.get((tail.group("side") or "").lower())

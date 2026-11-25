@@ -1159,6 +1159,11 @@ def find_place(text: str) -> ToolResult:
     for f in [] if corner else d.get("features", []):
         p = f["properties"]
         lon, lat = f["geometry"]["coordinates"]
+        if not out:
+            from .placenames import in_its_park
+
+            spot = in_its_park(f)
+            lat, lon = spot["lat"], spot["lon"]
         out.append(
             {
                 "label": p.get("label"),

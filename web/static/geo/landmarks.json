@@ -613,5 +613,40 @@
 "name": "St. Patrick's Cathedral",
 "lat": 40.7586,
 "lon": -73.9763
+},
+"alice in wonderland": {
+"name": "Alice in Wonderland statue",
+"lat": 40.77504,
+"lon": -73.96653
+},
+"alice in wonderland statue": {
+"name": "Alice in Wonderland statue",
+"lat": 40.77504,
+"lon": -73.96653
+},
+"ramble": {
+"name": "The Ramble, Central Park",
+"lat": 40.77767,
+"lon": -73.97076
+},
+"central park ramble": {
+"name": "The Ramble, Central Park",
+"lat": 40.77767,
+"lon": -73.97076
+},
+"great lawn": {
+"name": "Great Lawn, Central Park",
+"lat": 40.78139,
+"lon": -73.96583
+},
+"central park great lawn": {
+"name": "Great Lawn, Central Park",
+"lat": 40.78139,
+"lon": -73.96583
+},
+"prospect park boathouse": {
+"name": "Prospect Park Boathouse",
+"lat": 40.66082,
+"lon": -73.96528
 }
 }

@@ -3547,3 +3547,50 @@ def test_the_end_of_a_stay_the_reader_asked_for_is_no_invented_time():
     assert _untraced_clocks("Leave about 12:46 PM.", res, "", ask) == []
     assert _untraced_clocks("The 12:46 PM train leaves.", res, "", ask) == ["12:46 PM"]
     assert _untraced_clocks("Leave about 12:46 PM.", res, "", "the museum") == ["12:46 PM"]
+
+
+def _pad(name, lat, lon, number, layer="venue"):
+    return {
+        "geometry": {"coordinates": [lon, lat]},
+        "properties": {
+            "label": f"{name}, New York, NY, USA",
+            "layer": layer,
+            "borough": "Manhattan",
+            "addendum": {"pad": {"bin": number}},
+        },
+    }
+
+
+def test_things_in_a_park_stand_where_they_stand(monkeypatch):
+    asked = []
+
+    def osm(q):
+        asked.append(q)
+        hits = {"BETHESDA TERRACE": (40.7742, -73.9711), "FT TRYON PARK": (40.8618, -73.9324)}
+        at = hits.get(q.split(",")[0])
+        return {"name": q.split(",")[0].title(), "lat": at[0], "lon": at[1]} if at else None
+
+    monkeypatch.setattr(placenames, "_osm", osm)
+    own = placenames.in_its_park(_pad("BETHESDA TERRACE", 40.78249, -73.96554, "1000000"))
+    assert (own["lat"], own["name"]) == (40.7742, "Bethesda Terrace")
+    park = placenames.in_its_park(_pad("FT TRYON PARK", 40.8621, -73.9323, "1000000"))
+    assert (park["lat"], park["name"]) == (40.8621, "FT TRYON PARK")  # the whole lot
+    lost = placenames.in_its_park(_pad("SOME STATUE", 40.78249, -73.96554, "1088651"))
+    assert lost["name"] == "near SOME STATUE"
+    n = len(asked)
+    placenames.in_its_park(_pad("DELACORTE THEATER", 40.7803, -73.9688, "1088650"))
+    placenames.in_its_park(_pad("120 BROADWAY", 40.708, -74.011, "1000000", "address"))
+    assert len(asked) == n  # buildings and addresses are where they say
+
+
+def test_a_landmark_in_a_named_park():
+    for said in ("Great Lawn, Central Park", "The Great Lawn, Central Park"):
+        assert placenames.locate(said)["name"] == "Great Lawn, Central Park"
+
+
+def test_a_walkway_entrance_by_its_street():
+    from nycynapse.tools import bridges
+
+    got = bridges.find("Brooklyn Bridge pedestrian entrance, Tillary St, Brooklyn")
+    assert got["name"] == "Brooklyn Bridge, Brooklyn entrance at Tillary St"
+    assert bridges.find("Brooklyn Bridge-City Hall station entrance") is None

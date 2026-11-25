@@ -539,6 +539,34 @@ def _same_address(features: list[dict], said: str | None) -> dict | None:
     return top
 
 
+# The middles of the biggest parks, which some of their statues and fountains also get.
+_PARK_MIDDLES = ((40.78249, -73.96554), (40.7473, -73.8433), (40.6614, -73.9696))
+
+
+def in_its_park(f: dict) -> dict:
+    """The place of an address search match. A thing without a building of its own (a terrace, a
+    statue, a whole zoo) has a placeholder building number and the middle of its lot, which for
+    Bethesda Terrace is the far end of Central Park: OpenStreetMap knows where it stands."""
+    p = f["properties"]
+    lon, lat = f["geometry"]["coordinates"]
+    name = (p.get("label") or "").split(",")[0]
+    spot = {"name": name, "lat": lat, "lon": lon}
+    number = str(((p.get("addendum") or {}).get("pad") or {}).get("bin") or "")
+    middle = any(T._metres(spot, {"lat": a, "lon": b}) < 25 for a, b in _PARK_MIDDLES)
+    if p.get("layer") != "venue" or not (middle or number.endswith("000000")):
+        return spot
+    if _norm(name) in _landmarks():
+        return dict(_landmarks()[_norm(name)])
+    hit = _osm(f"{name}, {p.get('borough') or 'New York'}")
+    if hit and _words(_norm(hit["name"])) == _words(_norm(name)):
+        far = T._metres(hit, spot)
+        return hit if 120 < far < 4000 else spot
+    whole = re.search(
+        r"\b(?:park|pk|playground|plgd|plaza|gardens?|field|square|beach)$", name.strip(), re.I
+    )
+    return spot if whole else {**spot, "name": f"near {name}"}
+
+
 @lru_cache(maxsize=1)
 def _landmarks() -> dict[str, dict]:
     """Well-known places with coordinates checked against OpenStreetMap, so the names people
@@ -609,6 +637,13 @@ def locate(text: str) -> dict | None:
     bridge = bridges.find(raw)
     if bridge:
         return bridge
+    # "Great Lawn, Central Park": a well-known thing in a well-known park.
+    thing, _, park = raw.partition(",")
+    marks = _landmarks()
+    if _norm(park).endswith("park") and _norm(thing) in marks and _norm(park) in marks:
+        spot, whole = marks[_norm(thing)], marks[_norm(park)]
+        if spot["name"] != whole["name"] and T._metres(spot, whole) < 2500:
+            return dict(spot)
     m = re.match(
         r"(.+?)\s+(?:station\s+|stop\s+)?on the\s+"
         r"([A-Z0-9](?:(?:\s*(?:,|/|and|&)\s*|\s+)[A-Z0-9])*)"
@@ -743,6 +778,8 @@ def locate(text: str) -> dict | None:
     town = _locate(last) if not streetish.search(last) and _norm(last) not in boroughs else None
 
     boro = _borough_named(", ".join(parts[1:]))
+    if "," not in raw and " in " in raw and not (town or boro or streetish.search(last)):
+        return _only_one(raw)  # "Alice in Wonderland" is a name, not an Alice somewhere
 
     def checked(found: dict, p: str) -> dict | None:
         z = T.zone_of(found["lat"], found["lon"])
@@ -1245,7 +1282,7 @@ def _locate(text: str) -> dict | None:
         # A word may be missing from an address, not from a name: "Nitehawk Prospect Park".
         close = len(want) >= 3 and len(want ^ got) <= 1 and (want <= got or re.match(r"\s*\d", raw))
         if want and not foreign and (want == got or close):
-            return {"name": label.split(",")[0], "lat": lat, "lon": lon}
+            return in_its_park(f)
     stop = _stop(raw)
     if stop:
         return stop
