@@ -24,7 +24,7 @@ import uuid
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 from ..llm import client as llm
@@ -644,7 +644,7 @@ class Agent:
         results = [r["result"] for r in t.results]
         return (
             _untraced_numbers(_uncite(answer), results, memory)
-            + _untraced_clocks(_uncite(answer), results, memory)
+            + _untraced_clocks(_uncite(answer), results, memory, t.question)
         )[:8]
 
     def _valid_calls(self, t: Turn, calls: list[dict]) -> list[dict]:
@@ -1010,7 +1010,7 @@ _STATUS = re.compile(
 )
 _WEATHER = re.compile(
     r"\b(?:rain|raining|rainy|snow|snowing|weather|forecast|temperature|umbrella|thunder|"
-    r"storms?|windy|heat|freezing|degrees)\b",
+    r"storms?|windy|heat|freezing|degrees|sunset|sunrise|golden hour)\b",
     re.I,
 )
 _LATER = re.compile(
@@ -1195,6 +1195,22 @@ def _days_ahead(question: str) -> int:
     return 7
 
 
+_WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+
+
+def _forecast_days(question: str, today: date | None = None) -> int:
+    """Days of forecast that reach the day asked about, today included: three days asked for on a
+    Wednesday stop at Friday."""
+    q = question.lower()
+    wd = (today or datetime.now(ZoneInfo("America/New_York")).date()).weekday()
+    if "next week" in q or "this week" in re.sub(r"this weekend", "", q):
+        return 7
+    reach = [(i - wd) % 7 + 1 for i, name in enumerate(_WEEKDAYS) if name in q]
+    if "weekend" in q:
+        reach.append(7 - wd)
+    return min(7, max([3, *reach]))
+
+
 def _prefetch(
     question: str, where: tuple[float, float] | None = None, places: dict | None = None
 ) -> list[dict]:
@@ -1220,7 +1236,7 @@ def _prefetch(
             args["days"] = _days_ahead(question)
         calls.append({"tool": "subway_alerts", "args": json.dumps(args)})
     if _WEATHER.search(question):
-        args = {"days": 3} if _LATER.search(question) else {"hours": 12}
+        args = {"days": _forecast_days(question)} if _LATER.search(question) else {"hours": 12}
         calls.append({"tool": "weather", "args": json.dumps(args)})
     return calls
 

@@ -663,7 +663,7 @@ def test_plain_live_questions_are_checked_before_the_first_model_call(monkeypatc
         "subway_alerts"
     ]
     assert json.loads(core._prefetch("delays on the A line?")[0]["args"]) == {"line": "A"}
-    assert json.loads(core._prefetch("will it rain saturday?")[0]["args"]) == {"days": 3}
+    assert json.loads(core._prefetch("will it rain tomorrow?")[0]["args"]) == {"days": 3}
     assert core._prefetch("Which neighborhoods had the most noise complaints?") == []
     assert core._prefetch("how do I get to the A train from here?") == []  # no status word
     agent, seen = _agent(
@@ -3473,6 +3473,12 @@ def test_an_answer_for_someone_in_danger_begins_with_the_number():
             -73.9898,
         ),
         ("Manhattan Bridge Brooklyn side", "Manhattan Bridge, Brooklyn side", 40.6995, -73.9868),
+        (
+            "Brooklyn Bridge, Brooklyn side (Tillary)",
+            "Brooklyn Bridge, Brooklyn side",
+            40.70,
+            -73.99,
+        ),
         ("59th street bridge, Queens side", "Queensboro Bridge, Queens side", 40.7510, -73.9403),
         ("GWB, Fort Lee side", "George Washington Bridge, New Jersey side", 40.8541, -73.9665),
     ],
@@ -3496,6 +3502,48 @@ def test_a_bridge_without_a_side_is_the_end_nearer_the_trip():
         "Brooklyn Bridge-City Hall station",
         "GWB bus station",
         "Brooklyn Bridge Park, Pier 6",
+        "Brooklyn Bridge Park (Brooklyn)",
+        "Brooklyn Bridge (the bar)",
         "Manhattan Bridge Arch Plaza",
     ):
         assert bridges.find(other) is None, other
+
+
+def test_sunset_needs_no_search():
+    from datetime import date
+
+    from nycynapse.agent import core
+    from nycynapse.tools import sun
+
+    assert sun.line(date(2026, 11, 28)) == "Sat Nov 28: sunrise 6:57 AM, sunset 4:30 PM"
+    assert sun.line(date(2026, 6, 21)) == "Sun Jun 21: sunrise 5:25 AM, sunset 8:30 PM"
+    calls = core._prefetch("what time is sunset tomorrow")
+    assert [c["tool"] for c in calls] == ["weather"]
+
+
+@pytest.mark.parametrize(
+    "said, days",
+    [
+        ("will it rain saturday", 4),
+        ("rain tomorrow?", 3),
+        ("weather this weekend", 5),
+        ("is it windy this week", 7),
+        ("rain on tuesday", 7),
+    ],
+)
+def test_the_forecast_reaches_the_day_asked_about(said, days):
+    from datetime import date
+
+    from nycynapse.agent import core
+
+    assert core._forecast_days(said, date(2026, 11, 25)) == days  # a Wednesday
+
+
+def test_the_end_of_a_stay_the_reader_asked_for_is_no_invented_time():
+    from nycynapse.agent.grounding import _untraced_clocks
+
+    res = [ToolResult(summary="arrive 10:46 AM at Eastern Pkwy")]
+    ask = "about 2 hours in the Brooklyn Museum"
+    assert _untraced_clocks("Leave about 12:46 PM.", res, "", ask) == []
+    assert _untraced_clocks("The 12:46 PM train leaves.", res, "", ask) == ["12:46 PM"]
+    assert _untraced_clocks("Leave about 12:46 PM.", res, "", "the museum") == ["12:46 PM"]

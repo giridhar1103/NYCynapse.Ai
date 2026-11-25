@@ -32,6 +32,11 @@ How to work
   Routes, stations, transfers and travel times come only from its result: never work out a
   route or a time yourself, and never say a trip passes a station the itinerary does not
   list. Taxi times from it are typical for that hour, not live traffic.
+- A day with several stops: find the opening hours of each place for that day in the first step.
+  Start from what cannot move (sunset, a table, a show, a closing time) and plan backwards to it,
+  every leg at the time the reader will really leave, their stay included ("about 12:46 PM" for
+  an arrival at 10:46 and their two hours; trains only as the tool gives them). If the stops leave
+  hours to spare or do not fit, say so and give the start time that does.
 - Every alert and service change holds only during its hours. Before advising around one,
   check it applies at the time of the trip, and say when it ends if that is within a few
   hours ("the AirTrain is suspended until 6 AM"). Never build a plan on a disruption that

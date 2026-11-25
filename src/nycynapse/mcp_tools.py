@@ -37,8 +37,8 @@ def tool(fn):
 @tool
 def weather(hours: int = 6, days: int = 0, near: str | None = None, day: str | None = None) -> dict:
     """Weather now and for the next hours in each borough (and a place `near`, first), a daily
-    forecast up to 7 days ahead when `days` is set, one day hour by hour when `day` is set, plus
-    National Weather Service alerts."""
+    forecast up to 7 days ahead when `days` is set, one day hour by hour when `day` is set, sunrise
+    and sunset, plus National Weather Service alerts."""
     return live.weather(hours, days, near, day).as_dict()
 
 

@@ -64,10 +64,32 @@ def _minutes_of_day(h: int, m: int, ap: str) -> int:
     return (h % 12 + (12 if ap.lower() == "p" else 0)) * 60 + m
 
 
-def _untraced_clocks(answer: str, results: list[ToolResult], memory: str = "") -> list[str]:
+_STAY = re.compile(
+    r"\b(?P<n>\d{1,2}(?:\.5)?|an?|one|two|three|four|half an|couple of|couple)\s+"
+    r"(?P<unit>hours?|hrs?|minutes?|mins?)\b",
+    re.I,
+)
+_COUNT = {"a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "half an": 0.5}
+_ABOUT = re.compile(r"(?:\babout|\baround|\broughly|\bat about|~)\s*$", re.I)
+
+
+def _stays(text: str) -> list[int]:
+    """Minutes the reader said they would spend somewhere ("2 hours in the museum")."""
+    out = []
+    for m in _STAY.finditer(text):
+        said = m.group("n").lower()
+        n = _COUNT.get(said) or (2 if said.startswith("couple") else float(said))
+        out.append(round(n * (60 if m.group("unit").lower().startswith("h") else 1)))
+    return [x for x in out if 15 <= x <= 480]
+
+
+def _untraced_clocks(
+    answer: str, results: list[ToolResult], memory: str = "", question: str = ""
+) -> list[str]:
     """Clock times in the answer ("the 10:14 PM train") that no tool gave, within a minute.
     Tools write times as "10:14 PM" or as ISO timestamps, which are read in New York time
-    ("2026-10-24T22:47:00Z" is 6:47 PM). Returns the times as written, so they can be dropped."""
+    ("2026-10-24T22:47:00Z" is 6:47 PM). "About 12:46 PM" may also be a time they gave plus the
+    stay the reader asked for; a train never is. Returns the times as written, to be dropped."""
     from zoneinfo import ZoneInfo
 
     ny = ZoneInfo("America/New_York")
@@ -85,9 +107,12 @@ def _untraced_clocks(answer: str, results: list[ToolResult], memory: str = "") -
                 continue
             t = t.astimezone(ny) if t.tzinfo else t
             known.add(t.hour * 60 + t.minute)
+    ends = {(k + s) % 1440 for k in known for s in _stays(question)}
     out = []
     for m in _AMPM.finditer(answer):
         x = _minutes_of_day(int(m.group(1)), int(m.group(2)), m.group(3))
+        if x in ends and _ABOUT.search(answer[: m.start()]):
+            continue
         if not any(abs(x - k) <= 1 or abs(x - k) >= 1439 for k in known):
             out.append(m.group(0))
     return out

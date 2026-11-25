@@ -16,13 +16,13 @@ import re
 import threading
 import time
 from contextlib import suppress
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import httpx
 
 from ..config import REPO
-from . import Tool, ToolResult, areas, failed
+from . import Tool, ToolResult, areas, failed, sun
 from .http import UA, cached, checked, env, get_json
 
 NY = ZoneInfo("America/New_York")
@@ -214,6 +214,8 @@ def weather(
         )
     as_of = data[0]["current"]["time"]
     daily = []
+    today = _now_ny().date()
+    suns = [today + timedelta(days=i) for i in range(max(days, 2))]
     if days:
         per_boro = [d["daily"] for d in data]
         city = per_boro[0]  # the place asked about, else Manhattan near Central Park
@@ -248,10 +250,13 @@ def weather(
         from .trips import parse_when
 
         at = parse_when(day)
+        if at and at.date() not in suns:
+            suns.append(at.date())
         if at and 0 <= (at.date() - _now_ny().date()).days <= 14:
             first = next(iter(points))
             with suppress(Exception):  # the rest of the forecast stands without it
                 lines.append(_by_hour(first, *points[first], at.date()))
+    lines.append("Sun in New York City:\n" + "\n".join(sun.line(d) for d in suns))
     alerts = weather_alerts()
     summary = (
         f"Weather in New York City at {as_of} local time (Open-Meteo model data):\n"
@@ -275,6 +280,11 @@ def weather(
                 "title": "Open-Meteo forecast",
                 "url": "https://open-meteo.com",
                 "updated_at": as_of,
+            },
+            {
+                "kind": "live",
+                "title": "Sunrise and sunset by NOAA's solar equations",
+                "url": "https://gml.noaa.gov/grad/solcalc/",
             },
             *alerts.sources,
         ],
@@ -1626,7 +1636,8 @@ TOOLS = [
         "active National Weather Service alerts. Use for current or upcoming weather; the lake "
         "only has past weather. For 'this week', 'Friday' or 'the next 5 days' set days. For "
         "some hours of a day (a parade, a game, a run, an evening) also set `day` (Thursday, "
-        "2026-11-26): it gives that day hour by hour with wind gusts.",
+        "2026-11-26): it gives that day hour by hour with wind gusts. Sunrise and sunset come with "
+        "it, for any day: never search for them.",
         {
             "type": "object",
             "properties": {

@@ -55,6 +55,10 @@ def find(text: str) -> dict | None:
     for pattern, title in _NAMES.items():
         m = re.match(pattern, t, re.I)
         tail = _TAIL.match(t[m.end() :]) if m else None
+        if m and not tail:  # "Brooklyn side (Cadman Plaza)": the side says enough
+            tail = _TAIL.match(re.sub(r"\s*\([^()]*\)\s*$", "", t[m.end() :]))
+            if tail and not tail.group("side"):
+                tail = None
         if not tail:
             continue
         side = _SIDES.get((tail.group("side") or "").lower())
