@@ -3,6 +3,7 @@ in Postgres (search and value index), and the read-only lake connection."""
 
 import re
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from functools import cached_property
 
 import duckdb
@@ -46,6 +47,16 @@ GENERIC = {
     "area",
     "neighborhood",
 }
+
+
+def last_day(end: datetime | None) -> str:
+    """The end of a table's records in New York time, with the last whole day when they stop during
+    one: a reader comparing two years needs the same days of both."""
+    if end is None:
+        return "now"
+    if (end.hour, end.minute) == (0, 0) or end.hour == 23:
+        return f"{end:%Y-%m-%d}"
+    return f"{end:%Y-%m-%d} (last whole day {end - timedelta(days=1):%Y-%m-%d})"
 
 
 @dataclass
@@ -101,12 +112,13 @@ class Context:
     def coverage(self) -> dict[str, str]:
         """What each workspace's tables cover in time, from the lake's own freshness table."""
         rows = self.lake.execute(
-            "SELECT domain, table_name, CAST(coverage_start AS DATE), CAST(coverage_end AS DATE) "
+            "SELECT domain, table_name, coverage_start AT TIME ZONE 'America/New_York', "
+            "coverage_end AT TIME ZONE 'America/New_York' "
             "FROM gold.ops_source_freshness WHERE coverage_start IS NOT NULL ORDER BY 1, 2"
         ).fetchall()
         out: dict[str, list[str]] = {}
         for domain, table, start, end in rows:
-            out.setdefault(domain, []).append(f"{table} {start} to {end}")
+            out.setdefault(domain, []).append(f"{table} {start:%Y-%m-%d} to {last_day(end)}")
         return {k: "; ".join(v) for k, v in out.items()}
 
     @cached_property

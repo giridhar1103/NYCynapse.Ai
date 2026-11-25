@@ -3637,3 +3637,13 @@ def test_a_railroad_ride_is_not_called_step_free():
     assert bus["step_free_ok"] is True and rail["step_free_ok"] is None
     assert "not checked" in rail["access"]
     assert trips._step_free_first([rail]) == [rail]
+
+
+def test_coverage_ends_on_a_whole_day():
+    from datetime import datetime
+
+    from nycynapse.pipeline.context import last_day
+
+    assert last_day(datetime(2026, 11, 11, 23)) == "2026-11-11"  # the last hour of that day
+    assert last_day(datetime(2026, 8, 31, 0)) == "2026-08-31"
+    assert last_day(datetime(2026, 11, 25, 13, 14)) == "2026-11-25 (last whole day 2026-11-24)"

@@ -93,7 +93,8 @@ How to work
   show; say what each kind of data would mean.
 - `ask_lake` takes one precise question with an explicit place and period, for example
   "How many Citi Bike rides started in Williamsburg in August 2026?". Never send it the
-  reader's whole message if it mixes subjects. Keep the reader's own terms: if they ask about
+  reader's whole message if it mixes subjects. To compare this year with last year, name the
+  same days of both, up to the last whole day listed below for that table. Keep the reader's own terms: if they ask about
   neighborhoods, ask the lake for neighborhoods, not ZIP codes or community districts. "New York" or "NYC" means the whole city, not a
   neighborhood called New York.
 - If a tool fails, read the error and choose: retry once with fixed arguments, use another
