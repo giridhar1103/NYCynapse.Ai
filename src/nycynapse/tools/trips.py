@@ -226,39 +226,34 @@ def _slack() -> dict:
 
 
 def _plan(a: dict, b: dict, when: datetime, arrive_by: bool, n: int = 5) -> list[dict]:
-    d = get_json(
-        TRANSITOUS,
-        {
-            "fromPlace": f"{a['lat']:.5f},{a['lon']:.5f}",
-            "toPlace": f"{b['lat']:.5f},{b['lon']:.5f}",
-            "time": when.astimezone(NY).isoformat(timespec="minutes"),
-            "arriveBy": "true" if arrive_by else "false",
-            # Step-free trips drop routes with stairs, so they need more to choose from.
-            "numItineraries": n * (4 if _STEP_FREE.get() else 2),
-            **_slack(),
-        },
-        ttl_s=120,
-    )
-    its = list(d.get("itineraries") or [])
+    base = {
+        "fromPlace": f"{a['lat']:.5f},{a['lon']:.5f}",
+        "toPlace": f"{b['lat']:.5f},{b['lon']:.5f}",
+        "time": when.astimezone(NY).isoformat(timespec="minutes"),
+        "arriveBy": "true" if arrive_by else "false",
+        **_slack(),
+    }
+
+    def simplest(cap: int) -> list[dict]:
+        params = {**base, "numItineraries": n, "maxTransfers": cap}
+        return get_json(TRANSITOUS, params, ttl_s=120).get("itineraries") or []
+
+    # Most longer trips change trains, and then the one-seat rides are asked for as well: both at
+    # once, instead of one after the other.
+    early = None
+    if _metres(a, b) > 3000:
+        pool = ThreadPoolExecutor(max_workers=1)
+        early = pool.submit(simplest, 0)
+        pool.shutdown(wait=False)
+    # Step-free trips drop routes with stairs, so they need more to choose from.
+    many = {**base, "numItineraries": n * (4 if _STEP_FREE.get() else 2)}
+    its = list(get_json(TRANSITOUS, many, ttl_s=120).get("itineraries") or [])
     # When every option changes trains, ask for the simplest ones too: one seat all the way (a
     # reader with bags or a stroller takes the direct F over a faster change), or one change.
     fewest = min((it.get("transfers", 0) for it in its), default=0)
     for cap in ([0] if fewest >= 1 else []) + ([1] if fewest >= 2 else []):
         try:
-            d2 = get_json(
-                TRANSITOUS,
-                {
-                    "fromPlace": f"{a['lat']:.5f},{a['lon']:.5f}",
-                    "toPlace": f"{b['lat']:.5f},{b['lon']:.5f}",
-                    "time": when.astimezone(NY).isoformat(timespec="minutes"),
-                    "arriveBy": "true" if arrive_by else "false",
-                    "numItineraries": n,
-                    "maxTransfers": cap,
-                    **_slack(),
-                },
-                ttl_s=120,
-            )
-            its += d2.get("itineraries") or []
+            its += early.result(timeout=20) if early and cap == 0 else simplest(cap)
         except Exception:  # noqa: BLE001
             pass
 
