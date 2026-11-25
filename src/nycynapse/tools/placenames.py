@@ -519,7 +519,7 @@ def _corner_by_street(a: str, b: str, area: str | None) -> dict | None:
     return {"name": f"near {a.strip()} and {b.strip()}", "lat": best[1], "lon": best[2]}
 
 
-def _same_address(features: list[dict], said: str | None) -> dict | None:
+def _same_address(features: list[dict], said: str | None, name: str = "") -> dict | None:
     """The same street address exists in several boroughs (233 5th Ave is in Manhattan and in
     Park Slope). Of the matches with the same wording, take the one in the borough the reader
     named, or Manhattan, as for street corners."""
@@ -530,6 +530,9 @@ def _same_address(features: list[dict], said: str | None) -> dict | None:
     def first(f: dict) -> str:
         return (f["properties"].get("label") or "").split(",")[0].strip().lower()
 
+    exact = [f for f in features if first(f) == (name or "").strip().lower()]
+    if exact and not re.match(r"\d", first(top)):
+        return exact[0]  # STATEN ISLAND ZOO, listed after STATEN IS ZOO
     if not said and not re.match(r"\d", first(top)):
         return top  # a name, not an address: Pratt Institute's first match is Brooklyn's
     want = said or "manhattan"
@@ -562,7 +565,9 @@ def in_its_park(f: dict) -> dict:
         far = T._metres(hit, spot)
         return hit if 120 < far < 4000 else spot
     whole = re.search(
-        r"\b(?:park|pk|playground|plgd|plaza|gardens?|field|square|beach)$", name.strip(), re.I
+        r"\b(?:park|pk|playground|plgd|plaza|gardens?|field|square|beach|zoo|cemetery)$",
+        name.strip(),
+        re.I,
     )
     return spot if whole else {**spot, "name": f"near {name}"}
 
@@ -1260,7 +1265,7 @@ def _locate(text: str) -> dict | None:
                 {"text": text, "size": 5},
                 ttl_s=86400,
             )
-            f = _same_address(d.get("features") or [], said)
+            f = _same_address(d.get("features") or [], said, raw)
         except Exception:  # noqa: BLE001 - fall through to the regional search
             f = None
         if f and _words(n) <= _words(_norm(f["properties"].get("label", "").split(",")[0])) | {

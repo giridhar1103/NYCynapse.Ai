@@ -3594,3 +3594,46 @@ def test_a_walkway_entrance_by_its_street():
     got = bridges.find("Brooklyn Bridge pedestrian entrance, Tillary St, Brooklyn")
     assert got["name"] == "Brooklyn Bridge, Brooklyn entrance at Tillary St"
     assert bridges.find("Brooklyn Bridge-City Hall station entrance") is None
+
+
+def test_a_place_far_from_every_stop_is_walked_to(monkeypatch):
+    from datetime import datetime
+
+    from nycynapse.tools import trips
+
+    asked = []
+
+    def planned(a, b, when, arrive_by):
+        asked.append(trips._slack())
+        far = "maxPostTransitTime" in asked[-1]
+        ts = when.timestamp()
+        got = {"minutes": (55, 55), "arrive_ts": ts + 3300, "leave_ts": ts, "legs": []}
+        return ([got] if far else []), []
+
+    monkeypatch.setattr(trips, "_transit", planned)
+    monkeypatch.setattr(trips, "_first_ride_ts", lambda o: o["leave_ts"])
+    a, b = {"name": "A", "lat": 40.75, "lon": -73.98}, {"name": "B", "lat": 40.745, "lon": -73.849}
+    when = datetime(2026, 11, 27, 11, tzinfo=trips.NY)
+    options, _ = trips.transit(a, b, when, False)
+    assert len(options) == 1 and len(asked) == 2
+    assert "maxPostTransitTime" not in trips._slack()
+
+
+def test_the_name_asked_for_comes_before_its_abbreviation():
+    both = [_pad("STATEN IS ZOO", 40.6, -74.1, "5"), _pad("STATEN ISLAND ZOO", 40.6, -74.1, "5")]
+    got = placenames._same_address(both, None, "Staten Island Zoo")
+    assert got["properties"]["label"].startswith("STATEN ISLAND ZOO")
+
+
+def test_a_railroad_ride_is_not_called_step_free():
+    from nycynapse.tools import trips
+
+    def option(mode):
+        leg = {"mode": mode, "name": "LIRR", "from": "Woodside", "to": "Mets-Willets Point"}
+        return {"lines": [{"mode": "walk"}, leg]}
+
+    rail, bus = option("train"), option("bus")
+    assert trips._step_free_first([rail, bus]) == [bus]  # the sure one
+    assert bus["step_free_ok"] is True and rail["step_free_ok"] is None
+    assert "not checked" in rail["access"]
+    assert trips._step_free_first([rail]) == [rail]

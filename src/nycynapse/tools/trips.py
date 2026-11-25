@@ -215,14 +215,16 @@ def _leg_text(leg: dict, end: str) -> str:
 
 # A trip for someone who cannot rush or use stairs gets more time at every change.
 _STEP_FREE: ContextVar[bool] = ContextVar("step_free", default=False)
+_FAR_WALK: ContextVar[bool] = ContextVar("far_walk", default=False)
 
 
 def _slack() -> dict:
     """Time allowed to change trains: the planner's own minimum is a sprint between
     platforms, so at least 3 minutes, and 5 at double pace for a step-free trip."""
+    far = {"maxPreTransitTime": 1800, "maxPostTransitTime": 1800} if _FAR_WALK.get() else {}
     if _STEP_FREE.get():
-        return {"minTransferTime": 5, "transferTimeFactor": 2}
-    return {"minTransferTime": 3}
+        return {"minTransferTime": 5, "transferTimeFactor": 2, **far}
+    return {"minTransferTime": 3, **far}
 
 
 def _plan(a: dict, b: dict, when: datetime, arrive_by: bool, n: int = 5) -> list[dict]:
@@ -255,6 +257,19 @@ def _plan(a: dict, b: dict, when: datetime, arrive_by: bool, n: int = 5) -> list
         try:
             its += early.result(timeout=20) if early and cap == 0 else simplest(cap)
         except Exception:  # noqa: BLE001
+            pass
+
+    # Every bus kneels or has a ramp: the one sure way without stairs, however long the walk.
+    if _STEP_FREE.get():
+        buses = {"transitModes": "BUS", "maxPreTransitTime": 1800, "maxPostTransitTime": 1800}
+        try:
+            its += (
+                get_json(TRANSITOUS, {**base, **buses, "numItineraries": n}, ttl_s=120).get(
+                    "itineraries"
+                )
+                or []
+            )
+        except Exception:  # noqa: BLE001 - the other options stand without it
             pass
 
     its = [it for it in its if not _cancelled(it)]
@@ -622,6 +637,19 @@ def _nearest_station(p: dict) -> dict | None:
 def transit(a: dict, b: dict, when: datetime, arrive_by: bool) -> tuple[list[dict], list[str]]:
     options, notes = _transit(a, b, when, arrive_by)
     options = _sane(options)
+    if (not options and _metres(a, b) > 1500) or _hours_away(options, when, arrive_by):
+        # The planner walks 15 minutes at most to or from a stop, unless asked for more: the
+        # Queens Zoo is farther than that, and no trip to it was found at any hour.
+        token = _FAR_WALK.set(True)
+        try:
+            farther, more = _transit(a, b, when, arrive_by)
+            farther = _sane(farther)
+        except Exception:  # noqa: BLE001 - keep what there is
+            farther, more = [], []
+        finally:
+            _FAR_WALK.reset(token)
+        if farther and not _hours_away(farther, when, arrive_by):
+            return farther, more
     if not _hours_away(options, when, arrive_by) or a.get("airport") or b.get("airport"):
         return options, notes
     # Ends the planner cannot reach on foot (inside a gated yard, a pier, a park) send it to
@@ -1308,7 +1336,16 @@ def _step_free_first(options: list[dict]) -> list[dict]:
 
     def check(o: dict) -> int:
         seen, texts, bad, subway = set(), [], 0, False
+        unsure = 0
         for lg in o.get("lines") or []:
+            if lg.get("mode") not in ("subway", "bus", "ferry", "walk"):
+                # A railroad station nobody checked is not a step-free one.
+                unsure += 1
+                texts.append(
+                    f"stairs at the {lg.get('name') or 'rail'} stations ({lg.get('from')} and "
+                    f"{lg.get('to')}) were not checked"
+                )
+                continue
             if lg.get("mode") != "subway":
                 continue
             subway = True
@@ -1341,8 +1378,8 @@ def _step_free_first(options: list[dict]) -> list[dict]:
             if not subway
             else "could not be checked"
         )
-        o["step_free_ok"] = not bad
-        return bad
+        o["step_free_ok"] = False if bad else None if unsure else True
+        return 2 * bad + unsure
 
     bad = {id(o): check(o) for o in options}
     good = [o for o in options if not bad[id(o)]]
