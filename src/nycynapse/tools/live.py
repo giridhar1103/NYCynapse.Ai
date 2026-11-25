@@ -1406,7 +1406,7 @@ DATASETS = {
         "any of "
         "vehicle_type_code1 to vehicle_type_code5 is a bike or e-bike (upper(...) like '%BIKE%' "
         "or '%BICYCLE%'); count with select count(*), never by counting listed rows",
-        "crash_date, crash_time, borough, zip_code, on_street_name, location, "
+        "crash_date, crash_time, on_street_name, location, "
         "number_of_persons_injured, number_of_persons_killed, number_of_pedestrians_injured, "
         "number_of_cyclist_injured, number_of_cyclist_killed, number_of_motorist_injured, "
         "contributing_factor_vehicle_1, vehicle_type_code1, vehicle_type_code2, "
@@ -1531,6 +1531,13 @@ def open_data(
     for k, v in (("$select", select), ("$where", where), ("$group", group), ("$order", order)):
         if v.strip():
             params[k] = v.strip()
+    if dataset == "collisions" and re.search(r"\b(?:borough|zip_code)\b", f"{where} {group}", re.I):
+        # 8% of the deaths of 2025 have no borough; on Staten Island it is half of them.
+        return failed(
+            "the city leaves borough and ZIP code blank on many crashes, so counts by them are too "
+            "low: ask_lake has the borough of every crash from its location, and area or "
+            "within_circle count by location here"
+        )
     drawn = None
     if area.strip():
         if dataset not in _POINT:

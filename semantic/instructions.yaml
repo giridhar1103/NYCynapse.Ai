@@ -52,6 +52,13 @@ instructions:
     applies_to: [rideshare_taxi]
     text: >
       Taxi tips are only recorded for card payments, so tip questions about taxis use card trips.
+  - id: usual_price
+    applies_to: [rideshare_taxi]
+    text: >
+      What a ride usually or typically costs, and whether it costs more than before, is the median
+      (typical taxi total, typical app fare). Use the average only when the question says average.
+      In some months of 2025 the totals of cash taxi trips are recorded wrongly and raise the
+      average.
   - id: ambiguous_safety
     applies_to: [safety, city_services]
     text: >

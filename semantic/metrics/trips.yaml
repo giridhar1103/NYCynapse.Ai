@@ -64,10 +64,21 @@ metrics:
     unit: dollars
     format: currency
     additivity: non_additive
-    synonyms: [average fare, price of a ride, Uber price]
+    synonyms: [average fare, average Uber fare]
     bounds: [0, 500]
     sources:
       - {model: rideshare_trips, expression: avg(rider_paid_usd), filters: [plausible]}
+
+  - id: median_app_fare_usd
+    label: Typical app fare
+    description: Median paid by app riders per trip before tips, including tolls, taxes and fees. What a ride usually costs; a few very long or wrongly recorded trips do not move it.
+    unit: dollars
+    format: currency
+    additivity: non_additive
+    synonyms: [usual Uber price, typical Uber fare, price of a ride, Uber price, what an Uber usually costs]
+    bounds: [0, 500]
+    sources:
+      - {model: rideshare_trips, expression: median(rider_paid_usd), filters: [plausible]}
 
   - id: avg_driver_pay_usd
     label: Average driver pay
@@ -108,10 +119,21 @@ metrics:
     unit: dollars
     format: currency
     additivity: non_additive
-    synonyms: [average taxi fare, cab price]
+    synonyms: [average taxi fare]
     bounds: [0, 500]
     sources:
       - {model: taxi_trips, expression: avg(total_usd), filters: [plausible]}
+
+  - id: median_taxi_total_usd
+    label: Typical taxi total
+    description: Median total charged per taxi trip, with tolls, fees and card tips, without cash tips. What a cab usually costs; some months hold wrongly recorded cash totals that move the average and not the median.
+    unit: dollars
+    format: currency
+    additivity: non_additive
+    synonyms: [typical taxi fare, usual cab price, cab price, what a taxi usually costs]
+    bounds: [0, 500]
+    sources:
+      - {model: taxi_trips, expression: median(total_usd), filters: [plausible]}
 
   - id: taxi_card_tip_pct
     label: Taxi tip on card payments

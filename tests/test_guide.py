@@ -3183,3 +3183,14 @@ def test_a_skipped_station_is_planned_around_on_foot(monkeypatch):
     [(back, _)] = T._around_skipped(b, a, when, False, [bad])
     assert back["steps"][0] == "walk 14 min to Atlantic Av"
     assert back["leave_ts"] == plain["leave_ts"] - 14 * 60 and back["lines"][0]["mode"] == "walk"
+
+
+def test_crashes_are_not_counted_by_the_columns_the_city_leaves_blank(monkeypatch):
+    from nycynapse.tools import live
+
+    monkeypatch.setattr(live, "get_json", lambda *a, **k: [])
+    by_borough = live.open_data("collisions", "borough, count(*)", "", "borough")
+    in_one = live.open_data("collisions", "count(*)", "borough = 'QUEENS'")
+    assert not by_borough.ok and not in_one.ok and "ask_lake" in in_one.error
+    assert live.open_data("collisions", "count(*)", "crash_date >= '2026-01-01'").ok
+    assert live.open_data("311", "count(*)", "borough = 'QUEENS'").ok
