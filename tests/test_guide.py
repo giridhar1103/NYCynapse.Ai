@@ -3963,3 +3963,17 @@ def test_a_date_in_the_question_wins_over_a_bare_weekday(monkeypatch):
         core._said_date(q, {"when": "friday 9am"})["when"] == "friday 9am"
     )  # another day asked for
     assert core._said_date("to JFK tonight 11pm", args) == args  # no date in the question
+
+
+def test_the_card_opens_on_the_option_the_answer_leads_with():
+    from nycynapse.agent import core
+
+    def opt(leave, arrive):
+        return {"leave": leave, "arrive": arrive, "legs": [{"depart": leave}]}
+
+    options = [opt("8:18 AM", "8:59 AM"), opt("8:15 AM", "8:56 AM"), opt("8:02 AM", "8:52 AM")]
+    trip = {"type": "trip", "default": "transit", "modes": {"transit": {"options": options}}}
+    led = "I'd take the M60-SBS: leave 8:02 AM and arrive at 8:52. Or the N at 8:15."
+    assert core._with_pick(trip, led)["pick"] == 2
+    assert "pick" not in core._with_pick(trip, "Take the W at 8:18 AM.")
+    assert "pick" not in core._with_pick(trip, "No times here.")

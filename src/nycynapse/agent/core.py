@@ -907,7 +907,7 @@ class Agent:
             # A trip answer shows one trip, the one it is about, and nothing else that would
             # compete with its route on the map.
             layers = [x for x in layers if x.get("type") not in ("trip", "routes", "points")]
-            layers.append(_shown_trip(trips, answer))
+            layers.append(_with_pick(_shown_trip(trips, answer), answer))
         # Highlights a tool drew while working (the top neighborhoods by rent, say) are not
         # the answer's places: the final map keeps only what the answer names.
         layers = [x for x in layers if x.get("type") != "highlight"]
@@ -1115,6 +1115,19 @@ def _shown_trip(trips: list[dict], answer: str) -> dict:
         return (len(times), -min(map(said.get, times), default=0))
 
     return max(enumerate(trips), key=lambda x: (*told(x[1]), x[0]))[1]
+
+
+def _with_pick(trip: dict, answer: str) -> dict:
+    """The trip with the option the answer leads with marked, so the card opens on it: the first
+    clock time in the answer that only one option has (for a deadline the card's first option is
+    the latest to leave, which the answer may not recommend)."""
+    options = ((trip.get("modes") or {}).get("transit") or {}).get("options") or []
+    times = [set(_SAID_TIME.findall(json.dumps(o))) for o in options]
+    for m in _BARE_TIME.finditer(answer or ""):
+        have = [i for i, ts in enumerate(times) if m.group(1) in ts]
+        if len(have) == 1:
+            return {**trip, "pick": have[0]} if have[0] else trip
+    return trip
 
 
 _WHOLE = {"brooklyn", "queens", "the bronx", "bronx", "staten island", "new jersey", "nj"}

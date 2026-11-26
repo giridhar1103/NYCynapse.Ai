@@ -392,7 +392,7 @@ class Guide {
             // The trip the answer talks about replaces the last one drawn on the way.
             if (d.trip) {
               view.layers = view.layers.filter((L) => L.type !== "trip").concat([d.trip]);
-              try { this.map?.showTrip(d.trip); } catch (e) { /* the card still shows it */ }
+              try { this.map?.showTrip(d.trip, { i: d.trip.default === "transit" ? d.trip.pick || 0 : 0 }); } catch (e) { /* the card still shows it */ }
             }
             d.personal = this.personal;
             // Only the answer's own places stay highlighted, not what a tool drew on the way.
@@ -521,7 +521,8 @@ function stepList(legs, trip) {
 
 function tripPanel(trip, draw) {
   const modes = Object.keys(trip.modes || {});
-  const state = { mode: trip.default || modes[0], i: 0 };
+  // The option the answer leads with, when the server could tell.
+  const state = { mode: trip.default || modes[0], i: trip.default === "transit" ? trip.pick || 0 : 0 };
   const box = el("div", { class: "trip" });
   const head = el("div", { class: "trip-head" },
     el("span", { class: "dot start" }), el("b", {}, trip.from.name), el("span", { class: "arrow" }, "→"),
