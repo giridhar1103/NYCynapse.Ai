@@ -265,6 +265,25 @@ def _table(columns: list[str], rows: list[list]) -> str:
     return f"{head}\n{body}{more}"
 
 
+# The MTA's route ids for lines riders know by another name.
+_ROUTE_NAMES = {
+    "GS": "the 42 St Shuttle (S)",
+    "FS": "the Franklin Av Shuttle (S)",
+    "H": "the Rockaway Park Shuttle (S)",
+    "SI": "the Staten Island Railway (SIR)",
+}
+
+
+def _shuttle_note(columns: list[str], rows: list[list]) -> str:
+    """How to name route ids a reader would not know ("H" is the Rockaway Park Shuttle), when a
+    route or line column holds one."""
+    cols = [i for i, c in enumerate(columns) if re.search(r"route|line", str(c), re.I)]
+    seen = {r[i] for r in rows for i in cols if i < len(r) and r[i] in _ROUTE_NAMES}
+    if not seen:
+        return ""
+    return "Route ids: " + ", ".join(f"{k} is {_ROUTE_NAMES[k]}" for k in sorted(seen))
+
+
 def ask_lake(
     lake: Lake, question: str, as_of: str, emit: Callable[[dict], None] | None = None
 ) -> ToolResult:
@@ -331,6 +350,9 @@ def ask_lake(
         notes.append(newest)
     if state.get("problem"):
         notes.append(state["problem"])
+    shuttles = _shuttle_note(columns, rows)
+    if shuttles:
+        notes.append(shuttles)
     summary = (
         f"Lake answer to {question!r}"
         + (f" for {window.label}" if window else "")

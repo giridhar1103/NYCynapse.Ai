@@ -4074,3 +4074,22 @@ def test_saying_what_is_unknown_is_not_talk_about_the_data():
 
     assert core._draft_issues("Thanksgiving hours aren't confirmed, so call Ben's first.") == []
     assert core._draft_issues("The elevator at that station wasn't checked.")
+
+
+def test_lake_rows_with_a_shuttle_route_id_say_its_name():
+    from nycynapse.agent.lake import _shuttle_note
+
+    rows = [["N", 0.77], ["H", 0.82], ["F", 0.86]]
+    assert _shuttle_note(["route_id", "on_time_share"], rows) == (
+        "Route ids: H is the Rockaway Park Shuttle (S)"
+    )
+    assert _shuttle_note(["station", "riders"], [["H", 1]]) == ""
+    assert _shuttle_note(["route_id"], [["A"]]) == ""
+
+
+def test_a_pdf_source_is_named_not_shown_as_its_address():
+    from nycynapse.tools import web
+
+    assert web._pdf_title(b"broken", "https://www.nyc.gov/assets/x/Fare%20Chart.pdf") == (
+        "nyc.gov: Fare Chart.pdf"
+    )

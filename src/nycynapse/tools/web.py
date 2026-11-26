@@ -198,6 +198,29 @@ def _pdf_text(data: bytes) -> str:
     return "\n\n".join((pg.extract_text() or "") for pg in reader.pages[:30])
 
 
+def _pdf_title(data: bytes, url: str) -> str:
+    """A name for a PDF source instead of its address: its own title, with the file name so
+    two reports of one series stay apart ("CompStat Web PDF Reports - Scheduled,
+    cs-en-us-090pct.pdf"), or the site and the file name."""
+    import io
+    import logging
+    from urllib.parse import unquote, urlparse
+
+    from pypdf import PdfReader
+
+    logging.getLogger("pypdf").setLevel(logging.ERROR)
+    part = urlparse(url)
+    name = unquote(part.path.rsplit("/", 1)[-1]) or part.netloc
+    try:
+        meta = PdfReader(io.BytesIO(data)).metadata
+        own = re.sub(r"\s+", " ", str(meta.title or "")).strip() if meta else ""
+    except Exception:  # noqa: BLE001 - the text may still be readable
+        own = ""
+    if own and not re.match(r"(?:untitled|microsoft|document\d*$)", own, re.I) and own != name:
+        return f"{own[:120]}, {name}"
+    return f"{part.netloc.removeprefix('www.')}: {name}"
+
+
 def _around(text: str, find: str, width: int = 1200) -> str | None:
     """The parts of a long page around each mention of `find` (any of its words when the
     phrase itself is not there), joined, so a timetable or fare row deep in a page is reached."""
@@ -278,7 +301,7 @@ def read_page(url: str, find: str | None = None) -> ToolResult:
         return failed(str(e))
     if ctype == "application/pdf":
         try:
-            title, text = final, _pdf_text(body)
+            title, text = _pdf_title(body, final), _pdf_text(body)
         except Exception:  # noqa: BLE001 - a broken PDF is just unreadable
             return failed("that PDF could not be read")
     elif ctype == "application/json" or ctype.endswith("xml") or ctype == "text/plain":
