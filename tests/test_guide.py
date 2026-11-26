@@ -3768,3 +3768,14 @@ def test_bus_alert_street_forms():
         "B6 buses will detour to Ave K between Coney Island Ave and Ocean Ave", ride
     )
     assert a != b  # a stretch of Ave K, not one corner
+
+
+def test_gate_next_door_is_a_short_walk():
+    from nycynapse.tools import (
+        placenames,  # noqa: F401  (after trips)
+        trips,
+    )
+
+    museum = "40.67120,-73.96360"  # the Brooklyn Museum
+    r = trips.trip_plan(museum, "Brooklyn Botanic Garden", "walk", "Saturday 1 PM")
+    assert r.ok and "next to each other" in r.summary and "Eastern Parkway" in r.summary

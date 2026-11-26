@@ -48,7 +48,10 @@ def find(text: str) -> dict | None:
         if not m:
             continue
         rest = t[m.end() :]
-        gates = [{"name": f"{title}, {g}", "lat": lat, "lon": lon} for g, lat, lon in _GATES[title]]
+        gates = [
+            {"name": f"{title}, {g}", "lat": lat, "lon": lon, "gate": True}
+            for g, lat, lon in _GATES[title]
+        ]
         if re.fullmatch(_BOROUGH + r"\s*", rest):
             return {**gates[0], "name": title, "ends": gates}
         said = _key(rest)

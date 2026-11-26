@@ -1492,6 +1492,14 @@ def trip_plan(
     if not a or not b:
         missing = origin if not a else destination
         return failed(f"could not place {missing!r}; name a station, landmark, address or area")
+    if _metres(a, b) < 150 and (a.get("gate") or b.get("gate")):
+        # The Brooklyn Museum is next to the Botanic Garden's Eastern Parkway gate.
+        walk = max(1, round(_metres(a, b) * 1.3 / 80))
+        return ToolResult(
+            summary=f"{a['name']} and {b['name']} are next to each other, about "
+            f"{round(_metres(a, b), -1):.0f} m apart: a walk of about {walk} min.",
+            data={"from": a, "to": b, "walk_minutes": walk},
+        )
     if _metres(a, b) < 150:
         return failed(
             f"both ends were placed at {a['name']}; name the destination more exactly "
