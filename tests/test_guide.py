@@ -4025,3 +4025,25 @@ def test_ferry_notices_count_at_their_landing_on_their_days():
     assert (
         ferryalerts.changes(ride(midtown, st_george, 2026, 11, 26, 20), [holiday], trips.NY) == []
     )
+
+
+def test_ny_waterway_shuttle_buses_only_with_their_ferry():
+    from nycynapse.tools import trips
+
+    bus = {"mode": "BUS", "agencyName": "NY Waterway", "routeShortName": "59th St"}
+    ferry = {"mode": "FERRY", "agencyName": "NY Waterway"}
+    subway = {"mode": "SUBWAY", "agencyName": "MTA New York City Transit"}
+    assert trips._shuttle_only({"legs": [subway, bus]})
+    assert not trips._shuttle_only({"legs": [ferry, bus]})
+    assert not trips._shuttle_only({"legs": [subway]})
+
+
+def test_a_pier_on_the_manhattan_side_is_not_new_jersey():
+    from nycynapse.tools import path_trains as P
+
+    def nj(lat, lon):
+        return P.in_nj({"lat": lat, "lon": lon})
+
+    assert not nj(40.764747, -74.00081)  # the Intrepid, outside the city's zones
+    assert nj(40.7700, -74.0180) and nj(40.8270, -73.9760)  # Weehawken, Edgewater
+    assert nj(40.7359, -74.0293) and not nj(40.8417, -73.9394)  # Hoboken, Washington Heights

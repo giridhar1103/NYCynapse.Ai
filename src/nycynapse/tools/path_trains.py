@@ -48,8 +48,28 @@ def _walk_min(a: dict, b: dict) -> int:
     return max(1, round(T._metres(a, b) * 1.3 / 80))
 
 
+# The middle of the Hudson (lat, lon), south to north: a pier on the Manhattan side (the
+# Intrepid) is outside the city's zones but east of it.
+_HUDSON = [
+    (40.69, -74.030),
+    (40.72, -74.025),
+    (40.75, -74.018),
+    (40.78, -74.003),
+    (40.82, -73.975),
+    (40.86, -73.950),
+    (40.90, -73.925),
+]
+
+
 def in_nj(p: dict) -> bool:
-    return p["lon"] < -73.995 and T.zone_of(p["lat"], p["lon"]) is None
+    if p["lon"] >= -73.995 and not (40.80 < p["lat"] < 40.92):
+        return False
+    if T.zone_of(p["lat"], p["lon"]) is not None:
+        return False
+    for (y0, x0), (y1, x1) in zip(_HUDSON, _HUDSON[1:], strict=False):
+        if y0 <= p["lat"] <= y1:
+            return p["lon"] < x0 + (x1 - x0) * (p["lat"] - y0) / (y1 - y0)
+    return p["lon"] < -73.995
 
 
 def _path_live() -> dict[str, list[tuple[str, str, int]]]:

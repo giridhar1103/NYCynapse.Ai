@@ -259,7 +259,7 @@ def _plan(a: dict, b: dict, when: datetime, arrive_by: bool, n: int = 5) -> list
         except Exception:  # noqa: BLE001
             pass
 
-    its = [it for it in its if not _cancelled(it)]
+    its = [it for it in its if not _cancelled(it) and not _shuttle_only(it)]
     out, seen = [], set()
 
     # Best first, where each transfer counts as five extra minutes: people prefer one seat.
@@ -286,6 +286,18 @@ def _plan(a: dict, b: dict, when: datetime, arrive_by: bool, n: int = 5) -> list
         seen.add(sig)
         out.append(it)
     return out
+
+
+def _shuttle_only(it: dict) -> bool:
+    """A ride on NY Waterway's Manhattan buses without its ferry: they are shuttles for ferry
+    riders (Chinatown to the Intrepid was sent on the 59th St shuttle "plus the bus fare")."""
+    legs = it.get("legs") or []
+
+    def waterway(lg: dict) -> bool:
+        return "waterway" in (lg.get("agencyName") or "").lower()
+
+    bus = any(waterway(lg) and lg.get("mode") == "BUS" for lg in legs)
+    return bus and not any(waterway(lg) and lg.get("mode") == "FERRY" for lg in legs)
 
 
 def _cancelled(it: dict) -> bool:
