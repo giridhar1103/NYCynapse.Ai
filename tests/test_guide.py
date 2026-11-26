@@ -3718,6 +3718,32 @@ def test_a_bus_sent_through_another_transverse_is_affected():
     assert busalerts.check(leg, alert) == "affects"
 
 
+def test_step_free_trip_says_which_elevator_left_the_subway_out(monkeypatch):
+    from nycynapse.tools import access, trips
+
+    a = {"name": "Westchester Sq", "lat": 40.8398, "lon": -73.8429}
+    b = {"name": "Parkchester", "lat": 40.8333, "lon": -73.8609}
+    now = trips._now().timestamp()
+    sub = {"lines": [{"mode": "subway", "name": "6", "coords": [[a["lon"], a["lat"]]] * 2}]}
+    bus = {"lines": [{"mode": "bus", "name": "Bx4", "coords": [[a["lon"], a["lat"]]] * 2}]}
+    for o in (sub, bus):
+        o.update(minutes=[11, 11], leave_ts=now + 600, arrive_ts=now + 1260, transfers=0)
+        o.update(steps=["ride"], fare_usd=3.0, leave="10:00 AM", arrive="10:11 AM", walk_minutes=2)
+    monkeypatch.setattr(trips, "locate", lambda t: a if "West" in t else b)
+    monkeypatch.setattr(trips, "transit", lambda *x: ([sub, bus], []))
+    monkeypatch.setattr(trips, "car_route", lambda *x: None)
+    monkeypatch.setattr(trips, "_typical_drive", lambda *x: None)
+    monkeypatch.setattr(trips, "direct", lambda *x: None)
+    monkeypatch.setattr(trips, "_changes", lambda o, t: [])
+    rec = {"id": "609", "outages_known": True, "name": "Westchester Sq-E Tremont Av", "routes": "6"}
+    rec.update(step_free="yes", notes=None, when="at the time of the trip")
+    rec["out"] = ["elevator EL513 (Mezzanine to Pelham Bay Park-bound platform.) out"]
+    monkeypatch.setattr(access, "station", lambda *x, **k: rec)
+    res = trips.trip_plan("Westchester Sq", "Parkchester", "transit", None, False, True)
+    assert "Left out for stairs or an elevator out" in res.summary
+    assert "EL513" in res.summary and "at the time of the trip: elevator" in res.summary
+
+
 def test_step_free_trips_ask_for_more_only_when_nothing_is_sure(monkeypatch):
     from datetime import datetime
 

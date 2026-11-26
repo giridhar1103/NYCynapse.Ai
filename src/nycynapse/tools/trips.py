@@ -1618,6 +1618,7 @@ def trip_plan(
                     )
                 )
         if options and step_free:
+            before = options
             options = _step_free_first(options)
             if not any(o.get("step_free_ok") and not o.get("affected") for o in options):
                 token = _STEP_FREE.set(True)
@@ -1632,6 +1633,15 @@ def trip_plan(
             # The order by access stands, unless all of them are sure to be step-free.
             if all(o.get("step_free_ok") for o in options):
                 options = _affected_last(options, arrive_by)
+            # Say what was left out and why: "can she use the 6" needs the elevator that is out.
+            kept = {id(o) for o in options}
+            why = [o["access"] for o in before if id(o) not in kept and o.get("access")]
+            if why:
+                notes.append(
+                    "Left out for stairs or an elevator out at the time of the trip: "
+                    + "; ".join(list(dict.fromkeys(why))[:3])
+                    + "."
+                )
         else:
             options = _affected_last(options, arrive_by)
         data["transit"] = options

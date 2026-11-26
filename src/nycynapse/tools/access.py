@@ -117,6 +117,7 @@ def station(
     return {
         "id": s.get("gtfs_stop_id") or f"{s['stop_name']}|{s.get('daytime_routes')}",
         "outages_known": outages_known,
+        "when": "at the time of the trip" if at else "now",
         "name": s["stop_name"],
         "routes": s.get("daytime_routes"),
         "step_free": {"1": "yes", "2": "partly"}.get(str(ada), "no"),
@@ -146,7 +147,7 @@ def describe(rec: dict) -> str:
     if rec["notes"]:
         text += f", {rec['notes']}"
     if rec["out"]:
-        text += "; now: " + "; ".join(rec["out"])
+        text += f"; {rec.get('when', 'now')}: " + "; ".join(rec["out"])
     if not rec.get("outages_known", True):
         text += "; elevator status could not be checked"
     return text
