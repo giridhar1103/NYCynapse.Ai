@@ -5,7 +5,8 @@ Sources (checked 24 November 2026), all linked from mta.info/fares-tolls/lirr-me
 LIRR document/194866, Harlem and Hudson 194931 and their intermediate fares 194936, New Haven
 210536 (New York stations 4 January 2026, Connecticut stations 1 July 2026). NJ Transit: the chart of
 all fares to and from New York Penn Station, effective 1 July 2026, linked from
-njtransit.com/adjustedfares. It is the same on every train. The schedule files the railroads
+njtransit.com/adjustedfares, and the Hoboken and Newark Penn charts beside it. It is the same on
+every train. The schedule files the railroads
 publish carry no fares, so these tables are kept by hand: when an agency changes its fares,
 replace them and move CHECKED. After VALID_UNTIL no price is given and the trip points to
 the fare page, as it does for anything this module cannot price.
@@ -152,6 +153,34 @@ _NJT_STATIONS = {
     20.35: "BAY HEAD, POINT PLEASANT, MANASQUAN, SPRING LAKE, BELMAR, TRENTON TRANSIT CENTER",
     21.60: "PRINCETON",
 }
+# The other NJ Transit charts in the same folder (Fares/Hoboken Station.pdf and Fares/Newark Penn
+# Station.pdf, effective 1 July 2026) price a station to Hoboken or to Newark Penn by its zone, and
+# a station has the same zone on every chart. Its zone is read from its New York Penn fare above.
+_NJT_ZONE = {5.05: 1, 6.30: 2, 6.60: 3, 8.15: 4, 8.75: 5, 9.40: 6, 10.30: 7, 11.20: 8, 11.80: 9,
+             13.05: 10, 14.30: 11, 14.85: 12, 16.10: 13, 17.00: 14, 17.95: 15, 18.25: 16,
+             18.50: 17, 19.50: 18, 19.75: 20, 20.35: 22}  # fmt: skip
+# Zones 18 and 19, 20 and 21, 22 and 23 cost the same on all three charts, so one stands for both.
+_NJT_ZONE_OF = {"suffern": 14, "mahwah": 14, "ramsey": 12, "ramsey route 17": 12,
+                "hillsdale": 9, "westwood": 9, "montvale": 10, "park ridge": 10, "woodcliff lake": 10}  # fmt: skip
+# Hoboken Division stations to or from Hoboken (and on to Newark Penn by the Waterfront Connection).
+_NJT_HOBOKEN = {1: 3.65, 2: 4.20, 3: 5.05, 4: 6.05, 5: 6.60, 6: 7.85, 7: 9.10, 8: 9.70, 9: 10.95,
+                10: 11.80, 11: 12.75, 12: 13.05, 14: 13.35, 16: 14.30, 17: 14.30, 18: 14.60}  # fmt: skip
+_NJT_HOBOKEN_EXCEPT = {"suffern": 11.00, "mahwah": 11.00, "ramsey": 11.00, "ramsey route 17": 11.00,
+                       "allendale": 11.00, "waldwick": 11.00, "hohokus": 11.00, "montvale": 9.75,
+                       "park ridge": 9.75, "woodcliff lake": 9.75, "hillsdale": 9.75, "westwood": 9.75}  # fmt: skip
+# Newark Division stations (North Jersey Coast, Northeast Corridor, Raritan Valley) to or from
+# Newark Penn (and on to Hoboken).
+_NJT_NEWARK = {5: 3.65, 6: 4.20, 7: 5.05, 8: 6.05, 9: 6.60, 10: 7.85, 11: 9.10, 12: 9.70,
+               13: 10.95, 14: 11.80, 15: 12.75, 16: 13.05, 17: 13.35, 18: 14.30, 20: 14.60, 22: 15.15}  # fmt: skip
+_NEWARK_DIVISION = (
+    "BAY HEAD, POINT PLEASANT, MANASQUAN, SPRING LAKE, BELMAR, BRADLEY BEACH, ASBURY PARK, "
+    "ALLENHURST, ELBERON, LONG BRANCH, MONMOUTH PARK, LITTLE SILVER, RED BANK, MIDDLETOWN NJ, "
+    "HAZLET, ABERDEEN-MATAWAN, SOUTH AMBOY, PERTH AMBOY, WOODBRIDGE, AVENEL, RAHWAY, LINDEN, "
+    "TRENTON TRANSIT CENTER, HAMILTON, PRINCETON JCT., JERSEY AVE., NEW BRUNSWICK, EDISON STATION, "
+    "METUCHEN, METROPARK, ELIZABETH, NORTH ELIZABETH, HIGH BRIDGE, ANNANDALE, LEBANON, WHITE HOUSE, "
+    "NORTH BRANCH, RARITAN, SOMERVILLE, BRIDGEWATER, BOUND BROOK, DUNELLEN, PLAINFIELD, NETHERWOOD, "
+    "FANWOOD, WESTFIELD, GARWOOD, CRANFORD, ROSELLE PARK, UNION"
+)
 # Stations whose ticket depends on more than their zone.
 _SPECIAL = {"far rockaway", "belmont park"}
 _ABBR = {"mt": "mount", "ave": "avenue", "av": "avenue", "blvd": "boulevard", "hts": "heights",
@@ -182,6 +211,29 @@ _LIRR = _index(_LIRR_STATIONS)
 _MNR = _index(_MNR_STATIONS)
 _NJT = _index(_NJT_STATIONS)
 _NJT_PENN = _norm("NEW YORK PENN STATION")
+_NJT_NEWARK_DIV = {_norm(n) for n in _NEWARK_DIVISION.split(",")}
+_NJT_HOB, _NJT_NWK = _norm("HOBOKEN"), _norm("NEWARK PENN STATION")
+_SECAUCUS = {_norm("SECAUCUS UPPER LEVEL"), _norm("SECAUCUS LOWER LEVEL")}
+
+
+def _njt_local(a: str, b: str) -> float | None:
+    """A trip with Hoboken or Newark Penn at one end, from those two charts."""
+    if {a, b} == {_NJT_HOB, _NJT_NWK}:
+        return 4.20
+    end, other = (a, b) if a in (_NJT_HOB, _NJT_NWK) else (b, a)
+    if end not in (_NJT_HOB, _NJT_NWK) or other == _NJT_PENN:
+        return None
+    if other in _SECAUCUS:
+        return 5.05 if end == _NJT_NWK else 3.65
+    if other == _norm("PRINCETON"):
+        return 16.40 if end == _NJT_NWK else None
+    nyp = _NJT.get(other)
+    zone = _NJT_ZONE_OF.get(other) or (_NJT_ZONE.get(nyp) if nyp else None)
+    if zone is None:
+        return None
+    if other in _NJT_NEWARK_DIV:
+        return _NJT_NEWARK.get(zone)
+    return _NJT_HOBOKEN_EXCEPT.get(other) or _NJT_HOBOKEN.get(zone)
 
 
 def _holiday(d: date) -> bool:
@@ -247,7 +299,8 @@ def fare(railroad: str, start: str, end: str, depart: float, arrive: float) -> s
         peak, off = _MNR_CITY[zb if za == 1 else za]
     elif railroad == "NJ Transit":
         if _NJT_PENN not in (a, b):
-            return None
+            local = _njt_local(a, b)
+            return f"${local:.2f}" if local else None
         peak = off = _NJT.get(b if a == _NJT_PENN else a)
         if peak is None:
             return None

@@ -2449,7 +2449,9 @@ def test_one_rail_ticket_covers_a_change_of_trains():
     within = leg(
         "NJ Transit", "NEWARK PENN STATION", "TRENTON TRANSIT CENTER", "2026-12-08T08:00", 45
     )
-    assert _fare({"lines": [within]}) == "plus the NJ Transit fare"
+    assert _fare({"lines": [within]}) == "$15.15"  # the Newark Penn chart
+    between = leg("NJ Transit", "RAHWAY", "TRENTON TRANSIT CENTER", "2026-12-08T08:00", 40)
+    assert _fare({"lines": [between]}) == "plus the NJ Transit fare"
     air = leg("NJ Transit", "NEW YORK PENN STATION", "NEWARK AIRPORT RAILROAD STATION",
               "2026-12-08T08:00", 27)  # fmt: skip
     assert _fare({"lines": [air, {"mode": "train", "name": "AirTrain"}]}) == "$17.25"
@@ -3810,3 +3812,23 @@ def test_thing_in_a_park_by_its_short_name():
         assert placenames.locate(text)["name"] == "Loeb Boathouse, Central Park"
     assert placenames.locate("Boathouse at Prospect Park")["name"] == "Prospect Park Boathouse"
     assert placenames.locate("the Ramble in Central Park")["lat"] == 40.77767
+
+
+def test_nj_transit_fares_from_hoboken_and_newark_penn():
+    from nycynapse.tools import railfares as rf
+
+    t = _rail_ts("2026-12-08T09:00")
+
+    def fare(a, b):
+        return rf.fare("NJ Transit", a, b, t, t + 1800)
+
+    assert fare("HOBOKEN", "MSU") == "$7.85"  # zone 6, Montclair-Boonton
+    assert fare("DOVER", "HOBOKEN") == "$14.30"
+    assert fare("HOBOKEN", "SUFFERN") == "$11.00"  # an exception on the chart
+    assert fare("HOBOKEN", "WESTWOOD") == "$9.75"
+    assert fare("NEWARK PENN STATION", "METROPARK") == "$7.85"  # zone 10, Newark Division
+    assert fare("NEWARK PENN STATION", "BAY HEAD") == "$15.15"
+    assert fare("NEWARK PENN STATION", "HOBOKEN") == "$4.20"
+    assert fare("NEWARK PENN STATION", "PRINCETON") == "$16.40"
+    assert fare("SUMMIT", "MADISON") is None  # between two stations: not on these charts
+    assert fare("NEWARK PENN STATION", "NEWARK AIRPORT RAILROAD STATION") is None
