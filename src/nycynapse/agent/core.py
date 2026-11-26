@@ -696,6 +696,7 @@ class Agent:
                 args = {**args, "step_free": True}
             if name == "trip_plan":
                 args = _flight_margin(t.question, args)
+                args = _said_date(t.question, args)
             out.append({"id": uuid.uuid4().hex[:8], "tool": name, "args": args})
         return out
 
@@ -1287,6 +1288,28 @@ def _flight_margin(question: str, args: dict) -> dict:
         return args
     clock = f"{(by // 60 - 1) % 12 + 1}:{by % 60:02d} {'AM' if by < 720 else 'PM'}"
     return {**args, "arrive_by": True, "when": _CLOCK.sub(clock, when, count=1)}
+
+
+def _said_date(question: str, args: dict) -> dict:
+    """ "Thursday Dec 3 around 11pm" planned as "thursday 11pm" is tonight when today is a
+    Thursday. When the question gives one calendar date and the model's time names only that
+    date's weekday, the date from the question is used."""
+    from ..tools.trips import _DAYS, _now, _take_date, parse_when
+
+    when = str(args.get("when") or "")
+    today = _now().date()
+    rest, said = _take_date(question.lower(), today)
+    if not said or _take_date(rest, today)[1] or _take_date(when.lower(), today)[1]:
+        return args
+    day = _DAYS[said.weekday()]
+    if not re.search(rf"\b{day[:3]}\w*\b", when.lower()):
+        return args
+    planned = parse_when(when)
+    if not planned or planned.date() == said:
+        return args
+    clock = _CLOCK.search(when)
+    at = clock.group(0) if clock else planned.strftime("%-I:%M %p")
+    return {**args, "when": f"{said.isoformat()} {at}"}
 
 
 def _no_stairs(t: Turn) -> bool:

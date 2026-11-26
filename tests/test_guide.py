@@ -3944,3 +3944,22 @@ def test_the_answer_carries_the_trip_it_is_about():
     slot = SimpleNamespace(chat_id="c", turn=1)
     assert _answer_payload(slot, out)["trip"] == trip
     assert _answer_payload(slot, {"answer": "No trip."})["trip"] is None
+
+
+def test_a_date_in_the_question_wins_over_a_bare_weekday(monkeypatch):
+    from datetime import datetime
+
+    from nycynapse.agent import core
+    from nycynapse.tools import trips
+
+    monkeypatch.setattr(
+        trips, "_now", lambda: datetime(2026, 11, 26, 12, tzinfo=trips.NY)
+    )  # a Thursday
+    q = "she needs to get from Westchester Square to Parkchester on thursday dec 3 around 11pm"
+    args = {"origin": "Westchester Square", "when": "thursday 11pm"}
+    assert core._said_date(q, args)["when"] == "2026-12-03 11pm"
+    assert core._said_date(q, {"when": "2026-12-03 11:00 PM"})["when"] == "2026-12-03 11:00 PM"
+    assert (
+        core._said_date(q, {"when": "friday 9am"})["when"] == "friday 9am"
+    )  # another day asked for
+    assert core._said_date("to JFK tonight 11pm", args) == args  # no date in the question
