@@ -1788,6 +1788,19 @@ def trip_plan(
                     else "."
                 )
             )
+            if label == "bike":
+                from . import bikelanes
+
+                try:
+                    lanes = bikelanes.along(r.get("coords") or [])
+                except Exception:  # noqa: BLE001 - the ride stands without it
+                    lanes = None
+                if lanes:
+                    r["lanes"] = lanes
+                    lines.append(bikelanes.describe(lanes))
+                    sources.append(
+                        {"kind": "official", "title": "NYC DOT bike routes", "url": bikelanes.PAGE}
+                    )
             rides = [o["minutes"][0] for o in data.get("transit") or []]
             if label == "walk" and rides and r["minutes"] <= min(rides):
                 lines.append(

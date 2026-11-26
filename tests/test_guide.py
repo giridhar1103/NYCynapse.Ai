@@ -4109,3 +4109,19 @@ def test_find_place_does_not_take_a_result_for_the_neighborhood_alone(monkeypatc
     )
     assert "Junior's" in live.find_place("Juniors Downtown Brooklyn").summary
     assert live._words("Junior's Restaurant") == ["junior", "restaurant"]
+
+
+def test_a_bike_ride_says_how_much_is_on_protected_lanes():
+    import gzip
+
+    from nycynapse.tools import bikelanes
+
+    # A ride along the longest stretch of the Hudson River Greenway in the city's own map.
+    with gzip.open(bikelanes.FILE, "rt") as f:
+        rows = [ln.rstrip("\n").split("\t") for ln in f if "\tHudson River Greenway\t" in ln]
+    pts = max((r[2].split(";") for r in rows), key=len)
+    ride = [[float(x.split(",")[1]), float(x.split(",")[0])] for x in pts]
+    found = bikelanes.along(ride)
+    assert found["protected"] >= 90 and found["protected_streets"] == ["Hudson River Greenway"]
+    assert bikelanes.describe(found).startswith("Bike routes along it (city bike map): ")
+    assert bikelanes.along([[-73.9, 40.7]]) is None
