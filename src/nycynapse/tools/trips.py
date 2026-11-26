@@ -1163,12 +1163,20 @@ def _for_leg(al: dict, leg: dict) -> bool:
 
 
 def _changes(option: dict, at: datetime) -> list[str]:
-    """Service changes on the subway lines and the buses an option rides."""
+    """Service changes on the subway lines, buses and ferries an option rides."""
     from . import busalerts
 
     t0 = option.get("leave_ts") or at.timestamp()
     found = _line_changes(option, at)
     found += busalerts.changes(option, t0, option.get("arrive_ts") or t0)
+    if any(lg.get("mode") == "ferry" for lg in option.get("lines") or []):
+        from . import ferryalerts, live
+
+        try:
+            events = live._ny511_events()[0] if live._ny511_configured() else []
+        except Exception:  # noqa: BLE001 - the trip stands without them
+            events = []
+        found += ferryalerts.changes(option, events, NY)
     # A change that names this ride before one somewhere on the line.
     return sorted(found, key=lambda x: not x.startswith("Affects"))[:4]
 

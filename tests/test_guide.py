@@ -3977,3 +3977,51 @@ def test_the_card_opens_on_the_option_the_answer_leads_with():
     assert core._with_pick(trip, led)["pick"] == 2
     assert "pick" not in core._with_pick(trip, "Take the W at 8:18 AM.")
     assert "pick" not in core._with_pick(trip, "No times here.")
+
+
+def test_ferry_notices_count_at_their_landing_on_their_days():
+    from datetime import datetime
+
+    from nycynapse.tools import ferryalerts, trips
+
+    def ms(*a):
+        return {"time": datetime(*a, tzinfo=trips.NY).timestamp() * 1000}
+
+    holiday = {
+        "description": "St.George Ferry Route in both directions: Holiday traffic. Operates on a "
+        "holiday schedule between St George Ferry Terminal and Whitehall Terminal",
+        "geometry": {"type": "Point", "coordinates": [-74.07605, 40.64352]},
+        "details": [
+            {
+                "start-time": ms(2026, 11, 26),
+                "end-time": ms(2027, 1, 1),
+                "recurrent-times": [
+                    {
+                        "period": {"days-of-week": {"bits": 16}},  # Thursdays
+                        "schedule-times": [
+                            {"startTimeLT": {"hour": 0}, "stopTimeLT": {"hour": 23, "minute": 59}}
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+
+    def ride(start, end, *at):
+        ts = datetime(*at, tzinfo=trips.NY).timestamp()
+        leg = {"mode": "ferry", "name": "Staten Island Ferry", "depart_ts": ts}
+        leg["coords"] = [[start[1], start[0]], [end[1], end[0]]]
+        return {"lines": [leg]}
+
+    whitehall, st_george, midtown = (40.7013, -74.0132), (40.6442, -74.0722), (40.7615, -74.0028)
+    thursday = ride(whitehall, st_george, 2026, 11, 26, 20, 30)
+    assert ferryalerts.changes(thursday, [holiday], trips.NY)[0].startswith(
+        "Service change on the Staten Island Ferry at that time: St.George Ferry Route"
+    )
+    assert (
+        ferryalerts.changes(ride(whitehall, st_george, 2026, 11, 27, 20), [holiday], trips.NY) == []
+    )
+    # NYC Ferry's St. George route from Midtown is not the Staten Island Ferry.
+    assert (
+        ferryalerts.changes(ride(midtown, st_george, 2026, 11, 26, 20), [holiday], trips.NY) == []
+    )
