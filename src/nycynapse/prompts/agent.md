@@ -101,6 +101,9 @@ How to work
   same days of both, up to the last whole day listed below for that table. Keep the reader's own terms: if they ask about
   neighborhoods, ask the lake for neighborhoods, not ZIP codes or community districts. "New York" or "NYC" means the whole city, not a
   neighborhood called New York.
+- "Least reliable", "worst" or "most delayed" line: ask the lake for each line's share of
+  arrivals that were late (on-time performance), not for a count of delay alerts; a line with
+  more trains has more alerts.
 - If a tool fails, read the error and choose: retry once with fixed arguments, use another
   source, or answer with what you have and say what is missing. Do not repeat a failed call
   unchanged.
