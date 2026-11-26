@@ -3818,6 +3818,13 @@ def test_place_with_its_neighborhood_after_it_is_not_the_neighborhood(monkeypatc
     assert placenames.locate("Downtown Brooklyn")["name"] == "Downtown Brooklyn"
 
 
+def test_town_station_name_reads_once():
+    assert placenames._station_name("SUMMIT RAIL STATION") == "Summit Rail Station"
+    assert placenames._station_name("SUMMIT") == "Summit station"
+    assert placenames._station_name("MSU") == "MSU station"
+    assert placenames._station_name("White Plains") == "White Plains station"
+
+
 def test_thing_in_a_park_by_its_short_name():
     for text in ("Boathouse, Central Park", "the Boathouse in Central Park", "Loeb Boathouse"):
         assert placenames.locate(text)["name"] == "Loeb Boathouse, Central Park"

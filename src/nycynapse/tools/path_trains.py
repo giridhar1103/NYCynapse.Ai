@@ -166,6 +166,10 @@ def _path_options(a: dict, b: dict, when: datetime, arrive_by: bool) -> list[dic
             ride_min = sum(r[3] for r in rides) + change
             near_end = T._metres(sd, b) <= WALK_MAX_M
             tail = None
+            # The rest of the way costs the trip planner a request or two, so only from the
+            # PATH stations nearest each end: Hoboken to Summit had asked it twelve times.
+            if not near_end and (o != starts[0] or d != ends[0]):
+                continue
             if not near_end:
                 # The rest of the way by the trip planner: from when PATH gets in, or, for a
                 # deadline, the latest trip that still makes it.

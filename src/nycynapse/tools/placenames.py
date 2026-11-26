@@ -1373,7 +1373,7 @@ def _locate(text: str) -> dict | None:
             if town or re.match(r"(?:city|town|village) of\b", name, re.I):
                 station = _rail_stop(raw)
                 if station and T._metres(station, {"lat": lat, "lon": lon}) < 6000:
-                    return {**station, "name": f"{station['name']} station"}
+                    return {**station, "name": _station_name(station["name"])}
             return {"name": f"near {name}" if k else name, "lat": lat, "lon": lon}
     # "Vernon Jackson", "Atlantic Barclays": the words of one station's name.
     return (_subway_station(raw, loose=True) if not outside else None) or _rail_stop(raw)
@@ -1401,6 +1401,17 @@ _RAIL_WORDS = {
 }
 
 _RAIL_MODES = {"REGIONAL_RAIL", "RAIL", "SUBURBAN", "HIGHSPEED_RAIL", "LONG_DISTANCE", "FERRY"}
+
+
+_KEEP_CAPS = {"NJ", "NY", "MSU", "EWR", "JFK", "PATH", "LIRR", "US"}
+
+
+def _station_name(name: str) -> str:
+    """ "SUMMIT RAIL STATION" (NJ Transit writes names in capitals) is "Summit Rail Station";
+    the word station is added only when the name lacks it."""
+    if name.isupper():
+        name = " ".join(w if w in _KEEP_CAPS else w.capitalize() for w in name.split())
+    return name if re.search(r"\bstation\b", name, re.I) else f"{name} station"
 
 
 def _rail_stop(raw: str) -> dict | None:
