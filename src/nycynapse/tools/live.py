@@ -1126,6 +1126,12 @@ def subway_alerts(line: str | None = None, days: int = 0) -> ToolResult:
 # Places ----------------------------------------------------------------------------------------
 
 
+def _opening_hours(place: str, date_from: str | None = None) -> ToolResult:
+    from .hours import opening_hours
+
+    return opening_hours(place, date_from)
+
+
 def find_place(text: str) -> ToolResult:
     """Find an address, landmark or venue in New York City and where it is."""
     text = text.strip()[:120]
@@ -1728,6 +1734,22 @@ TOOLS = [
         "borough. Use before asking about a specific place.",
         {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]},
         find_place,
+    ),
+    Tool(
+        "opening_hours",
+        "live",
+        "Opening hours of a museum, zoo, garden, venue or shop for seven days from `date_from` "
+        "(YYYY-MM-DD, default today), as mapped in OpenStreetMap, with federal holidays marked. "
+        "Use it before the place's own site, which often refuses this guide.",
+        {
+            "type": "object",
+            "properties": {
+                "place": {"type": "string", "description": "its name, like Brooklyn Museum"},
+                "date_from": {"type": "string"},
+            },
+            "required": ["place"],
+        },
+        _opening_hours,
     ),
     Tool(
         "area_stats",

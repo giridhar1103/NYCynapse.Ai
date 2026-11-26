@@ -3684,3 +3684,50 @@ def test_the_airtrain_counts_as_a_change(monkeypatch):
     o = {"transfers": 1, "lines": [{"mode": "train"}, {"mode": "walk"}, {"mode": "subway"}]}
     trips._add_airtrain(o, "jfk:Jamaica station", False)
     assert o["transfers"] == 2 and o["lines"][0]["name"] == "AirTrain"
+
+
+def test_opening_hours_read_by_day(monkeypatch):
+    from datetime import date
+
+    from nycynapse.tools import hours as H
+
+    met = "10:00-17:00; Fr-Sa 10:00-21:00; We off; May Mo[1] off; Nov Th[4] off; Dec 25 off"
+    rules = H.parse(met)
+    assert H.on(rules, date(2026, 11, 25)) == "closed"  # Wednesday
+    assert H.on(rules, date(2026, 11, 26)) == "closed"  # Thanksgiving
+    assert H.on(rules, date(2026, 11, 27)) == "10:00 AM to 9:00 PM"
+    assert H.on(rules, date(2026, 11, 29)) == "10:00 AM to 5:00 PM"
+    assert H.on(rules, date(2026, 5, 4)) == "closed" and H.on(rules, date(2026, 5, 11))
+    assert H.on(H.parse("Tu-Su 10:00-17:00; PH off"), date(2026, 11, 26)) == "closed"
+    assert H.on(H.parse("Mo-Fr 09:00-17:00, Sa 10:00-14:00"), date(2026, 11, 28)).startswith("10")
+    assert H.on(H.parse("Mo[-1] off"), date(2026, 11, 30)) == "closed"
+    assert H.parse("sunrise-sunset") is None
+    assert H.holiday(date(2026, 7, 3)) == "Independence Day"  # observed on the Friday
+
+    monkeypatch.setattr(
+        H.osm,
+        "tagged",
+        lambda q: {
+            "name": "Brooklyn Museum",
+            "osm_type": "way",
+            "osm_id": 1,
+            "extratags": {"opening_hours": "We-Su 11:00-18:00"},
+        },
+    )
+    r = H.opening_hours("the Brooklyn Museum", "2026-11-23")
+    assert r.ok and "Monday, November 23: not listed as open" in r.summary
+    assert "Friday, November 27: 11:00 AM to 6:00 PM" in r.summary
+    assert not H.opening_hours("Queens Zoo", "2026-11-23").ok  # the map's match is another place
+
+
+def test_opening_hours_holiday_not_mapped(monkeypatch):
+    from nycynapse.tools import hours as H
+
+    monkeypatch.setattr(
+        H.osm,
+        "tagged",
+        lambda q: {"name": "Bronx Zoo", "extratags": {"opening_hours": "Mo-Su 10:00-17:00"}},
+    )
+    r = H.opening_hours("Bronx Zoo", "2026-11-25")
+    assert "Thursday, November 26 (Thanksgiving): no holiday hours on the map" in r.summary
+    assert r.data["days"][1]["hours"] is None and r.data["days"][2]["hours"]

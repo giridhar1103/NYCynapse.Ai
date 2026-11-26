@@ -93,6 +93,14 @@ def subway_alerts(line: str | None = None, days: int = 0) -> dict:
 
 
 @tool
+def opening_hours(place: str, date_from: str | None = None) -> dict:
+    """Opening hours of a museum, zoo, garden or venue for seven days, from OpenStreetMap."""
+    from .tools import hours
+
+    return hours.opening_hours(place, date_from).as_dict()
+
+
+@tool
 def find_place(text: str) -> dict:
     """Find an address, landmark or venue in New York City."""
     return live.find_place(text).as_dict()

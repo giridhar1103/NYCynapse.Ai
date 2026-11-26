@@ -88,3 +88,32 @@ def _ask(q: str) -> list[dict]:
             with _lock:
                 _state["rest_until"] = time.monotonic() + REST_S
     return _photon(q)
+
+
+def _tagged(q: str) -> list[dict]:
+    wait = _turn()
+    if wait is None:
+        raise ValueError("Nominatim is resting or busy")
+    time.sleep(wait)
+    return get_json(
+        NOMINATIM,
+        {
+            "q": q,
+            "format": "jsonv2",
+            "limit": 1,
+            "extratags": 1,
+            "viewbox": ",".join(str(x) for x in T.BOX),
+            "bounded": 1,
+        },
+        ttl_s=0,
+    )
+
+
+def tagged(q: str) -> dict | None:
+    """The best match in the region with its OpenStreetMap tags (opening_hours, website), or
+    None. Only Nominatim gives the tags, so a busy turn gives None, not the spare."""
+    try:
+        hits = cached(("OSM tags", q), DAY, lambda: _tagged(q))
+    except (httpx.HTTPError, ValueError, KeyError, TypeError):
+        return None
+    return hits[0] if hits else None
