@@ -40,7 +40,7 @@
 "lon": -73.97525
 },
 "battery park": {
-"name": "The Battery Woodland",
+"name": "The Battery",
 "lat": 40.70294,
 "lon": -74.01555
 },
@@ -259,13 +259,23 @@
 "lat": 40.68925,
 "lon": -74.04455
 },
+"statue of liberty ferry": {
+"name": "Statue City Cruises ferry, Castle Clinton (Battery Park)",
+"lat": 40.70338,
+"lon": -74.01686
+},
+"statue city cruises": {
+"name": "Statue City Cruises ferry, Castle Clinton (Battery Park)",
+"lat": 40.70338,
+"lon": -74.01686
+},
 "the apollo": {
 "name": "Apollo Theater",
 "lat": 40.81009,
 "lon": -73.94999
 },
 "the battery": {
-"name": "The Battery Woodland",
+"name": "The Battery",
 "lat": 40.70294,
 "lon": -74.01555
 },

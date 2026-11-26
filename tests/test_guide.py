@@ -4047,3 +4047,12 @@ def test_a_pier_on_the_manhattan_side_is_not_new_jersey():
     assert not nj(40.764747, -74.00081)  # the Intrepid, outside the city's zones
     assert nj(40.7700, -74.0180) and nj(40.8270, -73.9760)  # Weehawken, Edgewater
     assert nj(40.7359, -74.0293) and not nj(40.8417, -73.9394)  # Hoboken, Washington Heights
+
+
+def test_the_statue_ferry_leaves_from_castle_clinton():
+    for text in ("Statue of Liberty ferry, Battery Park", "Statue of Liberty ferry"):
+        assert placenames.locate(text)["name"].startswith(
+            "Statue City Cruises ferry, Castle Clinton"
+        )
+    assert placenames.locate("the Battery")["name"] == "The Battery"
+    assert placenames.locate("Statue of Liberty")["name"] == "Statue of Liberty"
