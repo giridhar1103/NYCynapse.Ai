@@ -3675,3 +3675,12 @@ def test_step_free_trips_ask_for_more_only_when_nothing_is_sure(monkeypatch):
     bus = {"lines": [{"mode": "bus"}]}
     assert trips._sure([rail, {**bus, "affected": True}]) == []
     assert trips._sure([rail, bus]) == [bus]
+
+
+def test_the_airtrain_counts_as_a_change(monkeypatch):
+    from nycynapse.tools import trips
+
+    monkeypatch.setattr(trips, "_airtrain_paths", lambda: {"jfk:Jamaica station": [(0, 0), (1, 1)]})
+    o = {"transfers": 1, "lines": [{"mode": "train"}, {"mode": "walk"}, {"mode": "subway"}]}
+    trips._add_airtrain(o, "jfk:Jamaica station", False)
+    assert o["transfers"] == 2 and o["lines"][0]["name"] == "AirTrain"

@@ -504,6 +504,9 @@ def _add_airtrain(option: dict, key: str, to_airport: bool) -> None:
         "live": False,
         "coords": coords if to_airport else coords[::-1],
     }
+    # Getting off the AirTrain onto the train is a change like any other.
+    if any(x.get("mode") not in ("walk", None) for x in option["lines"]):
+        option["transfers"] = option.get("transfers", 0) + 1
     if to_airport:
         option["lines"].append(line)
     else:
