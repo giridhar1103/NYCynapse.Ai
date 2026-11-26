@@ -4135,3 +4135,21 @@ def test_the_card_opens_on_the_way_the_reader_asked_about():
     assert core._with_mode(trip, "cab from laguardia, how much")["default"] == "drive"
     assert core._with_mode(trip, "subway or cab to jfk?")["default"] == "transit"
     assert core._with_mode(trip, "how do i get to the met")["default"] == "transit"
+
+
+def test_a_bike_question_shows_the_whole_ride_on_the_card():
+    from nycynapse.agent import core
+
+    def trip(label, bike_km, transit=False):
+        modes = {"bike": {"km": bike_km}}
+        if transit:
+            modes["transit"] = {"options": [{"leave": "6:38 PM", "arrive": "7:03 PM"}]}
+        return {"type": "trip", "label": label, "default": "transit", "modes": modes}
+
+    whole, part, train = trip("whole", 5.2), trip("part", 2.1), trip("train", 0, True)
+    del train["modes"]["bike"]
+    shown = core._card_trip([whole, part, train], "Or the G at 6:38.", "safest bike route")
+    assert shown["label"] == "whole" and shown["default"] == "bike"
+    assert (
+        core._card_trip([whole, train], "The G at 6:38.", "how do i get there")["label"] == "train"
+    )

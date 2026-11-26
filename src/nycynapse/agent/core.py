@@ -909,7 +909,9 @@ class Agent:
             # A trip answer shows one trip, the one it is about, and nothing else that would
             # compete with its route on the map.
             layers = [x for x in layers if x.get("type") not in ("trip", "routes", "points")]
-            layers.append(_with_mode(_with_pick(_shown_trip(trips, answer), answer), t.question))
+            # A question about one way of going ("safest bike route") shows a trip that has it:
+            # bike rides carry no clock times for _shown_trip to match.
+            layers.append(_card_trip(trips, answer, t.question))
         # Highlights a tool drew while working (the top neighborhoods by rent, say) are not
         # the answer's places: the final map keeps only what the answer names.
         layers = [x for x in layers if x.get("type") != "highlight"]
@@ -1129,13 +1131,35 @@ _ASKED_MODE = [
 ]
 
 
+def _asked_mode(question: str) -> str | None:
+    """The one way of going a question asks about (bike, walk or drive), if just one."""
+    asked = [m for m, pat in _ASKED_MODE if pat.search(question or "")]
+    if len(asked) == 1 and not re.search(r"\b(?:subway|train|bus|transit)\b", question or "", re.I):
+        return asked[0]
+    return None
+
+
+def _card_trip(trips: list[dict], answer: str, question: str) -> dict:
+    """The trip on the answer's card. A question about one way of going ("safest bike route")
+    shows the longest trip that has it: bike rides carry no clock times for _shown_trip to
+    match, and shorter ones are parts of the way looked at on the side."""
+    asked = _asked_mode(question)
+    pool = [x for x in trips if asked in (x.get("modes") or {})]
+    if pool:
+        trip = max(
+            pool, key=lambda x: x["modes"][asked].get("km") or x["modes"][asked].get("miles") or 0
+        )
+    else:
+        trip = _shown_trip(trips, answer)
+    return _with_mode(_with_pick(trip, answer), question)
+
+
 def _with_mode(trip: dict, question: str) -> dict:
     """The card opens on the way the reader asked about ("safest bike route" on the bike route),
-    when the trip has it and the question names just one way."""
-    modes = trip.get("modes") or {}
-    asked = [m for m, pat in _ASKED_MODE if pat.search(question or "") and m in modes]
-    if len(asked) == 1 and not re.search(r"\b(?:subway|train|bus|transit)\b", question or "", re.I):
-        return {**trip, "default": asked[0]}
+    when the trip has it."""
+    asked = _asked_mode(question)
+    if asked and asked in (trip.get("modes") or {}):
+        return {**trip, "default": asked}
     return trip
 
 
