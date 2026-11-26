@@ -2768,6 +2768,24 @@ def test_bus_stops_closed_on_one_side_of_a_street():
     assert busalerts.check(_bus("M10", CPW[110], CPW[97]), al) is None
 
 
+def test_bus_detour_to_another_avenue_is_where_the_ride_runs():
+    from nycynapse.tools import busalerts
+
+    fifth = {
+        110: (40.79659, -73.94963),
+        90: (40.78398, -73.95883),
+        72: (40.77262, -73.96749),
+        60: (40.76489, -73.97325),
+        45: (40.75605, -73.97875),
+    }
+    al = {"kind": "Planned - Detour", "routes": {"M1"}}
+    # The alert says W 42nd St; Lexington Ave crosses E 42nd St.
+    al["head"] = "Southbound M1 buses will detour to Lexington Ave from E 72nd St to W 42nd St"
+    assert busalerts.check(_bus("M1", fifth[110], fifth[90], fifth[72], fifth[60], fifth[45]), al)
+    assert busalerts.check(_bus("M1", fifth[60], fifth[45]), al) == "affects"
+    assert busalerts.check(_bus("M1", fifth[110], fifth[90]), al) is None
+
+
 def test_bus_alerts_streets_away_or_the_other_way_do_not_count():
     from nycynapse.tools import busalerts
 

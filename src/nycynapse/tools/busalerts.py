@@ -20,7 +20,7 @@ _CUT = re.compile(r"suspend|no service|no .{2,20} service|not operat", re.I)
 _ROUTE = re.compile(r"^(?:BXM?|BM?|M|QM?|SIM|S|X)\d{1,3}[A-Z]?$")
 
 _NAME = (
-    r"(?:(?:[EWNS]\.? )?(?:\d+(?:st|nd|rd|th)?|[A-Z][\w'’.]*(?: [A-Z][\w'’.]*){0,3}) "
+    r"(?:(?:[EWNS]\.? ?|Beach )?(?:\d+(?:st|nd|rd|th)?|[A-Z][\w'’.]*(?: [A-Z][\w'’.]*){0,3}) "
     r"(?:Street|St|Avenue|Ave?|Blvd|Road|Rd|Place|Pl|Pkwy|Drive|Dr|Sq|Lane|Ln|Ter|Ct|Tpke|Way|Plaza|Plz|"
     r"Slip|Hwy|Loop|Terrace|Concourse|Alley|Circle|Expressway|Expwy)\b"
     r"(?: (?:[NSEW]|North|South|East|West)\b)?"
@@ -36,6 +36,8 @@ _INSTEAD = re.compile(r"[,;.]?\s*(?:please )?use the\b|\bfor service\b", re.I)
 _WAY = {"north": (0, 1), "south": (0, -1), "east": (1, 0), "west": (-1, 0)}
 # How close, in metres: a stop is at its corner, a street with two roadways is 30 wide.
 AT_STOP, ON_WAY = 75, 130
+# A detour street is a few blocks from the route at most.
+DETOUR_M = 900
 
 
 def route(name: str | None) -> str | None:
@@ -84,6 +86,11 @@ def _gap(p: tuple, a: tuple, b: tuple) -> float:
 def _meet(a: str, b: str, ride: list[tuple]) -> tuple | None:
     """Where the two streets meet, nearest to the ride."""
     found = [(h["lat"], h["lon"]) for h in corners.find(a, b)]
+    if not found:
+        # The alerts mix up the sides ("Madison Ave from W 42nd St"; Madison crosses E 42nd).
+        bare = [re.sub(r"^[EW]\.?\s*(?=\d)", "", s) for s in (a, b)]
+        if bare != [a, b]:
+            found = [(h["lat"], h["lon"]) for h in corners.find(*bare)]
     return min(found, key=lambda c: min(_gap(c, p, p) for p in ride), default=None)
 
 
@@ -96,8 +103,15 @@ def _where(head: str, ride: list[tuple]) -> list[tuple]:
     out = []
     for m in _ALONG.finditer(head):
         ends = [_meet(m.group(1), m.group(k), ride) for k in (2, 3)]
-        if all(ends):
-            out.append(tuple(ends))
+        if not all(ends):
+            continue
+        # "detour to Madison Ave from W 42nd St to E 57th St": the street named is where the
+        # buses go instead, so the stretch left is where the ride crosses those two streets.
+        if re.search(r"\b(?:to|via)\s*$", head[: m.start()]):
+            moved = [_onto(c, ride) for c in ends]
+            if all(_gap(c, q, q) < DETOUR_M for c, q in zip(ends, moved, strict=True)):
+                ends = moved
+        out.append(tuple(ends))
     rest = _ALONG.sub(" ", head)
     pairs = [(m, _meet(m.group(1), m.group(2), ride)) for m in _PAIR.finditer(rest)]
     pairs = [(m, c) for m, c in pairs if c]
@@ -106,6 +120,18 @@ def _where(head: str, ride: list[tuple]) -> list[tuple]:
     else:
         out += [(c, c) for _, c in pairs]
     return out
+
+
+def _onto(c: tuple, ride: list[tuple]) -> tuple:
+    """Where c is across from the ride: on the line of the ride's nearest stretch, carried on
+    past its ends (a short ride on 5th Ave is still across from Lexington and 72nd)."""
+    pairs = list(zip(ride, ride[1:], strict=False)) or [(ride[0], ride[0])]
+    a, b = min(pairs, key=lambda ab: _gap(c, *ab))
+    (cx, cy), (ax, ay), (bx, by) = _km(*c), _km(*a), _km(*b)
+    dx, dy = bx - ax, by - ay
+    length = dx * dx + dy * dy
+    k = ((cx - ax) * dx + (cy - ay) * dy) / length if length else 0.0
+    return ((ay + k * dy) / 111_200, (ax + k * dx) / 84_300)
 
 
 def _uptown(p: tuple) -> float:
