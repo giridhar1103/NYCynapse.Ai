@@ -389,6 +389,11 @@ class Guide {
           else if (ev === "answer") {
             ended = true;
             this.turn = d.turn;
+            // The trip the answer talks about replaces the last one drawn on the way.
+            if (d.trip) {
+              view.layers = view.layers.filter((L) => L.type !== "trip").concat([d.trip]);
+              try { this.map?.showTrip(d.trip); } catch (e) { /* the card still shows it */ }
+            }
             d.personal = this.personal;
             // Only the answer's own places stay highlighted, not what a tool drew on the way.
             if (!(d.places || []).length) this.map?.clearHighlight();

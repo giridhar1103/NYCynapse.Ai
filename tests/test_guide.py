@@ -3932,3 +3932,15 @@ def test_nj_transit_fares_from_hoboken_and_newark_penn():
     assert fare("NEWARK PENN STATION", "PRINCETON") == "$16.40"
     assert fare("SUMMIT", "MADISON") is None  # between two stations: not on these charts
     assert fare("NEWARK PENN STATION", "NEWARK AIRPORT RAILROAD STATION") is None
+
+
+def test_the_answer_carries_the_trip_it_is_about():
+    from types import SimpleNamespace
+
+    from nycynapse.api.chat import _answer_payload
+
+    trip = {"type": "trip", "label": "Flushing-Main St (7) to Citi Field"}
+    out = {"answer": "Take the Q90.", "map": [{"type": "points"}, trip]}
+    slot = SimpleNamespace(chat_id="c", turn=1)
+    assert _answer_payload(slot, out)["trip"] == trip
+    assert _answer_payload(slot, {"answer": "No trip."})["trip"] is None

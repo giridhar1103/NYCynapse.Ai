@@ -526,6 +526,8 @@ def _answer_payload(slot: Slot, out: dict, cached: bool = False) -> dict:
         "untraced": out.get("untraced") or [],
         **({"trace": out.get("trace") or [], "cost_usd": out.get("cost_usd")} if TRACE else {}),
         "places": out.get("places") or [],
+        # The trip the answer is about, which may not be the last one drawn while it was worked out.
+        "trip": next((x for x in out.get("map") or [] if x.get("type") == "trip"), None),
     }
 
 
