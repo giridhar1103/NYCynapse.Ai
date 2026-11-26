@@ -151,7 +151,9 @@ _DRAFT_SMELLS = [
             r"|\b(?:trip )?planner\b|\bavailable to me\b|\bmy (?:tools?|data|numbers|search)\b"
             r"|\bI (?:searched|pulled|ran|queried)\b|\b(?:tool|search) (?:returned|results?)\b"
             r"|\bwouldn't load\b|\bdid(?:n't| not) come (?:up|back)\b"
-            r"|\b(?:weren't|were not|wasn't|was not|isn't|aren't|not yet) (?:checked|confirmed)\b",
+            # "checked" is about the work; "hours aren't confirmed" tells the reader what is
+            # unknown, which agent.md asks for.
+            r"|\b(?:weren't|were not|wasn't|was not|isn't|aren't|not yet) checked\b",
             re.I,
         ),
         "it talks about the data or what was checked; describe the city itself "

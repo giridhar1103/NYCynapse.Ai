@@ -4067,3 +4067,10 @@ def test_a_phone_number_from_a_page_is_remembered_for_a_follow_up():
     assert found == ["(212) 677-0976"]
     memory = "late pizza near washington square web: Ben's Pizza, phone " + found[0]
     assert _untraced_numbers("Call Ben's at (212) 677-0976 first.", [], memory) == []
+
+
+def test_saying_what_is_unknown_is_not_talk_about_the_data():
+    from nycynapse.agent import core
+
+    assert core._draft_issues("Thanksgiving hours aren't confirmed, so call Ben's first.") == []
+    assert core._draft_issues("The elevator at that station wasn't checked.")
