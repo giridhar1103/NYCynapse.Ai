@@ -644,9 +644,13 @@ def locate(text: str) -> dict | None:
         return bridge
     # "Great Lawn, Central Park": a well-known thing in a well-known park.
     thing, _, park = raw.partition(",")
+    if not park and (m := re.match(r"(.+?)\s+(?:in|at)\s+(.+\bpark)$", raw, re.I)):
+        thing, park = m.groups()  # "the Boathouse in Central Park"
     marks = _landmarks()
-    if _norm(park).endswith("park") and _norm(thing) in marks and _norm(park) in marks:
-        spot, whole = marks[_norm(thing)], marks[_norm(park)]
+    # "Boathouse, Central Park" is listed as central park boathouse.
+    inner = next((k for k in (_norm(thing), f"{_norm(park)} {_norm(thing)}") if k in marks), "")
+    if _norm(park).endswith("park") and inner and _norm(park) in marks:
+        spot, whole = marks[inner], marks[_norm(park)]
         if spot["name"] != whole["name"] and T._metres(spot, whole) < 2500:
             return dict(spot)
     m = re.match(

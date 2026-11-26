@@ -1094,21 +1094,23 @@ _HAPPENING = re.compile(
 )
 
 
-_SAID_TIME = re.compile(r"\b\d{1,2}:\d{2} [AP]M\b")
+_SAID_TIME = re.compile(r"\b(\d{1,2}:\d{2}) [AP]M\b")
+# The answer may leave out AM or PM once the morning is clear ("leave 9:08 for the 9:15 C").
+_BARE_TIME = re.compile(r"(?<![\d:])(\d{1,2}:\d{2})(?![\d:])")
 
 
 def _shown_trip(trips: list[dict], answer: str) -> dict:
-    """The planned trip the answer talks about: the one whose first option's clock times it gives.
+    """The planned trip the answer talks about: the one whose options' clock times it gives.
     An answer about leaving at 1:15 also looked at 5 AM to see when the last train runs. When two
     fit alike it is the one the answer comes to first; when none fit, the last one planned, since
     earlier attempts were superseded."""
     said: dict[str, int] = {}
-    for m in _SAID_TIME.finditer(re.sub(r"[\u00a0\u202f]", " ", answer or "")):
-        said.setdefault(m.group(), m.start())
+    for m in _BARE_TIME.finditer(answer or ""):
+        said.setdefault(m.group(1), m.start())
 
     def told(trip: dict) -> tuple[int, int]:
         options = ((trip.get("modes") or {}).get("transit") or {}).get("options") or []
-        times = set(_SAID_TIME.findall(json.dumps(options[0] if options else trip))) & set(said)
+        times = set(_SAID_TIME.findall(json.dumps(options or trip))) & set(said)
         return (len(times), -min(map(said.get, times), default=0))
 
     return max(enumerate(trips), key=lambda x: (*told(x[1]), x[0]))[1]

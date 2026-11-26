@@ -648,5 +648,15 @@
 "name": "Prospect Park Boathouse",
 "lat": 40.66082,
 "lon": -73.96528
+},
+"loeb boathouse": {
+"name": "Loeb Boathouse, Central Park",
+"lat": 40.775346,
+"lon": -73.968768
+},
+"central park boathouse": {
+"name": "Loeb Boathouse, Central Park",
+"lat": 40.775346,
+"lon": -73.968768
 }
 }

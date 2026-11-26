@@ -2870,6 +2870,9 @@ def test_the_map_shows_the_trip_the_answer_is_about():
     assert core._shown_trip([asked, later], "1:22 AM, and the last at 5:02 AM.") is asked
     assert core._shown_trip([later, asked], "1:22 AM, and the last at 5:02 AM.") is asked
     assert core._shown_trip([asked, later], "About half an hour.") is later
+    morning, superseded = trip("9:08 AM", "9:27 AM"), trip("9:35 AM", "9:51 AM")
+    assert core._shown_trip([morning, superseded], "Leave 9:08, arrive 9:27.") is morning
+    assert core._shown_trip([morning, superseded], "Or the 2 at 9:27.") is morning  # its 2nd option
 
 
 def test_a_service_that_is_briefly_busy_is_asked_again(monkeypatch):
@@ -3800,3 +3803,10 @@ def test_place_named_with_or_without_its_kind(monkeypatch):
     assert placenames._place_in("Nitehawk Cinema in Park Slope")["lat"] == 40.6616
     assert placenames._area_at_end("Nitehawk Park Slope")["lat"] == 40.6616
     assert placenames._shops("Joe's Pizza", {"lat": 40.73, "lon": -74.0}) == []
+
+
+def test_thing_in_a_park_by_its_short_name():
+    for text in ("Boathouse, Central Park", "the Boathouse in Central Park", "Loeb Boathouse"):
+        assert placenames.locate(text)["name"] == "Loeb Boathouse, Central Park"
+    assert placenames.locate("Boathouse at Prospect Park")["name"] == "Prospect Park Boathouse"
+    assert placenames.locate("the Ramble in Central Park")["lat"] == 40.77767
