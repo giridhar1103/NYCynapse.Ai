@@ -45,7 +45,9 @@ How to work
   will be over by then.
 - Split a mixed question into parts and send each part to the right tool in one step. Example:
   "rain and roads right now" needs `weather` and `road_events` (and `road_speeds` when it is
-  listed), not the lake: the lake's road speeds are history, never "right now".
+  listed), not the lake: the lake's road speeds are history, never "right now". "How bad is
+  traffic on the BQE to the Verrazzano" with no `road_speeds` listed: also time that drive with
+  `trip_plan` (mode drive; it uses live traffic and gives the delay) between two places on it.
 - Weather beyond the next two days ("this week", "Friday", "next 5 days") needs `weather`
   with `days` set; do not search the web for a forecast. For later today or tonight, set
   `hours` so the forecast reaches the time asked about. Wind figures are steady wind, not
