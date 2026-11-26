@@ -751,6 +751,10 @@ def locate(text: str) -> dict | None:
         if found and (not area or T._metres(found, area) < 4000):
             return {**found, "name": f"{head.strip()} ({found['name']})"}
     found = _place_in(raw) or _locate(raw)
+    # "Juniors Downtown Brooklyn": the search matched only the neighborhood at the end.
+    if found and "," not in raw and _norm(raw) != (fn := _norm(found["name"])):
+        if _norm(raw).endswith(" " + fn) and _neighborhood(fn):
+            found = _area_at_end(raw) or found
     if found:
         return found
     # "The Met on Fifth Avenue", "Washington Square in Larchmont": the part after on or in

@@ -3807,6 +3807,17 @@ def test_place_named_with_or_without_its_kind(monkeypatch):
     assert placenames._shops("Joe's Pizza", {"lat": 40.73, "lon": -74.0}) == []
 
 
+def test_place_with_its_neighborhood_after_it_is_not_the_neighborhood(monkeypatch):
+    # The address search matched only "Downtown Brooklyn" at the end of the name.
+    hood = {"name": "Downtown Brooklyn", "lat": 40.6928, "lon": -73.9903}
+    juniors = {"name": "Junior's", "lat": 40.6901, "lon": -73.9822}
+    monkeypatch.setattr(placenames, "_locate", lambda t: dict(hood))
+    monkeypatch.setattr(placenames, "_place_in", lambda t: dict(juniors) if "," in t else None)
+    monkeypatch.setattr(placenames, "_only_one", lambda t: None)
+    assert placenames.locate("Juniors Downtown Brooklyn")["name"] == "Junior's"
+    assert placenames.locate("Downtown Brooklyn")["name"] == "Downtown Brooklyn"
+
+
 def test_thing_in_a_park_by_its_short_name():
     for text in ("Boathouse, Central Park", "the Boathouse in Central Park", "Loeb Boathouse"):
         assert placenames.locate(text)["name"] == "Loeb Boathouse, Central Park"
