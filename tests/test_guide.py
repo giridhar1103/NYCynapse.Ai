@@ -3107,6 +3107,44 @@ def test_an_elevator_counts_only_for_the_lines_it_serves_and_when_it_is_out(monk
     assert outages("4", 2026, 12, 2, 5) == []
 
 
+def test_an_elevator_is_found_by_its_station_complex_when_named_another_way(monkeypatch):
+    from nycynapse.tools import access
+
+    def feed(url, params=None, ttl_s=0):
+        if url == access.STATIONS:
+            return [
+                {
+                    "gtfs_stop_id": "609",
+                    "complex_id": "363",
+                    "stop_name": "Westchester Sq-E Tremont Av",
+                    "daytime_routes": "6",
+                    "gtfs_latitude": "40.8398",
+                    "gtfs_longitude": "-73.8429",
+                    "ada": "1",
+                }
+            ]
+        if url == access.EQUIPMENT:
+            return [
+                {"equipmentno": "EL343", "stationcomplexid": "363", "linesservedbyelevator": "6"},
+                {"equipmentno": "EL900", "stationcomplexid": "999", "linesservedbyelevator": "6"},
+            ]
+        return [
+            {
+                "station": name,
+                "trainno": "6",
+                "equipment": n,
+                "equipmenttype": "EL",
+                "serving": "Mezzanine to Manhattan-bound platform.",
+                "isupcomingoutage": "N",
+            }
+            for n, name in (("EL343", "Westchester Sq-East Tremont Av"), ("EL900", "Elsewhere"))
+        ]
+
+    monkeypatch.setattr(access, "get_json", feed)
+    rec = access.station("", 40.8398, -73.8429, "6")
+    assert [x.split()[1] for x in rec["out"]] == ["EL343"]
+
+
 def test_a_borough_is_not_a_place_to_plan_a_trip_to():
     from nycynapse.agent import core
 

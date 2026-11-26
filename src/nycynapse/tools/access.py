@@ -53,14 +53,19 @@ def _time(s: str | None) -> datetime | None:
         return None
 
 
-def _lines_served() -> dict[str, set[str]]:
-    """Which lines each elevator serves. At 161 St the one to the 4 does not matter to the D."""
+def _equipment() -> dict[str, tuple[str, set[str]]]:
+    """Each elevator's station complex and the lines it serves. At 161 St the one to the 4 does
+    not matter to the D; the complex catches names written another way ("Westchester
+    Sq-East Tremont Av", "8th Ave") and transfer elevators listed under the other platform."""
     try:
         rows = get_json(EQUIPMENT, ttl_s=24 * 3600) or []
     except Exception:  # noqa: BLE001 - then every elevator at the station counts
         return {}
     return {
-        r.get("equipmentno"): set(re.findall(r"[A-Z0-9]+", r.get("linesservedbyelevator") or ""))
+        r.get("equipmentno"): (
+            str(r.get("stationcomplexid") or ""),
+            set(re.findall(r"[A-Z0-9]+", r.get("linesservedbyelevator") or "")),
+        )
         for r in rows
     }
 
@@ -92,15 +97,21 @@ def station(
     notes = s.get("ada_notes") if s.get("ada_notes") not in (None, "NaN", "") else None
     outages_known = True
     try:
-        served = _lines_served() if line else {}
-        out = [
-            o
-            for o in (_outages(at) if at else _outages())
-            if not (served.get(o.get("equipment")) and line not in served[o["equipment"]])
-            and _norm(o.get("station")) == _norm(s["stop_name"])
-            and set((o.get("trainno") or "").replace("/", " ").split())
-            & set((s.get("daytime_routes") or "").split())
-        ]
+        equipment = _equipment() if line else {}
+        complex_id = str(s.get("complex_id") or "")
+
+        def here(o: dict) -> bool:
+            cx, lines = equipment.get(o.get("equipment"), ("", set()))
+            if lines and line not in lines:
+                return False
+            if line and cx and cx == complex_id:
+                return True
+            return _norm(o.get("station")) == _norm(s["stop_name"]) and bool(
+                set((o.get("trainno") or "").replace("/", " ").split())
+                & set((s.get("daytime_routes") or "").split())
+            )
+
+        out = [o for o in (_outages(at) if at else _outages()) if here(o)]
     except Exception:  # noqa: BLE001 - the station list alone still answers, but not fully
         out, outages_known = [], False
     return {
