@@ -12,7 +12,7 @@ import json
 import re
 from functools import lru_cache
 
-from . import bridges, centers, corners, osm, railfares
+from . import bridges, centers, corners, gates, osm, railfares
 from . import trips as T
 from .http import get_json
 from .path_trains import PATH
@@ -639,7 +639,7 @@ def locate(text: str) -> dict | None:
     "Church Av station on the F" is that line's station; "Wave Hill, 4900 Independence Ave"
     or "Jackson Heights, 74th St and 37th Ave" falls back to its address or corner part."""
     raw = (text or "").strip()[:120]
-    bridge = bridges.find(raw)
+    bridge = bridges.find(raw) or gates.find(raw)
     if bridge:
         return bridge
     # "Great Lawn, Central Park": a well-known thing in a well-known park.

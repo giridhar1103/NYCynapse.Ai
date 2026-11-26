@@ -3731,3 +3731,23 @@ def test_opening_hours_holiday_not_mapped(monkeypatch):
     r = H.opening_hours("Bronx Zoo", "2026-11-25")
     assert "Thursday, November 26 (Thanksgiving): no holiday hours on the map" in r.summary
     assert r.data["days"][1]["hours"] is None and r.data["days"][2]["hours"]
+
+
+def test_fenced_places_go_to_a_gate():
+    from nycynapse.tools import (
+        gates,
+        placenames,  # noqa: F401  (after trips)
+        trips,
+    )
+    from nycynapse.tools.bridges import nearer
+
+    zoo = trips.locate("the Bronx Zoo")
+    assert zoo["name"] == "Bronx Zoo" and len(zoo["ends"]) == 2
+    astoria = {"lat": 40.7644, "lon": -73.9235}
+    assert nearer(zoo, astoria, trips._metres)["name"].startswith("Bronx Zoo, Asia Gate")
+    fordham = {"lat": 40.8616, "lon": -73.8905}
+    assert "Southern Boulevard" in nearer(zoo, fordham, trips._metres)["name"]
+    assert gates.find("Bronx Zoo Asia Gate")["name"].startswith("Bronx Zoo, Asia Gate")
+    assert gates.find("Green-Wood Cemetery main entrance")["name"].startswith("Green-Wood")
+    assert gates.find("Bronx Zoo Children's Zoo") is None
+    assert gates.find("Brooklyn Botanic Garden, Brooklyn")["ends"]
