@@ -3779,3 +3779,24 @@ def test_gate_next_door_is_a_short_walk():
     museum = "40.67120,-73.96360"  # the Brooklyn Museum
     r = trips.trip_plan(museum, "Brooklyn Botanic Garden", "walk", "Saturday 1 PM")
     assert r.ok and "next to each other" in r.summary and "Eastern Parkway" in r.summary
+
+
+def test_place_named_with_or_without_its_kind(monkeypatch):
+    # The map names one Nitehawk "Nitehawk Cinema" and the other plain Nitehawk.
+    slope = {"name": "Nitehawk", "type": "PLACE", "lat": 40.6616, "lon": -73.9800}
+    wburg = {"name": "Nitehawk Cinema", "type": "PLACE", "lat": 40.7161, "lon": -73.9624}
+    bar = {"name": "Joe's Bar", "type": "PLACE", "lat": 40.7300, "lon": -74.0020}
+
+    def fake(url, params, **k):
+        t = params["text"]
+        return {"Nitehawk Cinema": [wburg], "Nitehawk": [slope, wburg]}.get(t, [bar])
+
+    monkeypatch.setattr(placenames, "get_json", fake)
+    monkeypatch.setattr(
+        placenames, "_locate", lambda t: {"name": t, "lat": 40.6693, "lon": -73.9796}
+    )
+    at = {"lat": 40.6693, "lon": -73.9796}
+    assert [h["lat"] for h in placenames._shops("Nitehawk Cinema", at)] == [40.7161, 40.6616]
+    assert placenames._place_in("Nitehawk Cinema in Park Slope")["lat"] == 40.6616
+    assert placenames._area_at_end("Nitehawk Park Slope")["lat"] == 40.6616
+    assert placenames._shops("Joe's Pizza", {"lat": 40.73, "lon": -74.0}) == []

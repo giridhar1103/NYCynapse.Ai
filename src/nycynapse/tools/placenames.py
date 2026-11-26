@@ -753,7 +753,7 @@ def locate(text: str) -> dict | None:
     # says which one, like a comma would.
     parts = [p.strip() for p in re.split(r",|\s+(?:on|in)\s+(?=[A-Z0-9])", raw) if p.strip()]
     if len(parts) < 2:
-        return _only_one(raw)
+        return _area_at_end(raw) or _only_one(raw)
     boroughs = {
         "brooklyn",
         "queens",
@@ -870,26 +870,34 @@ def _shops(name: str, at: dict) -> list[dict]:
     want = set(_norm(name).split())
     if not want - _KIND:  # "the bakery"
         return []
-    texts = [name]
+    # One Nitehawk is mapped as "Nitehawk Cinema", the other as Nitehawk: both are asked for.
+    core = " ".join(w for w in name.split() if _norm(w) not in _KIND)
+    both = bool(core) and core != name
+    texts = [name, core] if both else [name]
     if "'" not in name and "\u2019" not in name:  # "Juniors" is written Junior's
         texts.append(re.sub(r"^(\w{3,})s\b", r"\1's", name))
+    found: dict[tuple, tuple] = {}
     for text in dict.fromkeys(texts):
         try:
             hits = get_json(
                 GEOCODE, {"text": text, "place": f"{at['lat']:.4f},{at['lon']:.4f}"}, ttl_s=86400
             )
         except Exception:  # noqa: BLE001
-            return []
-        fits = []
+            break
         for h in hits or []:
             got = set(_norm(h.get("name") or "").split())
             if h.get("type") != "PLACE" or T._metres(h, at) > 40000:
                 continue
-            if want <= got and got - want <= _KIND:
-                fits.append((len(got - want), T._metres(h, at), h))
-        if fits:
-            return [h for *_, h in sorted(fits, key=lambda x: x[:2])]
-    return []
+            # "Nitehawk Cinema" is mapped as Nitehawk: a kind word may be missing from the map's
+            # name, but not swapped for another ("Joe's Pizza" is not Joe's Bar).
+            gone, extra = want - got, got - want
+            if extra <= _KIND and (not gone or gone <= _KIND and not extra):
+                key, fit = (round(h["lat"], 4), round(h["lon"], 4)), len(extra) + len(gone)
+                if key not in found or fit < found[key][0]:
+                    found[key] = (fit, T._metres(h, at), h)
+        if found and not (both and text == name):
+            break
+    return [h for *_, h in sorted(found.values(), key=lambda x: x[:2])]
 
 
 def _place_in(raw: str) -> dict | None:
@@ -947,6 +955,19 @@ def _place_in(raw: str) -> dict | None:
         notes.insert(0, f"in {z[1]}")
     more = f" ({', '.join(notes)})" if notes else ""
     return {"name": h["name"] + more, "lat": h["lat"], "lon": h["lon"]}
+
+
+def _area_at_end(raw: str) -> dict | None:
+    """ "Nitehawk Park Slope": a name with its neighborhood after it and no comma."""
+    words = raw.split()
+    for k in (3, 2, 1):
+        if len(words) <= k:
+            continue
+        head, tail = " ".join(words[:-k]), " ".join(words[-k:])
+        if not tail[0].isupper() or _known(head) or not _neighborhood(_norm(tail)):
+            continue
+        return _place_in(f"{head}, {tail}")
+    return None
 
 
 def _only_one(name: str) -> dict | None:
