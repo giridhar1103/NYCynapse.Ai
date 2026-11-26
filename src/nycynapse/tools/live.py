@@ -1132,6 +1132,16 @@ def _opening_hours(place: str, date_from: str | None = None) -> ToolResult:
     return opening_hours(place, date_from)
 
 
+def _words(text: str) -> list[str]:
+    """Words for matching names: lower case, apostrophes dropped and a plural s taken off
+    ("Junior's" and "Juniors" are one word)."""
+    out = []
+    for w in re.findall(r"[a-z0-9']+", text.lower().replace("\u2019", "'")):
+        w = w.replace("'", "")
+        out.append(w[:-1] if len(w) > 3 and w.endswith("s") else w)
+    return out
+
+
 def find_place(text: str) -> ToolResult:
     """Find an address, landmark or venue in New York City and where it is."""
     text = text.strip()[:120]
@@ -1162,7 +1172,14 @@ def find_place(text: str) -> ToolResult:
         )
         out = []
         found = {"title": "NYC Planning GeoSearch", "url": "https://geosearch.planninglabs.nyc"}
-    for f in [] if corner else d.get("features", []):
+    features = [] if corner else d.get("features", [])
+    # The address search matches any word: "Juniors Downtown Brooklyn" gave a childcare center
+    # in Downtown Brooklyn. A result must have the name's first word, else the trip planner's
+    # place finding below is asked.
+    first = next((w for w in _words(text) if w not in ("the", "a", "an")), "")
+    if first:
+        features = [f for f in features if first in _words(f["properties"].get("label") or "")]
+    for f in features:
         p = f["properties"]
         lon, lat = f["geometry"]["coordinates"]
         if not out:

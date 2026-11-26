@@ -4093,3 +4093,19 @@ def test_a_pdf_source_is_named_not_shown_as_its_address():
     assert web._pdf_title(b"broken", "https://www.nyc.gov/assets/x/Fare%20Chart.pdf") == (
         "nyc.gov: Fare Chart.pdf"
     )
+
+
+def test_find_place_does_not_take_a_result_for_the_neighborhood_alone(monkeypatch):
+    from nycynapse.tools import live, trips
+
+    def feature(label, lat, lon):
+        props = {"label": label, "borough": "Brooklyn", "neighbourhood": "Downtown Brooklyn"}
+        return {"properties": props, "geometry": {"coordinates": [lon, lat]}}
+
+    childcare = feature("DOWNTOWN BROOKLYN CHILDCARE, Brooklyn", 40.68974, -73.98701)
+    monkeypatch.setattr(live, "get_json", lambda *a, **k: {"features": [childcare]})
+    monkeypatch.setattr(
+        trips, "locate", lambda t: {"name": "Junior's", "lat": 40.69006, "lon": -73.98216}
+    )
+    assert "Junior's" in live.find_place("Juniors Downtown Brooklyn").summary
+    assert live._words("Junior's Restaurant") == ["junior", "restaurant"]
