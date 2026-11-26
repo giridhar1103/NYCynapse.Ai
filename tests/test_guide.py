@@ -4125,3 +4125,13 @@ def test_a_bike_ride_says_how_much_is_on_protected_lanes():
     assert found["protected"] >= 90 and found["protected_streets"] == ["Hudson River Greenway"]
     assert bikelanes.describe(found).startswith("Bike routes along it (city bike map): ")
     assert bikelanes.along([[-73.9, 40.7]]) is None
+
+
+def test_the_card_opens_on_the_way_the_reader_asked_about():
+    from nycynapse.agent import core
+
+    trip = {"type": "trip", "default": "transit", "modes": {"transit": {}, "bike": {}, "drive": {}}}
+    assert core._with_mode(trip, "safest bike route from greenpoint")["default"] == "bike"
+    assert core._with_mode(trip, "cab from laguardia, how much")["default"] == "drive"
+    assert core._with_mode(trip, "subway or cab to jfk?")["default"] == "transit"
+    assert core._with_mode(trip, "how do i get to the met")["default"] == "transit"

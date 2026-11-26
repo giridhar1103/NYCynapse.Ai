@@ -909,7 +909,7 @@ class Agent:
             # A trip answer shows one trip, the one it is about, and nothing else that would
             # compete with its route on the map.
             layers = [x for x in layers if x.get("type") not in ("trip", "routes", "points")]
-            layers.append(_with_pick(_shown_trip(trips, answer), answer))
+            layers.append(_with_mode(_with_pick(_shown_trip(trips, answer), answer), t.question))
         # Highlights a tool drew while working (the top neighborhoods by rent, say) are not
         # the answer's places: the final map keeps only what the answer names.
         layers = [x for x in layers if x.get("type") != "highlight"]
@@ -1120,6 +1120,23 @@ def _shown_trip(trips: list[dict], answer: str) -> dict:
         return (len(times), -min(map(said.get, times), default=0))
 
     return max(enumerate(trips), key=lambda x: (*told(x[1]), x[0]))[1]
+
+
+_ASKED_MODE = [
+    ("bike", re.compile(r"\b(?:bike|biking|cycl\w+|citi ?bike|e-?bike)\b", re.I)),
+    ("walk", re.compile(r"\b(?:walk|walking|on foot)\b", re.I)),
+    ("drive", re.compile(r"\b(?:driv\w+|car|cab|taxi|uber|lyft)\b", re.I)),
+]
+
+
+def _with_mode(trip: dict, question: str) -> dict:
+    """The card opens on the way the reader asked about ("safest bike route" on the bike route),
+    when the trip has it and the question names just one way."""
+    modes = trip.get("modes") or {}
+    asked = [m for m, pat in _ASKED_MODE if pat.search(question or "") and m in modes]
+    if len(asked) == 1 and not re.search(r"\b(?:subway|train|bus|transit)\b", question or "", re.I):
+        return {**trip, "default": asked[0]}
+    return trip
 
 
 def _with_pick(trip: dict, answer: str) -> dict:
