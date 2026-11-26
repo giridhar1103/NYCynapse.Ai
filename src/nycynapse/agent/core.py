@@ -939,7 +939,10 @@ class Agent:
         facts = "; ".join(
             _short(r["result"].summary, 1200 if r["tool"] == "trip_plan" else 400)
             if kinds.get(r["tool"]) != "web"
-            else "web: " + ", ".join(s.get("title", "") for s in r["result"].sources[:3])
+            else "web: "
+            + ", ".join(s.get("title", "") for s in r["result"].sources[:3])
+            # A phone number given from a page is only digits: kept, so a follow-up can repeat it.
+            + "".join(f", phone {p}" for p in dict.fromkeys(_PHONE.findall(r["result"].summary)))
             for r in t.results
             if r["result"].ok
         )[:3000]
@@ -1128,6 +1131,9 @@ def _with_pick(trip: dict, answer: str) -> dict:
         if len(have) == 1:
             return {**trip, "pick": have[0]} if have[0] else trip
     return trip
+
+
+_PHONE = re.compile(r"\(?\b\d{3}\)?[\s.-]?\d{3}[\s.-]\d{4}\b")
 
 
 _WHOLE = {"brooklyn", "queens", "the bronx", "bronx", "staten island", "new jersey", "nj"}

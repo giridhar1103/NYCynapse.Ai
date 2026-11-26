@@ -4056,3 +4056,14 @@ def test_the_statue_ferry_leaves_from_castle_clinton():
         )
     assert placenames.locate("the Battery")["name"] == "The Battery"
     assert placenames.locate("Statue of Liberty")["name"] == "Statue of Liberty"
+
+
+def test_a_phone_number_from_a_page_is_remembered_for_a_follow_up():
+    from nycynapse.agent import core
+    from nycynapse.agent.grounding import _untraced_numbers
+
+    page = "Ben's Pizza, 123 MacDougal St. Call (212) 677-0976. Open 11 AM to 3 AM."
+    found = core._PHONE.findall(page)
+    assert found == ["(212) 677-0976"]
+    memory = "late pizza near washington square web: Ben's Pizza, phone " + found[0]
+    assert _untraced_numbers("Call Ben's at (212) 677-0976 first.", [], memory) == []
