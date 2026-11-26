@@ -3751,3 +3751,20 @@ def test_fenced_places_go_to_a_gate():
     assert gates.find("Green-Wood Cemetery main entrance")["name"].startswith("Green-Wood")
     assert gates.find("Bronx Zoo Children's Zoo") is None
     assert gates.find("Brooklyn Botanic Garden, Brooklyn")["ends"]
+
+
+def test_bus_alert_street_forms():
+    from nycynapse.tools import busalerts as A
+
+    ride = [(40.7, -73.95)]
+    for head in (
+        "M72 buses are detoured due to a road closure at W 65th St/Central Park W.",
+        "Northbound M7 buses will detour to 8th Ave from W 42nd St to Columbus Circle",
+        "The eastbound Q32 bus stop at Roosevelt Ave and 51st St is closed.",
+        "Southbound SIM10 buses will detour via 7th Ave until W 42nd St",
+    ):
+        assert A._where(head, ride), head
+    ((a, b),) = A._where(
+        "B6 buses will detour to Ave K between Coney Island Ave and Ocean Ave", ride
+    )
+    assert a != b  # a stretch of Ave K, not one corner

@@ -20,14 +20,17 @@ _CUT = re.compile(r"suspend|no service|no .{2,20} service|not operat", re.I)
 _ROUTE = re.compile(r"^(?:BXM?|BM?|M|QM?|SIM|S|X)\d{1,3}[A-Z]?$")
 
 _NAME = (
-    r"(?:(?:[EWNS]\.? )?(?:\d+(?:st|nd|rd|th)|[A-Z][\w'’.]*(?: [A-Z][\w'’.]*){0,3}) "
+    r"(?:(?:[EWNS]\.? )?(?:\d+(?:st|nd|rd|th)?|[A-Z][\w'’.]*(?: [A-Z][\w'’.]*){0,3}) "
     r"(?:Street|St|Avenue|Ave?|Blvd|Road|Rd|Place|Pl|Pkwy|Drive|Dr|Sq|Lane|Ln|Ter|Ct|Tpke|Way|Plaza|Plz|"
-    r"Slip|Hwy|Loop|Terrace|Concourse)\b"
+    r"Slip|Hwy|Loop|Terrace|Concourse|Alley|Circle|Expressway|Expwy)\b"
     r"(?: (?:[NSEW]|North|South|East|West)\b)?"
-    r"|Central Park (?:West|South|North)|Broadway|Bowery|Grand Concourse)"
+    # "Ave K" in Brooklyn, "Central Park W" as the alerts write it.
+    r"|Ave(?:nue)? [A-Z]\b|Central Park (?:West|South|North|[WSN]\b)"
+    r"|Broadway|Bowery|Grand Concourse)"
 )
 _ALONG = re.compile(rf"({_NAME}) (?:from|between) ({_NAME}) (?:to|and) ({_NAME})")
-_PAIR = re.compile(rf"({_NAME})(?:\s*/\s*| at | & )({_NAME})")
+# "Roosevelt Ave and 51st St"; "via 7th Ave until W 42nd St" is where the detour turns.
+_PAIR = re.compile(rf"({_NAME})(?:\s*/\s*| at | & | and | until )({_NAME})")
 _PAST = re.compile(rf"(?:stops?|service) (below|above|south of|north of) ({_NAME})")
 _INSTEAD = re.compile(r"[,;.]?\s*(?:please )?use the\b|\bfor service\b", re.I)
 _WAY = {"north": (0, 1), "south": (0, -1), "east": (1, 0), "west": (-1, 0)}
