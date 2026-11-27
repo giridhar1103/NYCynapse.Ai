@@ -434,8 +434,24 @@ def _headsign(lg: dict, name: str) -> str | None:
     Union City" on the 108)."""
     head = lg.get("headsign")
     if head and name and head.startswith(name + " ") and len(head) > len(name) + 3:
-        return head[len(name) + 1 :]
+        head = head[len(name) + 1 :]
+    if not head:
+        return head
+    # The Q70 is a loop signed "LaGuardia Link Fare Free Terminals B-C" both ways: from the
+    # airport it is headed for the stop it lets you off at, not for where you got on.
+    head = re.sub(r"(?i)\s*\bLink Fare Free\b", "", head).strip()
+    start, end = (lg.get("from") or {}).get("name") or "", (lg.get("to") or {}).get("name") or ""
+    if start and end and _tokens(start) <= _tokens(head) and _tokens(end) - _tokens(head):
+        return end
     return head
+
+
+_SIGN_SKIP = {"st", "av", "ave", "rd", "the", "and", "station", "of"}
+
+
+def _tokens(text: str) -> set[str]:
+    words = re.findall(r"[a-z0-9]+", text.lower())
+    return {w[:-1] if len(w) > 3 and w.endswith("s") else w for w in words} - _SIGN_SKIP
 
 
 def _line(lg: dict, end: str) -> dict:

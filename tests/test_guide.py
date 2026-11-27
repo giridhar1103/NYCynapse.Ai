@@ -4334,6 +4334,30 @@ def test_express_runs_are_named_as_riders_say_them():
     assert T._leg_text({**leg, "routeShortName": "F"}, "x").startswith("F train from")
 
 
+def test_a_loop_bus_from_the_airport_is_headed_where_it_lets_you_off():
+    from nycynapse.tools.trips import _headsign
+
+    sign = "LAGUARDIA LINK FARE FREE TERMINALS B-C"
+    out = {
+        "headsign": sign,
+        "from": {"name": "LAGUARDIA/TERMINAL B"},
+        "to": {"name": "ROOSEVELT AV/74 ST"},
+    }
+    back = {
+        "headsign": sign,
+        "from": {"name": "74 ST/ROOSEVELT AV"},
+        "to": {"name": "LAGUARDIA/TERMINAL C"},
+    }
+    assert _headsign(out, "Q70-SBS") == "ROOSEVELT AV/74 ST"
+    assert _headsign(back, "Q70-SBS") == "LAGUARDIA TERMINALS B-C"
+    seven = {
+        "headsign": "Flushing-Main St",
+        "from": {"name": "Times Sq-42 St"},
+        "to": {"name": "Flushing-Main St"},
+    }
+    assert _headsign(seven, "7") == "Flushing-Main St"
+
+
 def test_path_from_the_planner_is_named_and_priced_as_path():
     from nycynapse.tools import trips as T
 
