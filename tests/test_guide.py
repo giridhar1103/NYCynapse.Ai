@@ -1749,6 +1749,31 @@ def test_line_letter_before_station_and_borough_named(monkeypatch):
     assert placenames._borough_named("59 St, 4th Ave, Sunset Park") == "brooklyn"
 
 
+def test_a_station_named_as_the_tools_write_it_is_found(monkeypatch):
+    from nycynapse.tools import access, trips
+
+    rows = [
+        {
+            "stop_name": "96 St",
+            "daytime_routes": "1 2 3",
+            "borough": "M",
+            "gtfs_latitude": "40.7939",
+            "gtfs_longitude": "-73.9723",
+        },
+        {
+            "stop_name": "96 St",
+            "daytime_routes": "Q",
+            "borough": "M",
+            "gtfs_latitude": "40.7841",
+            "gtfs_longitude": "-73.9472",
+        },
+    ]
+    monkeypatch.setattr(access, "_stations", lambda: rows)
+    for said in ("96 St (1 2 3)", "96 St subway station (1 2 3), Manhattan", "96 St (1, 2)"):
+        assert trips.locate(said)["name"] == "96 St (1 2 3)", said
+    assert trips.locate("96 St (Q)")["lat"] == 40.7841
+
+
 def test_deadline_keeps_trains_near_the_last_one_that_makes_it():
     from datetime import datetime
 

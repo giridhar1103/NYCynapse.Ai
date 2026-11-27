@@ -704,6 +704,18 @@ def locate(text: str) -> dict | None:
             raw,
         )
     )
+    # "96 St (1 2 3)", as the guide's own tools write a station, or "96 St subway station
+    # (1 2 3), Manhattan": the lines in brackets after the name, wherever they sit.
+    paren = (
+        None
+        if m
+        else re.search(r"\(\s*([A-Z0-9](?:(?:\s*[/,&]\s*|\s+and\s+|\s+)[A-Z0-9])*)\s*\)", raw)
+    )
+    if paren:
+        lines = set(re.findall(r"\b[A-Z0-9]\b", paren.group(1)))
+        hit = _line_station(raw[: paren.start()], lines, raw[paren.end() :])
+        if hit:
+            return hit
     if m or m2:
         mm = m or m2
         lines = set(re.findall(r"\b[A-Z0-9]\b", mm.group(2).upper()))
