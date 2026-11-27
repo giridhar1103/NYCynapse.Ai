@@ -4334,6 +4334,17 @@ def test_express_runs_are_named_as_riders_say_them():
     assert T._leg_text({**leg, "routeShortName": "F"}, "x").startswith("F train from")
 
 
+def test_two_minutes_sooner_for_another_change_is_not_called_arrives_first():
+    from nycynapse.tools.trips import _soonest
+
+    seven = {"arrive_ts": 1000, "transfers": 1}
+    shuttle = {"arrive_ts": 880, "transfers": 2}
+    express = {"arrive_ts": 400, "transfers": 2}
+    assert _soonest([seven, shuttle]) is None
+    assert _soonest([seven, express]) is express
+    assert _soonest([shuttle, seven]) is shuttle
+
+
 def test_a_loop_bus_from_the_airport_is_headed_where_it_lets_you_off():
     from nycynapse.tools.trips import _headsign
 

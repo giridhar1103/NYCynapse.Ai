@@ -582,6 +582,21 @@ def _effort(o: dict, cheapest: float) -> float:
     )
 
 
+def _soonest(options: list[dict]) -> dict | None:
+    """The option to call "arrives first", or None when it beats the best one by under five
+    minutes at the price of another change: two minutes sooner by the E to 5 Av/53 St, a walk
+    to Grand Central and the shuttle is not worth naming over one seat on the 7."""
+    quick = min(options, key=lambda o: o["arrive_ts"])
+    top = options[0]
+    if (
+        quick is not top
+        and quick["arrive_ts"] > top["arrive_ts"] - 300
+        and quick["transfers"] > top["transfers"]
+    ):
+        return None
+    return quick
+
+
 def _for_deadline(options: list[dict], when: datetime, arrive_by: bool) -> list[dict]:
     """Arriving by a time: drop options that get in after it, latest leave first unless a few
     minutes more at home cost another change or a dearer train."""
@@ -1761,6 +1776,8 @@ def trip_plan(
             )
             first = "leaves latest" if arrive_by else "arrives first"
             easy = min(options, key=lambda o: (o["transfers"], o["arrive_ts"]))
+            if not arrive_by:
+                quick = _soonest(options)
             for i, o in enumerate(options, 1):
                 lo, hi = o["minutes"]
                 span = f"{lo} min" if lo == hi else f"{lo} to {hi} min"
@@ -2181,7 +2198,7 @@ def _trip_layer(a: dict, b: dict, t: datetime, arrive_by: bool, mode: str, data:
     modes: dict = {}
     options = data.get("transit") or []
     if options:
-        quick = min(options, key=lambda o: o["arrive_ts"])
+        quick = _soonest(options)
         easy = min(options, key=lambda o: (o["transfers"], o["arrive_ts"]))
         modes["transit"] = {
             "minutes": options[0]["minutes"][0],
