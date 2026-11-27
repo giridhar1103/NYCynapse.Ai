@@ -1284,6 +1284,13 @@ def _changes(option: dict, at: datetime) -> list[str]:
     return sorted(found, key=lambda x: not x.startswith("Affects"))[:4]
 
 
+_ENTRANCES = re.compile(
+    r"(?i)^(?:some |the |an? )?(?:entrances?|exits?|stairs?|stairways?)\b"
+    r"|\b(?:entrances?|exits?|stairs?|stairways?)\b[^.]{0,240}\bclosed\b"
+    r"|\bclosed\b[^.]{0,40}\b(?:entrances?|exits?|stairs?)\b"
+)
+
+
 def _line_changes(option: dict, at: datetime) -> list[str]:
     """MTA service changes on the subway lines an option rides that are in effect at the time
     of the trip (planned work the schedules may not show). One that names a station this ride
@@ -1300,6 +1307,8 @@ def _line_changes(option: dict, at: datetime) -> list[str]:
         for n in [lg.get("from"), lg.get("to"), *(lg.get("via") or [])]
         if n
     } - {""}
+    # Closed entrances matter only where the ride goes in or comes out.
+    ends = {_station_key(n) for n in (legs[0].get("from"), legs[-1].get("to")) if n} - {""}
     try:
         d = get_json(MTA_ALERTS, ttl_s=120)
     except Exception:  # noqa: BLE001
@@ -1325,6 +1334,10 @@ def _line_changes(option: dict, at: datetime) -> list[str]:
         if hit and during and head:
             text = re.sub(r"[^a-z0-9]", "", head.lower().replace("street", "st"))
             touches = any(len(k) >= 4 and k in text for k in stations)
+            if _ENTRANCES.search(head):
+                touches = any(len(k) >= 4 and k in text for k in ends)
+                if not touches:
+                    continue
             line = (
                 f"{'Affects this ride' if touches else 'Service change'} on the "
                 f"{'/'.join(sorted(hit))} at that time: {head}"

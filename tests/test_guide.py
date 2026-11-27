@@ -1976,6 +1976,48 @@ def test_service_change_naming_a_station_of_the_ride(monkeypatch):
     assert got[0].startswith("Affects this ride on the 7") and opt["affected"]
 
 
+def test_closed_entrances_count_only_where_the_ride_gets_on_or_off(monkeypatch):
+    import time as _time
+    from datetime import datetime
+
+    from nycynapse.tools import trips
+
+    head = (
+        "Some entrances/exits at 34 St-Penn Station [1][2][3], 59 St-Columbus Circle [A][C][D][1],"
+        " 72 St [C], and [D][F][N][Q][R] stations along 6 Av will be closed"
+    )
+    feed = {
+        "entity": [
+            {
+                "alert": {
+                    "header_text": {"translation": [{"language": "en", "text": head}]},
+                    "informed_entity": [{"route_id": "3"}],
+                    "active_period": [
+                        {"start": int(_time.time()) - 60, "end": int(_time.time()) + 86400}
+                    ],
+                }
+            }
+        ]
+    }
+    monkeypatch.setattr(trips, "get_json", lambda *a, **k: feed)
+
+    def ride(start, end):
+        leg = {
+            "mode": "subway",
+            "name": "3",
+            "from": start,
+            "to": end,
+            "via": ["34 St-Penn Station"],
+        }
+        return {"lines": [leg]}
+
+    past = ride("Nostrand Av", "96 St")
+    assert trips._line_changes(past, datetime.now(trips.NY)) == [] and "affected" not in past
+    there = ride("Nostrand Av", "34 St-Penn Station")
+    got = trips._line_changes(there, datetime.now(trips.NY))
+    assert got[0].startswith("Affects this ride on the 3") and there["affected"]
+
+
 def test_rides_with_cancelled_stops_are_dropped(monkeypatch):
     from datetime import datetime
 
