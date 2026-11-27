@@ -671,6 +671,8 @@ def locate(text: str) -> dict | None:
     "Church Av station on the F" is that line's station; "Wave Hill, 4900 Independence Ave"
     or "Jackson Heights, 74th St and 37th Ave" falls back to its address or corner part."""
     raw = (text or "").strip()[:120]
+    if re.search(r"\blefferts\b", raw, re.I) and re.search(r"\bair ?train\b", raw, re.I):
+        return dict(T.LEFFERTS)  # the AirTrain's own stop, not the airport it names
     bridge = bridges.find(raw) or gates.find(raw)
     if bridge:
         return bridge
@@ -700,7 +702,7 @@ def locate(text: str) -> dict | None:
         if m
         else re.match(
             r"(.+?)\s+(?:\(\s*)?([A-Z0-9](?:\s*(?:/|,|and|&)\s*[A-Z0-9])*)(?:\s*\))?"
-            r"(?:\s+(?:station|stop|train|line)s?\b|\s*$|(?=\s*,))(.*)$",
+            r"(?:\s+(?:subway\s+|train\s+)?(?:station|stop|train|line)s?\b|\s*$|(?=\s*,))(.*)$",
             raw,
         )
     )

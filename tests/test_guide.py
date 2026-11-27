@@ -3958,6 +3958,49 @@ def test_the_airtrain_counts_as_a_change(monkeypatch):
     assert o["transfers"] == 2 and o["lines"][0]["name"] == "AirTrain"
 
 
+def test_the_free_airtrain_to_lefferts_is_offered_and_priced_as_one_fare(monkeypatch):
+    from datetime import datetime
+
+    from nycynapse.tools import placenames, trips
+
+    hb = [(-73.830066, 40.660665), (-73.824157, 40.661666), (-73.782071, 40.64414)]
+    monkeypatch.setattr(
+        trips, "_airtrain_paths", lambda: {"jfk:Howard Beach-JFK Airport station": hb}
+    )
+    when = datetime(2026, 11, 27, 23, 15, tzinfo=trips.NY)
+    t = when.timestamp()
+
+    def plan(a, b, at, arrive_by, n=5):
+        return [{"legs": [{"mode": "BUS"}]}]
+
+    def itinerary(it, end, leg, before=False):
+        assert "free (the AirTrain fare is charged only at Jamaica and Howard Beach)" in leg[0]
+        return {
+            "minutes": (70, 72),
+            "transfers": 1,
+            "arrive_ts": t + 4300,
+            "leave_ts": t,
+            "lines": [{"mode": "bus", "name": "B15"}, {"mode": "bus", "name": "B13"}],
+        }
+
+    monkeypatch.setattr(trips, "_plan", plan)
+    monkeypatch.setattr(trips, "_itinerary", itinerary)
+    paid = [{"minutes": (60, 62)}]
+    city = {"name": "Bushwick", "lat": 40.70, "lon": -73.92}
+    jfk = {"name": "JFK Airport", "airport": "jfk"}
+    got = trips._lefferts(city, jfk, False, when, False, paid, [])
+    assert len(got) == 1 and got[0]["lines"][0]["name"] == "AirTrain"
+    # From the terminals, ending at Lefferts Blvd, not on to Howard Beach.
+    assert got[0]["lines"][0]["coords"][-1] == (-73.824157, 40.661666)
+    assert trips._fare(got[0]) == "$3.00"
+    # Much slower than the paid ways, or the AirTrain out: not offered.
+    assert trips._lefferts(city, jfk, False, when, False, [{"minutes": (30, 35)}], []) == []
+    assert trips._lefferts(city, jfk, False, when, False, paid, [(True, "shuttle")]) == []
+    assert placenames.locate("Lefferts Boulevard AirTrain station, JFK")["name"] == (
+        "Lefferts Blvd AirTrain station"
+    )
+
+
 def test_opening_hours_read_by_day(monkeypatch):
     from datetime import date
 

@@ -54,6 +54,10 @@ EWR = {
     "station": ("Newark Liberty International Airport train station", 40.7046, -74.1906),
 }
 JFK["code"], EWR["code"] = "jfk", "ewr"
+# The AirTrain stop by the Q3, Q10 and B15. The fare is charged only at Jamaica and Howard
+# Beach (jfkairport.com AirTrain page, read 28 November 2026), so riding from here is free.
+LEFFERTS = {"name": "Lefferts Blvd AirTrain station", "lat": 40.66151, "lon": -73.824104}
+LEFFERTS_KEY = "jfk:Lefferts Blvd"
 LGA_TERMINALS = {"A": (40.7728, -73.8862), "B": (40.7729, -73.8725), "C": (40.7703, -73.8645)}
 # JFK's AirTrain stops at each terminal, from OpenStreetMap.
 JFK["terminals"] = {
@@ -532,7 +536,16 @@ def _airtrain_paths() -> dict:
 
 
 def _add_airtrain(option: dict, key: str, to_airport: bool) -> None:
-    coords = _airtrain_paths().get(key)
+    paths = _airtrain_paths()
+    coords = paths.get(key)
+    if key == LEFFERTS_KEY:  # on the Howard Beach track, from Lefferts Blvd on
+        hb = paths.get("jfk:Howard Beach-JFK Airport station") or []
+        if hb:
+            i = min(
+                range(len(hb)),
+                key=lambda k: (hb[k][0] - LEFFERTS["lon"]) ** 2 + (hb[k][1] - LEFFERTS["lat"]) ** 2,
+            )
+            coords = hb[i:]
     if not coords:
         return
     station = key.split(":", 1)[1].replace(" station", "")
@@ -551,6 +564,7 @@ def _add_airtrain(option: dict, key: str, to_airport: bool) -> None:
         "headsign": None,
         "live": False,
         "coords": coords if to_airport else coords[::-1],
+        "free": key == LEFFERTS_KEY,
     }
     # Getting off the AirTrain onto the train is a change like any other.
     if any(x.get("mode") not in ("walk", None) for x in option["lines"]):
@@ -559,6 +573,47 @@ def _add_airtrain(option: dict, key: str, to_airport: bool) -> None:
         option["lines"].append(line)
     else:
         option["lines"].insert(0, line)
+
+
+def _lefferts(
+    city: dict,
+    airport_end: dict,
+    to_airport: bool,
+    when: datetime,
+    arrive_by: bool,
+    paid: list[dict],
+    status: list[tuple[bool, str]],
+) -> list[dict]:
+    """The cheapest way to or from JFK: the free AirTrain to Lefferts Blvd, then a local bus
+    and the subway on one $3 fare. Offered when it is not much slower than the paid ways."""
+    if any(on for on, _ in status):
+        return []  # the AirTrain is out or changed: the paid stations carry the details
+    pair = (city, LEFFERTS) if to_airport else (LEFFERTS, city)
+    air = timedelta(minutes=AIRTRAIN["minutes"][1])
+    t0 = when - air if to_airport and arrive_by else when
+    t0 = when + air if not to_airport and not arrive_by else t0
+    lo, hi = AIRTRAIN["minutes"]
+    leg = (
+        "AirTrain between Lefferts Blvd and "
+        + (
+            f"Terminal {airport_end['terminal']}"
+            if airport_end.get("terminal")
+            else "the terminals"
+        )
+        + f", {lo} to {hi} min, free (the AirTrain fare is charged only at Jamaica and "
+        "Howard Beach)"
+    )
+    slowest = min((o["minutes"][1] for o in paid), default=None)
+    for it in _plan(*pair, t0, arrive_by, n=3)[:3]:
+        if not any(lg.get("mode") == "BUS" for lg in it["legs"]):
+            continue
+        end = "Lefferts Blvd" if to_airport else city["name"]
+        o = _itinerary(it, end, (leg, lo, hi), before=not to_airport)
+        if slowest is not None and o["minutes"][1] > slowest + 30:
+            continue
+        _add_airtrain(o, LEFFERTS_KEY, to_airport)
+        return [o]
+    return []
 
 
 def _dollars(o: dict) -> float:
@@ -789,6 +844,7 @@ def _transit(a: dict, b: dict, when: datetime, arrive_by: bool) -> tuple[list[di
                 o = _itinerary(it, end, (leg, *AIRTRAIN["minutes"]), before=not to_airport)
                 _add_airtrain(o, f"jfk:{short}", to_airport)
                 options.append(o)
+        free = _lefferts(city, airport_end, to_airport, when, arrive_by, options, status)
         notes.append(
             "The AirTrain leg is from the Port Authority: any terminal in under 20 minutes "
             "from Jamaica or Howard Beach, trains every 5 to 15 minutes, $8.75 one way."
@@ -803,7 +859,13 @@ def _transit(a: dict, b: dict, when: datetime, arrive_by: bool) -> tuple[list[di
         # ride length alone a later, dearer LIRR train went before the A that arrives sooner).
         cheapest = min((_dollars(o) for o in options), default=0.0)
         options.sort(key=lambda o: o["arrive_ts"] + _effort(o, cheapest))
-        return _for_deadline(options, when, arrive_by)[:4], notes
+        # The free AirTrain and buses come last: cheapest, rarely the way off a long flight.
+        if free:
+            notes.append(
+                "The option via Lefferts Blvd rides the AirTrain free and takes local buses "
+                "from there: the cheapest way, one $3 fare, usually slower."
+            )
+        return _for_deadline(options[:3] + free, when, arrive_by)[:4], notes
     if a.get("airport") == "ewr" or b.get("airport") == "ewr":
         return _newark(a, b, when, arrive_by)
     options = [_itinerary(it, b["name"]) for it in _plan(a, b, when, arrive_by)[:8]]
@@ -2164,7 +2226,7 @@ def _fare(o: dict) -> str:
         mode, name = x.get("mode"), x.get("name") or ""
         if name == "AirTrain":
             # Newark's AirTrain fee is part of the NJ Transit ticket to the airport station.
-            total += 0 if nj_rail else FARES["airtrain"]
+            total += 0 if nj_rail or x.get("free") else FARES["airtrain"]
         elif name == "PATH":
             if not path:  # changing PATH trains is free
                 total += FARES["path"]
