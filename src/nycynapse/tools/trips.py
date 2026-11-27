@@ -440,6 +440,7 @@ def _headsign(lg: dict, name: str) -> str | None:
     # The Q70 is a loop signed "LaGuardia Link Fare Free Terminals B-C" both ways: from the
     # airport it is headed for the stop it lets you off at, not for where you got on.
     head = re.sub(r"(?i)\s*-?\s*\b(?:Link Fare Free|Exact Fare)\b", "", head).strip()
+    head = re.sub(r"(?i)^Select Bus(?: Service)?\s+(?=\S)", "", head)
     start, end = (lg.get("from") or {}).get("name") or "", (lg.get("to") or {}).get("name") or ""
     if start and end and _tokens(start) <= _tokens(head) and _tokens(end) - _tokens(head):
         return end
@@ -2198,7 +2199,9 @@ def _trip_layer(a: dict, b: dict, t: datetime, arrive_by: bool, mode: str, data:
     modes: dict = {}
     options = data.get("transit") or []
     if options:
-        quick = _soonest(options)
+        # With a deadline the useful one is the latest to leave, as in the text the guide reads.
+        quick = max(options, key=lambda o: o.get("leave_ts", 0)) if arrive_by else _soonest(options)
+        first = "Leaves latest" if arrive_by else "Arrives first"
         easy = min(options, key=lambda o: (o["transfers"], o["arrive_ts"]))
         modes["transit"] = {
             "minutes": options[0]["minutes"][0],
@@ -2211,9 +2214,7 @@ def _trip_layer(a: dict, b: dict, t: datetime, arrive_by: bool, mode: str, data:
                     "walk_minutes": o["walk_minutes"],
                     "fare": _fare(o),
                     "live": o.get("live", False),
-                    "tags": [
-                        t for t, x in (("Arrives first", quick), ("Fewest changes", easy)) if o is x
-                    ],
+                    "tags": [t for t, x in ((first, quick), ("Fewest changes", easy)) if o is x],
                     # Only set on a step-free search: whether every station on it checked out.
                     "step_free": o.get("step_free_ok"),
                     "access": o.get("access"),

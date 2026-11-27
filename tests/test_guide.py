@@ -1564,6 +1564,10 @@ def test_trip_layer_offers_every_mode_with_paths():
     assert [g["mode"] for g in first["legs"]] == ["subway"]  # legs without a path are dropped
     assert L["modes"]["drive"]["minutes"] == 32 and L["modes"]["drive"]["live"]
     assert L["modes"]["drive"]["taxi_fare"] == 61
+    data["transit"][0]["leave_ts"], data["transit"][1]["leave_ts"] = 1, 5
+    L = trips._trip_layer(a, b, datetime(2026, 10, 17, 23, 0, tzinfo=trips.NY), True, "both", data)
+    tags = [o["tags"] for o in L["modes"]["transit"]["options"]]
+    assert tags == [["Fewest changes"], ["Leaves latest"]]
 
 
 def test_tool_calls_written_as_the_answer_are_run_not_shown(monkeypatch):
@@ -4391,6 +4395,12 @@ def test_a_loop_bus_from_the_airport_is_headed_where_it_lets_you_off():
     assert _headsign(back, "Q70-SBS") == "LAGUARDIA TERMINALS B-C"
     nj = {"headsign": "HOBOKEN-PATH-Exact Fare", "from": {"name": "A"}, "to": {"name": "B"}}
     assert _headsign(nj, "126") == "HOBOKEN-PATH"
+    sbs = {
+        "headsign": "Select Bus Javits Ctr 12 Av Crosstown",
+        "from": {"name": "A"},
+        "to": {"name": "B"},
+    }
+    assert _headsign(sbs, "M34-SBS") == "Javits Ctr 12 Av Crosstown"
     seven = {
         "headsign": "Flushing-Main St",
         "from": {"name": "Times Sq-42 St"},
