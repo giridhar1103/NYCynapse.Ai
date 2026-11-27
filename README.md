@@ -202,6 +202,7 @@ Two stdio servers, both read-only, usable from Claude Desktop or any MCP client.
 | `road_events` | 511NY closures, roadwork, incidents and planned street events (parades, games, concerts), quoted as published (needs a 511NY feed login) |
 | `subway_alerts` | MTA alerts in effect now with the hours each applies, plus planned changes in the next 12 hours or up to 7 days, optionally for one line |
 | `next_trains` | The next trains at a subway station by line and direction, from the MTA's real-time feeds |
+| `station_access` | Step-free access at a subway station: which platforms, where each elevator goes, and which are out now or planned (MTA feeds) |
 | `alerts_near` | Road incidents, closures, station alerts and weather warnings near a place |
 | `street_closures` | Streets closed for construction near a place, from NYC DOT permits |
 | `air_quality` | US AQI, fine particles and ozone, now and for the next hours |

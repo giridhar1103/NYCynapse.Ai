@@ -119,6 +119,16 @@ def alerts_near(near: str, radius_m: int = 1000, since_minutes: int | None = Non
 
 
 @tool
+def station_access(station: str) -> dict:
+    """Step-free access at one subway station: which platforms are accessible, where each
+    elevator goes (which street corner, which platform), and which elevators are out right now
+    or have a planned outage, with the MTA's way around one that is out."""
+    from ..tools import access
+
+    return access.station_access(station).as_dict()
+
+
+@tool
 def street_closures(near: str, radius_m: int = 500, days_ahead: int = 7) -> dict:
     """Streets closed for construction near a place, in effect now or starting within days_ahead
     days, from NYC DOT permits."""

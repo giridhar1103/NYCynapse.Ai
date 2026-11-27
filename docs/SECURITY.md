@@ -14,7 +14,7 @@ Every tool is read-only. There is nothing to send, buy, post, delete or write.
 | Tool | Reach |
 |---|---|
 | `ask_lake`, `lake_freshness` | Gold tables of the lake, through the semantic layer and a SQL guard |
-| `weather`, `road_speeds`, `road_events`, `subway_alerts`, `next_trains`, `alerts_near`, `street_closures`, `air_quality`, `nearby`, `citibike_now`, `trip_plan`, `find_place`, `area_stats` | Fixed public APIs (Open-Meteo, NWS, NYC DOT, 511NY, MTA, Transitous, TomTom, Citi Bike, NYC Open Data, NYC GeoSearch, Census Reporter) |
+| `weather`, `road_speeds`, `road_events`, `subway_alerts`, `next_trains`, `station_access`, `alerts_near`, `street_closures`, `air_quality`, `nearby`, `citibike_now`, `trip_plan`, `find_place`, `area_stats` | Fixed public APIs (Open-Meteo, NWS, NYC DOT, 511NY, MTA, Transitous, TomTom, Citi Bike, NYC Open Data, NYC GeoSearch, Census Reporter) |
 | `open_data` | Six named NYC Open Data datasets, at most 50 rows |
 | `web_search` | Serper, then Tavily, then a self-hosted SearXNG |
 | `read_page` | One public web page, through the guarded fetch below |

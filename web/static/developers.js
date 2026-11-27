@@ -65,7 +65,7 @@
   });
   show(0);
 
-  const GROUPS = [["Getting around", ["trip_plan", "next_trains", "subway_alerts", "transit_changes", "citibike_now"]],
+  const GROUPS = [["Getting around", ["trip_plan", "next_trains", "subway_alerts", "transit_changes", "station_access", "citibike_now"]],
     ["Streets and surroundings", ["road_events", "road_speeds", "street_closures", "alerts_near", "nearby_amenities", "find_place"]],
     ["Weather and air", ["weather", "air_quality"]], ["City records", ["open_data"]]];
   get("api/connector-tools").then(({ tools }) => {
