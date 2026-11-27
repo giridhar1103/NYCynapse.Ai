@@ -192,7 +192,8 @@ def _leg_text(leg: dict, end: str) -> str:
     name = leg.get("routeShortName") or leg.get("displayName") or ""
     agency = leg.get("agencyName") or ""
     if kind == "subway":
-        what = f"{name} train"
+        # The feeds call the rush hour express runs FX, 6X and 7X; riders say F express.
+        what = f"{name[0]} express train" if re.fullmatch(r"[0-9A-Z]X", name) else f"{name} train"
     elif kind == "bus":
         what = f"{name} bus"
     elif kind == "train":
@@ -720,7 +721,10 @@ def _transit(a: dict, b: dict, when: datetime, arrive_by: bool) -> tuple[list[di
                 f"{'in effect at the time of this trip' if on else 'not in effect then'}"
                 f": {head}."
             )
-        options.sort(key=lambda o: o["minutes"][1])
+        # Soonest there first, counting changes, walking and dollars like any other trip (by
+        # ride length alone a later, dearer LIRR train went before the A that arrives sooner).
+        cheapest = min((_dollars(o) for o in options), default=0.0)
+        options.sort(key=lambda o: o["arrive_ts"] + _effort(o, cheapest))
         return _for_deadline(options, when, arrive_by)[:4], notes
     if a.get("airport") == "ewr" or b.get("airport") == "ewr":
         return _newark(a, b, when, arrive_by)

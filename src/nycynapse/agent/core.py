@@ -1175,6 +1175,18 @@ def _with_pick(trip: dict, answer: str) -> dict:
         have = [i for i, ts in enumerate(times) if m.group(1) in ts]
         if len(have) == 1:
             return {**trip, "pick": have[0]} if have[0] else trip
+    # No clock time of one option: the first line only one option rides ("take the E").
+    names = [{lg.get("name") for lg in o.get("lines") or [] if lg.get("name")} for o in options]
+    first = None
+    for i, own in enumerate(names):
+        for name in own - set().union(*(n for j, n in enumerate(names) if j != i)):
+            word = re.escape(name)
+            pat = rf"\b{word}\b" if len(name) > 1 else rf"\bthe {word}\b|\b{word} (?:train|line)\b"
+            m = re.search(pat, answer or "")
+            if m and (first is None or m.start() < first[0]):
+                first = (m.start(), i)
+    if first and first[1]:
+        return {**trip, "pick": first[1]}
     return trip
 
 

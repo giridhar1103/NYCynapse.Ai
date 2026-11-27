@@ -4272,3 +4272,34 @@ def test_calm_bike_rides_through_a_protected_lane_nearby(monkeypatch):
     assert core._calm_ride("biking with my kids to the park", bike)
     assert not core._calm_ride("fastest bike route to work", bike)
     assert not core._calm_ride("safest way to get home", {"mode": "transit"})
+
+
+def test_the_card_opens_on_the_line_the_answer_names():
+    from nycynapse.agent import core
+
+    def opt(*names):
+        return {"leave": "4:00 PM", "arrive": "4:30 PM", "lines": [{"name": n} for n in names]}
+
+    options = [opt("Q32"), opt("E"), opt("F"), opt("A", "B103"), opt("A", "2")]
+    trip = {"type": "trip", "default": "transit", "modes": {"transit": {"options": options}}}
+    assert core._with_pick(trip, "E train to 5 Av/53 St, then walk.")["pick"] == 1
+    assert core._with_pick(trip, "Ride the A to Hoyt, then the B103 bus.")["pick"] == 3
+    # "the A" is on two options; "2 suitcases" is not the 2 train.
+    assert "pick" not in core._with_pick(trip, "Take the A with 2 suitcases.")
+    assert "pick" not in core._with_pick(trip, "The Q32 is slow.")  # the first option already
+
+
+def test_express_runs_are_named_as_riders_say_them():
+    from nycynapse.tools import trips as T
+
+    leg = {
+        "mode": "SUBWAY",
+        "routeShortName": "FX",
+        "duration": 900,
+        "startTime": "2026-12-02T22:17:00Z",
+        "from": {"name": "Jackson Hts-Roosevelt Av"},
+        "to": {"name": "47-50 Sts-Rockefeller Ctr"},
+        "intermediateStops": [{}] * 4,
+    }
+    assert T._leg_text(leg, "x").startswith("F express train from Jackson Hts")
+    assert T._leg_text({**leg, "routeShortName": "F"}, "x").startswith("F train from")
