@@ -220,6 +220,37 @@ def _no_such_day(text: str) -> list[str]:
     return bad
 
 
+_MONTHS = ("january", "february", "march", "april", "may", "june", "july", "august",
+           "september", "october", "november", "december")  # fmt: skip
+_WEEKDAY_DATE = re.compile(
+    r"\b(Mon|Tues?|Wed(?:nes)?|Thu(?:rs)?|Fri|Sat(?:ur)?|Sun)(?:day)?\.?,?\s+"
+    r"(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sept?|Oct|Nov|Dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?"
+    r"(?:,?\s+(20\d\d))?\b"
+)
+
+
+def _wrong_weekday(text: str, today: date | None = None) -> list[str]:
+    """A weekday that does not go with its date: "Tuesday, December 13" in 2026 is a Sunday
+    (an old notice from 2022). Without a year, the date nearest today is meant."""
+    today = today or datetime.now(ZoneInfo("America/New_York")).date()
+    bad = []
+    for m in _WEEKDAY_DATE.finditer(text):
+        month = next(i for i, n in enumerate(_MONTHS, 1) if n.startswith(m[2].lower()[:3]))
+        years = [int(m[4])] if m[4] else [today.year - 1, today.year, today.year + 1]
+        days = []
+        for y in years:
+            try:
+                days.append(date(y, month, int(m[3])))
+            except ValueError:
+                continue
+        if not days:
+            continue
+        d = min(days, key=lambda x: abs((x - today).days))
+        if d.strftime("%a")[:3].lower() != m[1][:3].lower():
+            bad.append(f"{m[0]} ({d:%B %-d %Y} is a {d:%A})")
+    return bad
+
+
 def _draft_issues(answer: str) -> list[str]:
     text = _uncite(answer)
     issues = [why for pattern, why in _DRAFT_SMELLS if pattern.search(text)]
@@ -227,6 +258,11 @@ def _draft_issues(answer: str) -> list[str]:
         issues.append(
             f"it gives a date that does not exist ({', '.join(bad)}); read the date again from "
             "its source (11/3 is November 3) or leave it out"
+        )
+    if bad := _wrong_weekday(text):
+        issues.append(
+            f"a weekday does not go with its date: {'; '.join(bad)}. The notice may be from "
+            "another year: check it, or give the date without the weekday"
         )
     if len(text.split()) > MAX_WORDS:
         issues.append(

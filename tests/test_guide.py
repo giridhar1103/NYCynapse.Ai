@@ -4369,3 +4369,18 @@ def test_a_film_permit_list_that_stopped_says_so(monkeypatch):
     assert "ends Tue Sep 1 2026" in note and "cannot say what is happening now" in note
     monkeypatch.setattr(live, "_newest", lambda ds, col=None: datetime(2099, 1, 1))
     assert live._reaches("film_permits", "") == ""
+
+
+def test_a_weekday_that_does_not_go_with_its_date_is_sent_back():
+    from datetime import date
+
+    from nycynapse.agent.core import _wrong_weekday
+
+    today = date(2026, 11, 27)
+    assert _wrong_weekday("closed through Tuesday, December 13.", today) == [
+        "Tuesday, December 13 (December 13 2026 is a Sunday)"
+    ]
+    fine = "lit Wednesday, Dec 2, 7 to 10 PM; Saturday Jan 9; Fri Nov 27"
+    assert _wrong_weekday(fine, today) == []
+    assert _wrong_weekday("on Tuesday, December 13, 2022", today) == []
+    assert _wrong_weekday("Thanksgiving, Thursday, November 26th", today) == []
