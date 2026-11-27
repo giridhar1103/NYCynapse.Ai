@@ -3481,6 +3481,26 @@ def test_served_tools_keep_their_arguments():
     assert "hour by hour" in tools["weather"].description
 
 
+def test_an_hour_without_am_or_pm_is_left_to_the_model(monkeypatch):
+    from nycynapse.agent import core
+    from nycynapse.tools import trips as T
+
+    monkeypatch.setattr(T, "locate", lambda text: {"name": text, "lat": 40.7, "lon": -73.9})
+    for q in (
+        "cab from the east village to laguardia leaving at 6, how long and how much roughly",
+        "from times square to jfk at 8 tonight",
+        "from park slope to the met around 7:30",
+    ):
+        assert core._trip_prefetch(q, None) is None, q
+    for q in (
+        "from union square to the met",
+        "from times square to jfk at 8pm tonight",
+        "from 96 st to south ferry on the 1 train",
+        "from union square to bryant park, there are 4 of us",
+    ):
+        assert core._trip_prefetch(q, None), q
+
+
 def test_the_day_is_not_part_of_the_place(monkeypatch):
     import json
 

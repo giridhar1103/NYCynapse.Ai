@@ -1136,6 +1136,14 @@ _DAY = re.compile(
     re.I,
 )
 _AT = re.compile(r"\b\d{1,2}(?::\d\d)?\s*(?:am|pm)\b", re.I)
+# "leaving at 6", "at 8 tonight": an hour without am or pm, which the planner would take as now
+# or as the start of the evening. The model reads it instead.
+_BARE_HOUR = re.compile(
+    r"\b(?:at|around|by|leav(?:e|ing)|before|after|until)\s+(?:about\s+|like\s+)?"
+    r"\d{1,2}(?::\d\d)?\b(?!\s*(?:am|pm|a\.m|p\.m|o'?clock\s*(?:am|pm)|min|minutes?|hours?|hrs?|"
+    r"people|of us|stops?|blocks?|av|ave|avenue|st|street|rd|road|pl|place|train|line|bus)\b)",
+    re.I,
+)
 _WHEN = re.compile(
     # "7am monday", "6:30 pm tomorrow": a time with its day after it
     r"\b\d{1,2}(?::\d\d)?\s*(?:am|pm)\s+(?:tomorrow|tonight|today|"
@@ -1316,6 +1324,8 @@ def _trip_prefetch(
     at = list(_AT.finditer(question))
     if len({x.group(0).lower() for x in at}) > 1:
         return None  # which one is the trip's is for the model to read
+    if not at and _BARE_HOUR.search(question):
+        return None
     if at:
         days = [x for x in _DAY.finditer(question) if x.group(0).lower() != "today"]
         day = min(days, key=lambda x: abs(x.start() - at[0].start()), default=None)
