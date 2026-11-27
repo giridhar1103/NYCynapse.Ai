@@ -662,6 +662,34 @@ def _hours_away(options: list[dict], when: datetime, arrive_by: bool) -> bool:
     return min(_first_ride_ts(o) for o in options) - when.timestamp() > 2.5 * 3600
 
 
+def _gap_before(a: dict, b: dict, options: list[dict], when: datetime) -> str | None:
+    """With a deadline the latest ride can get in long before it (the last train of the night):
+    say the next one is too late, so the reader is not left asking about a later train."""
+    last = max(options, key=lambda o: o["arrive_ts"])
+    early = (when.timestamp() - last["arrive_ts"]) / 60
+    if early < 60:
+        return None
+    gone = datetime.fromtimestamp(_first_ride_ts(last), NY)
+    try:
+        later, _ = _transit(a, b, gone + timedelta(minutes=2), False)
+    except Exception:  # noqa: BLE001 - the options stand without it
+        return None
+    later = [o for o in later if _first_ride_ts(o) > gone.timestamp()]
+    if not later:
+        return None
+    nxt = min(later, key=_first_ride_ts)
+    if nxt["arrive_ts"] <= when.timestamp() + 60:
+        return None  # the deadline search missed it: say nothing rather than something wrong
+    leaves = datetime.fromtimestamp(_first_ride_ts(nxt), NY)
+    h, m = divmod(round(early), 60)
+    ahead = f"{h} h {m} min" if h else f"{m} min"
+    return (
+        f"No later ride arrives by {when:%-I:%M %p}: after the one at {gone:%-I:%M %p}, the next "
+        f"leaves at {leaves:%-I:%M %p} and arrives {nxt['arrive']}, too late. The latest option "
+        f"above gets in about {ahead} early."
+    )
+
+
 def _sane(options: list[dict]) -> list[dict]:
     """Drop itineraries that take several times as long as the best one (a ride glued to a
     connection the next morning)."""
@@ -1771,6 +1799,10 @@ def trip_plan(
             options = _affected_last(options, arrive_by)
         data["transit"] = options
         late = _hours_away(options, t, arrive_by)
+        if options and arrive_by and not late:
+            gap = _gap_before(a, b, options, t)
+            if gap:
+                notes.append(gap)
         if options and late:
             notes.append(
                 "Every transit option found is hours away from the time asked. That usually "

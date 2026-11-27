@@ -2018,6 +2018,43 @@ def test_closed_entrances_count_only_where_the_ride_gets_on_or_off(monkeypatch):
     assert got[0].startswith("Affects this ride on the 3") and there["affected"]
 
 
+def test_a_deadline_long_after_the_last_train_says_the_next_is_too_late(monkeypatch):
+    from datetime import datetime
+
+    from nycynapse.tools import trips
+
+    NY = trips.NY
+    deadline = datetime(2026, 11, 28, 4, 0, tzinfo=NY)
+
+    def ride(h, m, arrive_h, arrive_m):
+        go = datetime(2026, 11, 28, h, m, tzinfo=NY).timestamp()
+        end = datetime(2026, 11, 28, arrive_h, arrive_m, tzinfo=NY)
+        return {
+            "leave_ts": go - 300,
+            "arrive_ts": end.timestamp(),
+            "arrive": f"{end:%-I:%M %p}",
+            "lines": [{"mode": "train", "depart_ts": go}],
+        }
+
+    last = ride(1, 22, 2, 7)
+    seen = []
+
+    def later(a, b, when, arrive_by):
+        seen.append((when, arrive_by))
+        return [ride(5, 10, 5, 55), ride(5, 53, 6, 38)], []
+
+    monkeypatch.setattr(trips, "_transit", later)
+    note = trips._gap_before({}, {}, [last], deadline)
+    assert note.startswith("No later ride arrives by 4:00 AM: after the one at 1:22 AM")
+    assert "next leaves at 5:10 AM and arrives 5:55 AM" in note and "1 h 53 min early" in note
+    assert seen and seen[0][1] is False
+    # A ride that gets in close to the deadline needs no note.
+    assert trips._gap_before({}, {}, [ride(3, 0, 3, 40)], deadline) is None
+    # Nor when the search after it finds a ride that still makes it.
+    monkeypatch.setattr(trips, "_transit", lambda *a: ([ride(2, 30, 3, 15)], []))
+    assert trips._gap_before({}, {}, [last], deadline) is None
+
+
 def test_rides_with_cancelled_stops_are_dropped(monkeypatch):
     from datetime import datetime
 
