@@ -4153,3 +4153,71 @@ def test_a_bike_question_shows_the_whole_ride_on_the_card():
     assert (
         core._card_trip([whole, train], "The G at 6:38.", "how do i get there")["label"] == "train"
     )
+
+
+def test_station_access_names_elevator_corners_and_outages(monkeypatch):
+    from nycynapse.tools import access
+
+    stations = [
+        {
+            "stop_name": "34 St-Herald Sq",
+            "complex_id": "607",
+            "daytime_routes": "N Q R W",
+            "ada": "1",
+            "ada_notes": "NaN",
+            "gtfs_latitude": "40.749567",
+            "gtfs_longitude": "-73.98795",
+        },
+        {
+            "stop_name": "34 St-Herald Sq",
+            "complex_id": "607",
+            "daytime_routes": "B D F M",
+            "ada": "1",
+            "ada_notes": "NaN",
+            "gtfs_latitude": "40.749719",
+            "gtfs_longitude": "-73.987823",
+        },
+    ]
+    lifts = [
+        {
+            "equipmentno": "EL213",
+            "equipmenttype": "EL",
+            "isactive": "Y",
+            "ADA": "Y",
+            "stationcomplexid": "607",
+            "shortdescription": "Street to mezzanine",
+            "serving": "6th Ave & 34 St entrance (SW corner) to mezzanine",
+            "alternativeroute": "Use 14 St-Union Sq.",
+        },
+        {
+            "equipmentno": "EL212",
+            "equipmenttype": "EL",
+            "isactive": "Y",
+            "ADA": "Y",
+            "stationcomplexid": "607",
+            "shortdescription": "Mezzanine to uptown",
+            "serving": "mezzanine to uptown N/Q/R/W platform",
+        },
+    ]
+    outages = [
+        {
+            "equipment": "EL213",
+            "equipmenttype": "EL",
+            "isupcomingoutage": "N",
+            "estimatedreturntoservice": "11/28/2026 11:00:00 PM",
+        }
+    ]
+
+    def fake(url, *a, **k):
+        return {access.STATIONS: stations, access.EQUIPMENT: lifts, access.OUTAGES: outages}[url]
+
+    monkeypatch.setattr(access, "get_json", fake)
+    rep = access.complex_report(40.7496, -73.9879)
+    assert len(rep["platforms"]) == 2 and rep["out_now"] == ["EL213"]
+    assert rep["elevators"][0].startswith("EL213 6th Ave & 34 St entrance (SW corner)")
+    assert "OUT NOW, back about Sat Nov 28 11:00 PM" in rep["elevators"][0]
+    assert "Use 14 St-Union Sq." in rep["elevators"][0]
+    assert rep["elevators"][1].endswith("working now")
+    outages.clear()
+    assert access.complex_report(40.7496, -73.9879)["out_now"] == []
+    assert access.complex_report(40.80, -73.90) is None

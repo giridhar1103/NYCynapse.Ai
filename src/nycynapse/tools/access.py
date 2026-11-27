@@ -10,6 +10,7 @@ import re
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
+from . import Tool, ToolResult, failed
 from .http import get_json
 
 NY = ZoneInfo("America/New_York")
@@ -151,3 +152,156 @@ def describe(rec: dict) -> str:
     if not rec.get("outages_known", True):
         text += "; elevator status could not be checked"
     return text
+
+
+# --------------------------------------------------------------------------------------- the tool
+
+
+def _elevators(complex_id: str) -> list[dict]:
+    rows = get_json(EQUIPMENT, ttl_s=24 * 3600) or []
+    return [
+        r
+        for r in rows
+        if str(r.get("stationcomplexid") or "") == complex_id
+        and r.get("equipmenttype") == "EL"
+        and r.get("isactive") == "Y"
+    ]
+
+
+def complex_report(lat: float, lon: float) -> dict | None:
+    """Step-free access at the station complex nearest a point: whether each platform is
+    accessible, where the elevators go, and which are out now or planned to be."""
+    near = [
+        (s, _metres(lat, lon, float(s["gtfs_latitude"]), float(s["gtfs_longitude"])))
+        for s in _stations()
+        if s.get("gtfs_latitude")
+    ]
+    near = [x for x in near if x[1] <= NEAR_M]
+    if not near:
+        return None
+    first = min(near, key=lambda x: x[1])[0]
+    cx = str(first.get("complex_id") or "")
+    platforms = [s for s in _stations() if str(s.get("complex_id") or "") == cx] or [first]
+    word = {"1": "step-free", "2": "partly step-free"}
+    lines = []
+    for s in platforms:
+        kind = word.get(str(s.get("ada")), "not step-free (stairs only)")
+        text = f"{s['stop_name']} ({s.get('daytime_routes')}): {kind}"
+        notes = s.get("ada_notes")
+        if notes not in (None, "NaN", ""):
+            text += f", {notes}"
+        lines.append(text)
+    try:
+        lifts = _elevators(cx)
+        rows = [r for r in get_json(OUTAGES, ttl_s=300) or [] if r.get("equipmenttype") == "EL"]
+        known = True
+    except Exception:  # noqa: BLE001 - the station list alone still answers, but not fully
+        lifts, rows, known = [], [], False
+    mine = {r.get("equipmentno") for r in lifts}
+    now = {
+        r.get("equipment"): r
+        for r in rows
+        if r.get("equipment") in mine and r.get("isupcomingoutage") != "Y"
+    }
+    later = {
+        r.get("equipment"): r
+        for r in rows
+        if r.get("equipment") in mine and r.get("isupcomingoutage") == "Y"
+    }
+    lift_lines = []
+    for r in sorted(
+        lifts,
+        key=lambda r: (
+            r.get("ADA") != "Y",
+            "street" not in (r.get("shortdescription") or "").lower(),
+        ),
+    ):
+        no = r.get("equipmentno")
+        text = f"{no} {r.get('serving')}"
+        if r.get("ADA") != "Y":
+            text += " (not an accessible route)"
+        if no in now:
+            o = now[no]
+            text += ": OUT NOW"
+            if o.get("estimatedreturntoservice"):
+                text += f", back about {_when(o['estimatedreturntoservice'])}"
+            if r.get("alternativeroute"):
+                text += f". MTA's way around it: {r['alternativeroute'][:400]}"
+        elif known:
+            text += ": working now"
+        if no in later:
+            o = later[no]
+            text += f"; planned outage from {_when(o.get('outagedate') or '')}"
+            if o.get("estimatedreturntoservice"):
+                text += f" to {_when(o['estimatedreturntoservice'])}"
+        lift_lines.append(text)
+    return {
+        "name": first["stop_name"],
+        "complex_id": cx,
+        "platforms": lines,
+        "elevators": lift_lines,
+        "outages_known": known,
+        "out_now": sorted(now),
+    }
+
+
+def station_access(station: str) -> ToolResult:
+    from datetime import datetime as _dt
+
+    from .trips import locate
+
+    p = locate(station)
+    if not p:
+        return failed(f"could not place {station!r}; name the subway station")
+    rep = complex_report(p["lat"], p["lon"])
+    if not rep:
+        return failed(f"no subway station within {NEAR_M} m of {p['name']}")
+    asof = _dt.now(NY)
+    parts = [
+        f"Step-free access at {rep['name']} (MTA station list and elevator feed, "
+        f"{asof:%-I:%M %p %a %b %-d}):"
+    ]
+    parts += [f"- {x}" for x in rep["platforms"]]
+    if rep["elevators"]:
+        parts.append("Elevators:")
+        parts += [f"- {x}" for x in rep["elevators"]]
+    elif rep["outages_known"]:
+        parts.append("No elevators listed at this station.")
+    if not rep["outages_known"]:
+        parts.append("Elevator status could not be checked right now.")
+    elif rep["elevators"] and not rep["out_now"]:
+        parts.append("No elevator here is out right now.")
+    return ToolResult(
+        summary="\n".join(parts),
+        data=rep,
+        sources=[
+            {
+                "kind": "live",
+                "title": "MTA elevator and escalator status",
+                "url": "https://www.mta.info/elevator-escalator-status",
+            },
+            {
+                "kind": "live",
+                "title": "MTA subway stations (data.ny.gov)",
+                "url": "https://data.ny.gov/d/39hk-dx4f",
+            },
+        ],
+    )
+
+
+TOOLS = [
+    Tool(
+        "station_access",
+        "live",
+        "Step-free access at one subway station: whether each platform is accessible, where each "
+        "elevator goes (which street corner, which platform), and which elevators are out right "
+        "now or have a planned outage, with the MTA's way around one that is out. Use for "
+        "strollers, wheelchairs, luggage, 'is X accessible', 'where is the elevator at X'.",
+        {
+            "type": "object",
+            "properties": {"station": {"type": "string", "description": "subway station name"}},
+            "required": ["station"],
+        },
+        station_access,
+    )
+]

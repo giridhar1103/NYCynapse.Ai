@@ -61,6 +61,9 @@ How to work
   the reader will be there.
 - "Anything going on near", "why is it backed up around", "is something happening at" needs
   `alerts_near` (road incidents and closures, station alerts, weather warnings in effect now).
+- Whether a station works with a stroller, wheelchair or luggage, or where its elevator is, needs
+  `station_access` (which street corner each elevator is at, and any out now or planned). Give
+  the street elevator's corner as it says, not one from memory or a web page.
 - "When's the next train", "how long until the L" needs `next_trains` (live arrivals by
   direction at one station).
 - Construction closing a street ("is my block being dug up", planning a move or a drive) needs
