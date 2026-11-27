@@ -4303,3 +4303,36 @@ def test_express_runs_are_named_as_riders_say_them():
     }
     assert T._leg_text(leg, "x").startswith("F express train from Jackson Hts")
     assert T._leg_text({**leg, "routeShortName": "F"}, "x").startswith("F train from")
+
+
+def test_path_from_the_planner_is_named_and_priced_as_path():
+    from nycynapse.tools import trips as T
+
+    leg = {
+        "mode": "SUBWAY",
+        "agencyName": "PATH",
+        "routeShortName": "ATW",
+        "routeLongName": "Journal Square - 33rd Street via Hoboken",
+        "headsign": "33rd Street",
+        "duration": 960,
+        "startTime": "2026-11-27T10:36:00Z",
+        "from": {"name": "Hoboken"},
+        "to": {"name": "33rd Street"},
+        "intermediateStops": [{}] * 4,
+    }
+    line = T._line(leg, "x")
+    assert (line["mode"], line["name"]) == ("train", "PATH")
+    assert T._fare({"lines": [line]}) == "$3.25"
+    assert T._leg_text(leg, "x").startswith("PATH train toward 33rd Street from Hoboken")
+    bus = {
+        "mode": "BUS",
+        "agencyName": "NJ TRANSIT BUS",
+        "routeShortName": "108",
+        "headsign": "108 New York via Union City",
+        "duration": 1800,
+        "startTime": "2026-11-29T16:28:00Z",
+        "from": {"name": "Newark Penn Station"},
+        "to": {"name": "30th St at Hudson Ave"},
+    }
+    assert T._line(bus, "x")["headsign"] == "New York via Union City"
+    assert "108 bus toward New York via Union City" in T._leg_text(bus, "x")

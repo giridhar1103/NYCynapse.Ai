@@ -168,6 +168,9 @@ _AGENCY = {
     "NY Waterway": "NY Waterway",
     "NYC Ferry": "NYC Ferry",
     "New York City Department of Transportation": "Staten Island Ferry",  # its only ferry
+    "PATH": "PATH",
+    "Port Authority Trans-Hudson": "PATH",
+    "Port Authority Trans-Hudson Corporation": "PATH",
 }
 
 
@@ -176,6 +179,10 @@ def _kind(leg: dict) -> str | None:
     everything a rider does: the same fare, with the same free transfer."""
     if leg.get("agencyName") == "MTA New York City Transit" and leg.get("mode") == "REGIONAL_RAIL":
         return "subway"
+    if _AGENCY.get(leg.get("agencyName") or "") == "PATH":
+        # The planner may call PATH a subway and name its runs by an inside code (ATW); riders,
+        # the fare and the step-free check all treat it as PATH.
+        return "train"
     return _MODE.get(leg.get("mode", ""))
 
 
@@ -196,6 +203,8 @@ def _leg_text(leg: dict, end: str) -> str:
         what = f"{name[0]} express train" if re.fullmatch(r"[0-9A-Z]X", name) else f"{name} train"
     elif kind == "bus":
         what = f"{name} bus"
+    elif kind == "train" and _AGENCY.get(agency) == "PATH":
+        what = "PATH train"
     elif kind == "train":
         what = f"{agency} train" + (
             f" ({leg.get('routeLongName')})" if leg.get("routeLongName") else ""
@@ -206,7 +215,7 @@ def _leg_text(leg: dict, end: str) -> str:
     else:
         what = f"{agency} {kind}".strip()
     stops = len(leg.get("intermediateStops") or []) + 1
-    toward = f" toward {leg['headsign']}" if leg.get("headsign") else ""
+    toward = f" toward {_headsign(leg, name)}" if leg.get("headsign") else ""
     live = ", live times" if leg.get("realTime") else ""
     return (
         f"{what}{toward} from {leg['from']['name']} at {_hm(leg['startTime'])} to "
@@ -420,6 +429,15 @@ def _itinerary(
     }
 
 
+def _headsign(lg: dict, name: str) -> str | None:
+    """Where a run is headed, without the route name some agencies put first ("108 New York via
+    Union City" on the 108)."""
+    head = lg.get("headsign")
+    if head and name and head.startswith(name + " ") and len(head) > len(name) + 3:
+        return head[len(name) + 1 :]
+    return head
+
+
 def _line(lg: dict, end: str) -> dict:
     """One leg as the page draws and lists it: mode, line name and colors, where it boards
     and gets off, when, how long, how many stops, and its path."""
@@ -451,7 +469,7 @@ def _line(lg: dict, end: str) -> dict:
         ),
         "minutes": max(1, round(lg.get("duration", 0) / 60)),
         "stops": len(lg.get("intermediateStops") or []) + 1 if mode != "walk" else None,
-        "headsign": lg.get("headsign"),
+        "headsign": _headsign(lg, name or ""),
         "direction": lg.get("directionId"),
         "live": bool(lg.get("realTime")),
         "coords": _coords(lg),
