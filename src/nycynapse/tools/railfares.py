@@ -248,6 +248,15 @@ def _holiday(d: date) -> bool:
     return d.weekday() in (3, 4) and d.month == 11 and (thursday.day - 1) // 7 + 1 == 4
 
 
+def off_peak_all_day(ts: float) -> str:
+    """"the weekend" or "this holiday" when off-peak fares hold on every LIRR and Metro-North
+    train on the day of `ts`, else empty."""
+    d = datetime.fromtimestamp(ts, NY).date()
+    if d.weekday() >= 5:
+        return "the weekend"
+    return "this holiday" if _holiday(d) else ""
+
+
 def _maybe_holiday(d: date) -> bool:
     """A holiday on a weekend may be kept on the weekday next to it: both prices are given."""
     near = {4: d + timedelta(days=1), 0: d - timedelta(days=1)}.get(d.weekday())

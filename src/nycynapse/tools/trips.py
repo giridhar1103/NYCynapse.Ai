@@ -1762,7 +1762,7 @@ def trip_plan(
                     lines.append("   " + warn)
             # Commuter rail is priced by zone, peak or off-peak: point to each agency's own fare
             # page instead of guessing a price.
-            pages = {}
+            pages, rail_ts = {}, {}
             for o in options:
                 for x in o.get("lines") or []:
                     if x.get("mode") in ("train", "bus") and x.get("fare_url") and x.get("name"):
@@ -1770,11 +1770,20 @@ def trip_plan(
                             x.get("agency", "")
                         ):
                             pages.setdefault(x["name"], x["fare_url"])
+                            if x.get("depart_ts"):
+                                rail_ts.setdefault(x["name"], x["depart_ts"])
             for name, page in list(pages.items())[:3]:
                 if name in ("LIRR", "Metro-North"):
+                    day = railfares.off_peak_all_day(rail_ts[name]) if name in rail_ts else ""
+                    off = (
+                        f" Off-peak fares hold on every train for {day}, so these are off-peak "
+                        "prices."
+                        if day
+                        else ""
+                    )
                     lines.append(
                         f"{name} prices are one-way adult fares bought ahead, from the MTA's fare "
-                        f"charts; tickets bought on board cost more: {page}"
+                        f"charts; tickets bought on board cost more: {page}.{off}"
                     )
                 else:
                     lines.append(f"{name} fares depend on zones and time of day: {page}")

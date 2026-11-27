@@ -2653,6 +2653,19 @@ def test_railroad_holidays():
     assert _maybe_holiday(date(2026, 7, 3)) and not _maybe_holiday(date(2026, 12, 24))
 
 
+def test_the_guide_hears_when_rail_prices_are_off_peak_all_day():
+    from datetime import datetime
+
+    from nycynapse.tools.railfares import NY, off_peak_all_day
+
+    def at(*a):
+        return datetime(*a, tzinfo=NY).timestamp()
+
+    assert off_peak_all_day(at(2026, 11, 27, 8, 39)) == "this holiday"
+    assert off_peak_all_day(at(2026, 11, 28, 8, 39)) == "the weekend"
+    assert off_peak_all_day(at(2026, 12, 1, 8, 39)) == ""
+
+
 def test_a_trip_to_a_flight_is_planned_by_when_it_must_get_there():
     plan = {"origin": "Park Slope", "destination": "LaGuardia Airport", "when": "Wednesday 5:00 AM"}
     q = "flying out of LaGuardia tomorrow at 7:30am, domestic, from Park Slope"
