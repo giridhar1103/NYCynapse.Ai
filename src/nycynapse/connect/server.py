@@ -49,13 +49,17 @@ def trip_plan(
     when: str | None = None,
     arrive_by: bool = False,
     step_free: bool = False,
+    calm_bike: bool = False,
 ) -> dict:
     """Routes and travel times between two places in and around NYC: transit itineraries from
     the agencies' schedules (subway, bus, LIRR, Metro-North, NJ Transit, PATH, ferries, the
     AirTrains) with fares, live times where published, step-free checks against MTA elevator
     outages when step_free is set, plus car (live traffic), bike and walking. `when` is New York
-    time like 2026-10-16T17:30 or words like "tomorrow 8am"; arrive_by makes it a deadline."""
-    return trips.trip_plan(origin, destination, mode, when, arrive_by, step_free).as_dict()
+    time like 2026-10-16T17:30 or words like "tomorrow 8am"; arrive_by makes it a deadline;
+    calm_bike also tries a bike route through protected lanes."""
+    return trips.trip_plan(
+        origin, destination, mode, when, arrive_by, step_free, calm_bike
+    ).as_dict()
 
 
 @tool

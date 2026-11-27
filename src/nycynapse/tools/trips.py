@@ -776,6 +776,43 @@ def bike(a: dict, b: dict) -> dict | None:
     return direct(a, b, "BIKE")
 
 
+def calmer_bike(a: dict, b: dict, ride: dict) -> dict | None:
+    """A bike route through a protected lane or greenway near the way, when it keeps the ride
+    much more on protected lanes for a few minutes more."""
+    from . import bikelanes
+
+    lanes = ride.get("lanes") or {}
+    if not lanes or lanes["protected"] >= 70:
+        return None
+    best = None
+    vias = bikelanes.calmer_vias(ride.get("coords") or [], lanes.get("protected_streets") or [])
+    for street, (lat, lon) in vias:
+        p = {"lat": lat, "lon": lon}
+        one = direct(a, p, "BIKE")
+        two = direct(p, b, "BIKE") if one else None
+        if not two:
+            continue
+        coords = one["coords"] + two["coords"]
+        found = bikelanes.along(coords)
+        minutes = one["minutes"] + two["minutes"]
+        if (
+            not found
+            or found["protected"] < lanes["protected"] + 15
+            or minutes > ride["minutes"] * 1.3 + 2
+        ):
+            continue
+        if best is None or found["protected"] > best["lanes"]["protected"]:
+            best = {
+                "minutes": minutes,
+                "km": one["km"] + two["km"],
+                "coords": coords,
+                "streets": f"by way of {street}",
+                "lanes": found,
+                "via": street,
+            }
+    return best
+
+
 def direct(a: dict, b: dict, how: str) -> dict | None:
     """A walk or a bike ride the whole way, on the planner's street network."""
     d = get_json(
@@ -1497,6 +1534,7 @@ def trip_plan(
     when: str | None = None,
     arrive_by: bool = False,
     step_free: bool = False,
+    calm_bike: bool = False,
 ) -> ToolResult:
     """Real routes and times between two places in and around NYC: transit itineraries from
     the agencies' schedules (with live times where published) and typical taxi or car times
@@ -1797,6 +1835,24 @@ def trip_plan(
                     lanes = None
                 if lanes:
                     r["lanes"] = lanes
+                    calm = None
+                    if calm_bike:
+                        try:
+                            calm = calmer_bike(a, b, r)
+                        except Exception:  # noqa: BLE001 - the quickest ride stands
+                            calm = None
+                    if calm:
+                        lines[-1] = (
+                            f"By bike, calmer route by way of {calm['via']}: about "
+                            f"{calm['minutes']} min for {calm['km']:.1f} km, at an easy pace. "
+                            f"The quickest bike route is {r['minutes']} min for {r['km']:.1f} km "
+                            f"with {lanes['protected']}% on protected lanes or greenways; "
+                            f"{r['streets']}."
+                        )
+                        r = data[label] = calm
+                        lanes = calm["lanes"]
+                    elif calm_bike:
+                        lines[-1] += " No calmer route with more protected lanes was found nearby."
                     lines.append(bikelanes.describe(lanes))
                     sources.append(
                         {"kind": "official", "title": "NYC DOT bike routes", "url": bikelanes.PAGE}
@@ -2167,6 +2223,12 @@ TOOLS = [
                     "type": "boolean",
                     "description": "the reader cannot use stairs (wheelchair, stroller, heavy "
                     "luggage): checks each subway station and elevator outages",
+                },
+                "calm_bike": {
+                    "type": "boolean",
+                    "description": "the rider wants protected lanes or to keep away from cars "
+                    "(safest, calm, with kids, new rider): also tries a route through a "
+                    "protected lane or greenway nearby",
                 },
             },
             "required": ["origin", "destination"],

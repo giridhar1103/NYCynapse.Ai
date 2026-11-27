@@ -4221,3 +4221,54 @@ def test_station_access_names_elevator_corners_and_outages(monkeypatch):
     outages.clear()
     assert access.complex_report(40.7496, -73.9879)["out_now"] == []
     assert access.complex_report(40.80, -73.90) is None
+
+
+def test_calm_bike_rides_through_a_protected_lane_nearby(monkeypatch):
+    from collections import defaultdict
+
+    from nycynapse.agent import core
+    from nycynapse.tools import bikelanes as B
+    from nycynapse.tools import trips as T
+
+    # A ride north on plain streets, and a greenway 300 m to the east of it.
+    grid = defaultdict(list)
+    for k in range(120):
+        lat, lon = 40.70 + k * 0.00018, -73.9600
+        grid[(int(lat / B.CELL), int(lon / B.CELL))].append((lat, lon, "I", "Kent Av"))
+    monkeypatch.setattr(B, "_grid", lambda: grid)
+    ride = [[-73.9636, 40.70], [-73.9636, 40.72]]
+    vias = B.calmer_vias(ride, [])
+    assert vias and vias[0][0] == "Kent Av"
+    assert B.calmer_vias(ride, ["Kent Av"]) == []
+
+    def direct(a, b, how):
+        return {"minutes": 6, "km": 1.2, "coords": [[a["lon"], a["lat"]], [b["lon"], b["lat"]]]}
+
+    monkeypatch.setattr(T, "direct", direct)
+    monkeypatch.setattr(
+        B,
+        "along",
+        lambda c: {
+            "protected": 80,
+            "painted": 0,
+            "shared": 0,
+            "none": 20,
+            "protected_streets": ["Kent Av"],
+        },
+    )
+    a, b = {"lat": 40.70, "lon": -73.9636}, {"lat": 40.72, "lon": -73.9636}
+    lanes = {"protected": 10, "painted": 0, "shared": 0, "none": 90, "protected_streets": []}
+    calm = T.calmer_bike(a, b, {"minutes": 10, "coords": ride, "lanes": lanes})
+    assert calm["via"] == "Kent Av" and calm["minutes"] == 12
+    # Too slow, or already mostly protected: the quickest ride stands.
+    assert T.calmer_bike(a, b, {"minutes": 5, "coords": ride, "lanes": lanes}) is None
+    assert (
+        T.calmer_bike(a, b, {"minutes": 10, "coords": ride, "lanes": {**lanes, "protected": 75}})
+        is None
+    )
+
+    bike = {"mode": "bike"}
+    assert core._calm_ride("safest bike route, i dont love riding with cars", bike)
+    assert core._calm_ride("biking with my kids to the park", bike)
+    assert not core._calm_ride("fastest bike route to work", bike)
+    assert not core._calm_ride("safest way to get home", {"mode": "transit"})

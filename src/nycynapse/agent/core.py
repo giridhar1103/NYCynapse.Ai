@@ -696,6 +696,8 @@ class Agent:
                 # The reader said they cannot do stairs: every route must say so, whatever the
                 # model remembered to ask for.
                 args = {**args, "step_free": True}
+            if name == "trip_plan" and _calm_ride(t.question, args):
+                args = {**args, "calm_bike": True}
             if name == "trip_plan":
                 args = _flight_margin(t.question, args)
                 args = _said_date(t.question, args)
@@ -1372,6 +1374,21 @@ def _said_date(question: str, args: dict) -> dict:
     clock = _CLOCK.search(when)
     at = clock.group(0) if clock else planned.strftime("%-I:%M %p")
     return {**args, "when": f"{said.isoformat()} {at}"}
+
+
+_CALM = re.compile(
+    r"\b(?:safe(?:st|r|ly)?|calm\w*|protected|quiet\w*|nervous|scared|kids?|children|"
+    r"new (?:to|rider)|beginner|"
+    r"(?:avoid|away from|riding with|around|without) (?:the )?(?:cars|traffic))\b",
+    re.I,
+)
+
+
+def _calm_ride(question: str, args: dict) -> bool:
+    """A bike ride for someone who wants protected lanes or less traffic."""
+    if args.get("calm_bike") or (args.get("mode") or "").lower() != "bike":
+        return False
+    return bool(_CALM.search(question or ""))
 
 
 def _no_stairs(t: Turn) -> bool:

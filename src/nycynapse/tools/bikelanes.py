@@ -129,3 +129,40 @@ def describe(found: dict) -> str:
         text + f", {found['painted']}% painted lane, {found['shared']}% shared street with signs, "
         f"{found['none']}% no bike route."
     )
+
+
+def calmer_vias(coords: list[list[float]], used: list[str], n: int = 2) -> list[tuple[str, tuple]]:
+    """Protected lanes or greenways close to the stretches of a ride ([lon, lat] points) that are
+    not protected, most such lane first, each with a point on it to ride through."""
+    grid = _grid()
+    if not grid or not coords or len(coords) < 2:
+        return []
+    pts = _dense([(lat, lon) for lon, lat in coords])
+    plain = [(k, p) for k, p in enumerate(pts) if (_lane_at(p) or ("III",))[0] not in ("I", "L")]
+    samples = plain[::5]
+    if len(samples) < 3:
+        return []
+    reach = 600
+    di, dj = int(reach / 111_200 / CELL) + 1, int(reach / 84_300 / CELL) + 1
+    best: dict[tuple, tuple] = {}
+    for k, p in samples:
+        ci, cj = int(p[0] / CELL), int(p[1] / CELL)
+        for i in range(ci - di, ci + di + 1):
+            for j in range(cj - dj, cj + dj + 1):
+                for lat, lon, cls, street in grid.get((i, j), ()):
+                    if NAMES[cls] != "protected" or not street or street in used:
+                        continue
+                    d = _metres(p, (lat, lon))
+                    if d <= reach and ((lat, lon) not in best or d < best[(lat, lon)][0]):
+                        best[(lat, lon)] = (d, k, street)
+    streets: dict[str, list] = defaultdict(list)
+    for q, (_, k, street) in best.items():
+        streets[street].append((k, q))
+    long = [(s, v) for s, v in streets.items() if len(v) * STEP_M >= 400]
+    # A lane beside much of the plain part of the ride, not just near one end of it.
+    long.sort(key=lambda x: (-len({k for k, _ in x[1]}), -len(x[1])))
+    out = []
+    for s, v in long[:n]:
+        v.sort()
+        out.append((s, v[len(v) // 2][1]))
+    return out

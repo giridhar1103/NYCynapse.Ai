@@ -74,10 +74,13 @@ def trip_plan(
     when: str | None = None,
     arrive_by: bool = False,
     step_free: bool = False,
+    calm_bike: bool = False,
 ) -> dict:
     """Transit itineraries (agency schedules, live where published) and typical car trip times
     from recent taxi and app trips between two places in and around NYC."""
-    return trips.trip_plan(origin, destination, mode, when, arrive_by, step_free).as_dict()
+    return trips.trip_plan(
+        origin, destination, mode, when, arrive_by, step_free, calm_bike
+    ).as_dict()
 
 
 @tool
