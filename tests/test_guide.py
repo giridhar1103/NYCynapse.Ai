@@ -4348,3 +4348,24 @@ def test_addresses_from_the_city_search_read_as_people_write_them():
     assert tidy_label("10-01 50 AVENUE") == "10-01 50th Avenue"
     assert tidy_label("212 EAST 112 STREET") == "212 East 112th Street"
     assert tidy_label("Brooklyn Botanic Garden") == "Brooklyn Botanic Garden"
+
+
+def test_a_date_that_does_not_exist_is_sent_back():
+    from nycynapse.agent.core import _draft_issues, _no_such_day
+
+    assert _no_such_day("NCIS was filming on Tuesday, November 31.") == ["November 31"]
+    assert _no_such_day("from Nov 30 to Dec 31, and on Feb 29th") == []
+    assert _no_such_day("Sept 31st") == ["Sept 31st"]
+    assert any("does not exist" in i for i in _draft_issues("Filming was on November 31."))
+
+
+def test_a_film_permit_list_that_stopped_says_so(monkeypatch):
+    from datetime import datetime
+
+    from nycynapse.tools import live
+
+    monkeypatch.setattr(live, "_newest", lambda ds, col=None: datetime(2026, 9, 1, 23, 59))
+    note = live._reaches("film_permits", "startdatetime >= '2026-11-27'")
+    assert "ends Tue Sep 1 2026" in note and "cannot say what is happening now" in note
+    monkeypatch.setattr(live, "_newest", lambda ds, col=None: datetime(2099, 1, 1))
+    assert live._reaches("film_permits", "") == ""

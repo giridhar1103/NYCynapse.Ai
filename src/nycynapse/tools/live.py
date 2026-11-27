@@ -1497,6 +1497,10 @@ _POINT = {
 }
 # The date column that says how far a dataset reaches.
 _NEWEST = {"311": "created_date", "collisions": "crash_date", "crime": "cmplnt_fr_dt"}
+# Datasets of things planned ahead, by the column that says when the last one ends. The city
+# stopped adding film permits after August 2026, so "what are they filming on my street" found
+# nothing, and the answer fell back on a post about a shoot weeks earlier.
+_PLANNED = {"film_permits": "enddatetime"}
 
 
 def _behind(headers) -> bool:
@@ -1504,8 +1508,8 @@ def _behind(headers) -> bool:
     return headers.get("X-SODA2-Data-Out-Of-Date", "").lower() == "true"
 
 
-def _newest(dataset: str) -> datetime | None:
-    col, ds = _NEWEST[dataset], DATASETS[dataset][0]
+def _newest(dataset: str, col: str | None = None) -> datetime | None:
+    col, ds = col or _NEWEST[dataset], DATASETS[dataset][0]
     try:
         rows = get_json(
             f"https://data.cityofnewyork.us/resource/{ds}.json",
@@ -1522,6 +1526,15 @@ def _newest(dataset: str) -> datetime | None:
 def _reaches(dataset: str, where: str) -> str:
     """How far the records go, when a query picks dates: a period that runs past that is not
     complete, and not the same length as the same dates of another year."""
+    if dataset in _PLANNED:
+        last = _newest(dataset, _PLANNED[dataset])
+        if last and last < datetime.now(NY).replace(tzinfo=None) - timedelta(days=2):
+            return (
+                f"\nThe last permit in this dataset ends {last:%a %b %-d %Y}: the city has "
+                "published none since, so it cannot say what is happening now or soon. Say that, "
+                "and do not take an older permit or post for today's."
+            )
+        return ""
     col = _NEWEST.get(dataset)
     newest = _newest(dataset) if col and col in where else None
     if not newest:

@@ -202,9 +202,32 @@ def _embedded_calls(answer: str) -> list[dict] | None:
     return out
 
 
+_MONTH_DAYS = {"april": 30, "june": 30, "september": 30, "november": 30, "february": 29}
+_MONTH_DAY = re.compile(
+    r"\b(April|June|September|November|February|Apr|Jun|Sept?|Nov|Feb)\.?\s+(\d{1,2})(?:st|nd|rd|th)?\b"
+)
+_SHORT = {"apr": "april", "jun": "june", "sep": "september", "sept": "september",
+          "nov": "november", "feb": "february"}  # fmt: skip
+
+
+def _no_such_day(text: str) -> list[str]:
+    """Dates that do not exist ("Tuesday, November 31", read from a post dated 11/3)."""
+    bad = []
+    for m in _MONTH_DAY.finditer(text):
+        month = _SHORT.get(m[1].lower(), m[1].lower())
+        if int(m[2]) > _MONTH_DAYS[month]:
+            bad.append(m[0])
+    return bad
+
+
 def _draft_issues(answer: str) -> list[str]:
     text = _uncite(answer)
     issues = [why for pattern, why in _DRAFT_SMELLS if pattern.search(text)]
+    if bad := _no_such_day(text):
+        issues.append(
+            f"it gives a date that does not exist ({', '.join(bad)}); read the date again from "
+            "its source (11/3 is November 3) or leave it out"
+        )
     if len(text.split()) > MAX_WORDS:
         issues.append(
             f"it runs past {MAX_WORDS} words; keep only what decides the reader's plan, "
