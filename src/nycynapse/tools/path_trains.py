@@ -297,7 +297,8 @@ def _path_options(a: dict, b: dict, when: datetime, arrive_by: bool) -> list[dic
                     "leave": leave.strftime("%-I:%M %p"),
                     "arrive": end.strftime("%-I:%M %p"),
                     "transfers": sum(x["mode"] != "walk" for x in lines) - 1,
-                    "walk_minutes": walk1 + walk2,
+                    # Every walk, the ones in the onward subway ride too.
+                    "walk_minutes": sum(x["minutes"] for x in lines if x["mode"] == "walk"),
                     "steps": steps,
                     "live": wait_s is not None,
                     "lines": lines,

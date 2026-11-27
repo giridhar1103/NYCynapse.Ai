@@ -1646,6 +1646,34 @@ def test_path_changes_lines_when_no_train_runs_through():
     assert len(path_trains._path_rides("HOB", "WTC", wed, {}, 1)[1]) == 1  # direct by day
 
 
+def test_path_then_the_subway_counts_every_walk(monkeypatch):
+    from datetime import datetime, timedelta
+
+    from nycynapse.tools import trips
+
+    when = datetime(2026, 12, 4, 18, 30, tzinfo=trips.NY)
+    hoboken = {"name": "Hoboken", "lat": 40.7440, "lon": -74.0324}
+    barclays = {"name": "Barclays Center", "lat": 40.6826, "lon": -73.9754}
+    end = when + timedelta(minutes=57)
+    tail = {
+        "steps": ["walk 6 min to Fulton St", "4 train to Atlantic Av", "walk 9 min to Barclays"],
+        "lines": [
+            {"mode": "walk", "minutes": 6},
+            {"mode": "subway", "name": "4", "minutes": 11},
+            {"mode": "walk", "minutes": 9},
+        ],
+        "arrive_ts": end.timestamp(),
+        "leave_ts": (end - timedelta(minutes=26)).timestamp(),
+    }
+    monkeypatch.setattr(trips, "_plan", lambda *a, **k: [{}])
+    monkeypatch.setattr(trips, "_itinerary", lambda it, name: tail)
+    found = path_trains._path_options(hoboken, barclays, when, False)
+    assert found
+    o = found[0]
+    walks = [x["minutes"] for x in o["lines"] if x["mode"] == "walk"]
+    assert 6 in walks and 9 in walks and o["walk_minutes"] == sum(walks)
+
+
 def test_station_named_with_its_line(monkeypatch):
     from nycynapse.tools import access, trips
 
