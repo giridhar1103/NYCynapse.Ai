@@ -439,7 +439,7 @@ def _headsign(lg: dict, name: str) -> str | None:
         return head
     # The Q70 is a loop signed "LaGuardia Link Fare Free Terminals B-C" both ways: from the
     # airport it is headed for the stop it lets you off at, not for where you got on.
-    head = re.sub(r"(?i)\s*\bLink Fare Free\b", "", head).strip()
+    head = re.sub(r"(?i)\s*-?\s*\b(?:Link Fare Free|Exact Fare)\b", "", head).strip()
     start, end = (lg.get("from") or {}).get("name") or "", (lg.get("to") or {}).get("name") or ""
     if start and end and _tokens(start) <= _tokens(head) and _tokens(end) - _tokens(head):
         return end

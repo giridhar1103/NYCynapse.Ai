@@ -4389,6 +4389,8 @@ def test_a_loop_bus_from_the_airport_is_headed_where_it_lets_you_off():
     }
     assert _headsign(out, "Q70-SBS") == "ROOSEVELT AV/74 ST"
     assert _headsign(back, "Q70-SBS") == "LAGUARDIA TERMINALS B-C"
+    nj = {"headsign": "HOBOKEN-PATH-Exact Fare", "from": {"name": "A"}, "to": {"name": "B"}}
+    assert _headsign(nj, "126") == "HOBOKEN-PATH"
     seven = {
         "headsign": "Flushing-Main St",
         "from": {"name": "Times Sq-42 St"},
