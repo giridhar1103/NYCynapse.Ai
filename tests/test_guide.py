@@ -854,7 +854,7 @@ def test_repeated_citations_are_cited_once_at_the_end():
 def test_answer_places_become_a_map_highlight(monkeypatch):
     from nycynapse.agent import places
 
-    monkeypatch.setattr(places, "_lookup", lambda name: None)
+    monkeypatch.setattr(places, "_lookup", lambda name, near=None: None)
     agent, _ = _agent(
         monkeypatch,
         [
@@ -894,6 +894,22 @@ def test_point_lookups_must_match_the_name_both_ways(monkeypatch):
     assert places._lookup("Weehawken") is None
     found["label"] = "BARCLAY'S CENTER, Brooklyn, NY, USA"
     assert places._lookup("Barclays Center")["level"] == "point"
+
+
+def test_an_address_in_two_boroughs_is_pinned_where_the_answer_is(monkeypatch):
+    from nycynapse.agent import places
+    from nycynapse.tools import live
+
+    both = [
+        {"label": "65 4 AVENUE, Brooklyn, NY, USA", "lat": 40.6821, "lon": -73.9794},
+        {"label": "65 4 AVENUE, New York, NY, USA", "lat": 40.7309, "lon": -73.9902},
+    ]
+    monkeypatch.setattr(live, "find_place", lambda text: ToolResult(summary="", data=both))
+    near_union_square = [(40.7359, -73.9911), (40.7331, -73.9874)]
+    got = places.resolve([{"name": "65 4th Avenue"}], [], near_union_square)
+    assert got[0]["lat"] == 40.7309
+    got = places.resolve([{"name": "Barclays Center"}, {"name": "65 4th Avenue"}])
+    assert got[1]["lat"] == 40.6821
 
 
 def test_area_stats_ranks_zip_areas(monkeypatch):

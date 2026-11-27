@@ -989,8 +989,17 @@ class Agent:
                 if x.get("type") == "highlight"
                 for i in x.get("items", [])
             ]
+            near = [
+                (q["lat"], q["lon"])
+                for r in t.results
+                if r["result"].ok
+                for x in r["result"].map
+                if x.get("type") == "points"
+                for q in x.get("points", [])
+                if q.get("lat") and q.get("lon")
+            ]
             try:
-                items = place_index.resolve(places, hints)
+                items = place_index.resolve(places, hints, near)
             except Exception:  # noqa: BLE001 - the answer stands without its map highlight
                 items = []
             if items:

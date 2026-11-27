@@ -106,7 +106,12 @@ def _match_area(name: str) -> dict | None:
     return {"level": "nta", "key": scored[max(scored)][:1]}
 
 
-def _lookup(name: str) -> dict | None:
+def _words(text: str) -> set[str]:
+    text = re.sub(r"\b(\d+)(?:st|nd|rd|th)\b", r"\1", _norm(text))
+    return {_ABBR.get(w, w) for w in text.split()} - _COMMON
+
+
+def _lookup(name: str, near: tuple[float, float] | None = None) -> dict | None:
     from ..tools import placenames  # verified well-known places first ("Union Square", "MSG")
 
     mark = placenames._landmark(placenames._norm(name))
@@ -118,24 +123,24 @@ def _lookup(name: str) -> dict | None:
         return None
     if not r.ok or not r.data:
         return None
-    top = r.data[0]
-
     # GeoSearch always returns something; keep it only when every word asked for is in the
     # name it found ("Union City" must not become "Industry City").
     # The match must be the same name both ways: "Weehawken" is not "Weehawken Street".
-    def words(text: str) -> set[str]:
-        text = re.sub(r"\b(\d+)(?:st|nd|rd|th)\b", r"\1", _norm(text))
-        return {_ABBR.get(w, w) for w in text.split()} - _COMMON
-
-    want = words(name)
-    got = words((top.get("label") or "").split(",")[0])
-    if not want or want != got:
+    want = _words(name)
+    same = [d for d in r.data if want and _words((d.get("label") or "").split(",")[0]) == want]
+    if not same or not (want == _words((r.data[0].get("label") or "").split(",")[0]) or near):
         return None
-    return {"level": "point", "lat": top["lat"], "lon": top["lon"]}
+    # "65 4th Avenue" is in Manhattan and in Brooklyn: the one near what the tools found.
+    if near and len(same) > 1:
+        same.sort(key=lambda d: (d["lat"] - near[0]) ** 2 + ((d["lon"] - near[1]) * 0.76) ** 2)
+    return {"level": "point", "lat": same[0]["lat"], "lon": same[0]["lon"]}
 
 
-def resolve(places: list[dict], hints: list[dict] | None = None) -> list[dict]:
-    """[{name, note}] from the model -> highlight items the map can draw."""
+def resolve(
+    places: list[dict], hints: list[dict] | None = None, near: list[tuple] | None = None
+) -> list[dict]:
+    """[{name, note}] from the model -> highlight items the map can draw. `near` holds points
+    the tools found, so an address in two boroughs is taken where the answer is."""
     hinted = {_norm(h.get("name", "")): h for h in hints or [] if h.get("name")}
     items: list[dict | None] = []
     todo: list[int] = []
@@ -151,10 +156,36 @@ def resolve(places: list[dict], hints: list[dict] | None = None) -> list[dict]:
         items.append({"name": name, "note": note, **hit} if hit else {"name": name, "note": note})
         if not hit:
             todo.append(len(items) - 1)
-    if todo:
-        with ThreadPoolExecutor(max_workers=min(4, len(todo))) as pool:
+    # Named places first, then street addresses ("65 4th Avenue" is in Manhattan and in
+    # Brooklyn), each taken near the middle of what the tools and the named places found.
+    first = [i for i in todo if not re.match(r"\d", items[i]["name"])]
+    later = [i for i in todo if i not in first]
+    for group in (first, later):
+        if not group:
+            continue
+        spots = list(near or []) + [
+            (i["lat"], i["lon"]) for i in items if i and i.get("level") == "point" and "lat" in i
+        ]
+        if group is later and not spots:  # "Union Square" is drawn as its area: its point
+            from ..tools import placenames
+
+            for i in items:
+                mark = i and i.get("level") and placenames._landmark(placenames._norm(i["name"]))
+                if mark:
+                    spots.append((mark["lat"], mark["lon"]))
+        middle = (
+            (
+                sorted(p[0] for p in spots)[len(spots) // 2],
+                sorted(p[1] for p in spots)[len(spots) // 2],
+            )
+            if spots
+            else None
+        )
+        with ThreadPoolExecutor(max_workers=min(4, len(group))) as pool:
             for i, hit in zip(
-                todo, pool.map(lambda i: _lookup(items[i]["name"]), todo), strict=True
+                group,
+                pool.map(lambda i, m=middle: _lookup(items[i]["name"], m), group),
+                strict=True,
             ):
                 if hit:
                     items[i].update(hit)
