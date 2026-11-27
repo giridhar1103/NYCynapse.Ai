@@ -542,6 +542,37 @@ def _same_address(features: list[dict], said: str | None, name: str = "") -> dic
     return top
 
 
+_STREET_KINDS = {"street", "st", "avenue", "ave", "av", "road", "rd", "place", "pl", "drive", "dr",
+                 "lane", "terrace", "boulevard", "blvd", "parkway", "court"}  # fmt: skip
+_SMALL = {"of", "the", "and", "at", "on"}
+
+
+def _ordinal(n: str) -> str:
+    if n[-2:] in ("11", "12", "13"):
+        return n + "th"
+    return n + {"1": "st", "2": "nd", "3": "rd"}.get(n[-1], "th")
+
+
+def tidy_label(name: str) -> str:
+    """The city's address search writes in capitals: "151 WEST 34 STREET" is "151 West 34th
+    Street", as a reader writes it. A name with small letters is left as it is."""
+    if not name.isupper():
+        return name
+    words = name.split()
+    out = []
+    for i, w in enumerate(words):
+        nxt = words[i + 1].lower() if i + 1 < len(words) else ""
+        if w in _KEEP_CAPS:
+            out.append(w)
+        elif w.isdigit() and i > 0 and nxt in _STREET_KINDS:
+            out.append(_ordinal(w))
+        elif i and w.lower() in _SMALL:
+            out.append(w.lower())
+        else:
+            out.append("-".join(x.capitalize() for x in w.split("-")))
+    return " ".join(out)
+
+
 # The middles of the biggest parks, which some of their statues and fountains also get.
 _PARK_MIDDLES = ((40.78249, -73.96554), (40.7473, -73.8433), (40.6614, -73.9696))
 
@@ -552,15 +583,16 @@ def in_its_park(f: dict) -> dict:
     Bethesda Terrace is the far end of Central Park: OpenStreetMap knows where it stands."""
     p = f["properties"]
     lon, lat = f["geometry"]["coordinates"]
-    name = (p.get("label") or "").split(",")[0]
+    raw = (p.get("label") or "").split(",")[0]
+    name = tidy_label(raw)
     spot = {"name": name, "lat": lat, "lon": lon}
     number = str(((p.get("addendum") or {}).get("pad") or {}).get("bin") or "")
     middle = any(T._metres(spot, {"lat": a, "lon": b}) < 25 for a, b in _PARK_MIDDLES)
     if p.get("layer") != "venue" or not (middle or number.endswith("000000")):
         return spot
-    if _norm(name) in _landmarks():
-        return dict(_landmarks()[_norm(name)])
-    hit = _osm(f"{name}, {p.get('borough') or 'New York'}")
+    if _norm(raw) in _landmarks():
+        return dict(_landmarks()[_norm(raw)])
+    hit = _osm(f"{raw}, {p.get('borough') or 'New York'}")
     if hit and _words(_norm(hit["name"])) == _words(_norm(name)):
         far = T._metres(hit, spot)
         return hit if 120 < far < 4000 else spot

@@ -3635,9 +3635,9 @@ def test_things_in_a_park_stand_where_they_stand(monkeypatch):
     own = placenames.in_its_park(_pad("BETHESDA TERRACE", 40.78249, -73.96554, "1000000"))
     assert (own["lat"], own["name"]) == (40.7742, "Bethesda Terrace")
     park = placenames.in_its_park(_pad("FT TRYON PARK", 40.8621, -73.9323, "1000000"))
-    assert (park["lat"], park["name"]) == (40.8621, "FT TRYON PARK")  # the whole lot
+    assert (park["lat"], park["name"]) == (40.8621, "Ft Tryon Park")  # the whole lot
     lost = placenames.in_its_park(_pad("SOME STATUE", 40.78249, -73.96554, "1088651"))
-    assert lost["name"] == "near SOME STATUE"
+    assert lost["name"] == "near Some Statue"
     n = len(asked)
     placenames.in_its_park(_pad("DELACORTE THEATER", 40.7803, -73.9688, "1088650"))
     placenames.in_its_park(_pad("120 BROADWAY", 40.708, -74.011, "1000000", "address"))
@@ -4336,3 +4336,15 @@ def test_path_from_the_planner_is_named_and_priced_as_path():
     }
     assert T._line(bus, "x")["headsign"] == "New York via Union City"
     assert "108 bus toward New York via Union City" in T._leg_text(bus, "x")
+
+
+def test_addresses_from_the_city_search_read_as_people_write_them():
+    from nycynapse.tools.placenames import tidy_label
+
+    assert tidy_label("151 WEST 34 STREET") == "151 West 34th Street"
+    assert tidy_label("350 5 AVENUE") == "350 5th Avenue"
+    assert tidy_label("766 GRAND ARMY PLAZA") == "766 Grand Army Plaza"
+    assert tidy_label("1211 AVENUE OF THE AMERICAS") == "1211 Avenue of the Americas"
+    assert tidy_label("10-01 50 AVENUE") == "10-01 50th Avenue"
+    assert tidy_label("212 EAST 112 STREET") == "212 East 112th Street"
+    assert tidy_label("Brooklyn Botanic Garden") == "Brooklyn Botanic Garden"
