@@ -193,6 +193,11 @@ def opening_hours(place: str, date_from: str | None = None) -> ToolResult:
     if not place:
         return failed("no place given")
     hit = osm.tagged(re.sub(r"^\s*the\s+", "", place, flags=re.I))
+    name_only = re.sub(r"^\s*the\s+", "", place.split(",")[0], flags=re.I).strip()
+    if not hit and "," in place and name_only:
+        # "Vessel, Hudson Yards" finds nothing, as the area is not part of its address; the
+        # name alone finds it, and the name check below still guards against a wrong match.
+        hit = osm.tagged(name_only)
     if not hit:
         return failed(f"OpenStreetMap had no match for {place!r} now; use the place's own site")
     name = hit.get("name") or ""

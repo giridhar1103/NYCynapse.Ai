@@ -5076,3 +5076,28 @@ def test_the_tools_server_takes_the_same_arguments_the_model_is_shown():
     for name, args in shown.items():
         assert name in served, name
         assert args == served[name], (name, args ^ served[name])
+
+
+def test_opening_hours_tries_the_name_alone_when_the_area_finds_nothing(monkeypatch):
+    from nycynapse.tools import hours as H
+
+    asked = []
+
+    def tagged(q):
+        asked.append(q)
+        if q != "Vessel":
+            return None
+        return {
+            "name": "Vessel",
+            "osm_type": "relation",
+            "osm_id": 1,
+            "extratags": {"opening_hours": "Mo-Su 10:00-21:00"},
+        }
+
+    monkeypatch.setattr(H.osm, "tagged", tagged)
+    r = H.opening_hours("the Vessel, Hudson Yards", "2026-11-28")
+    assert asked == ["Vessel, Hudson Yards", "Vessel"]
+    assert r.ok and "Saturday, November 28: 10:00 AM to 9:00 PM" in r.summary
+    asked.clear()
+    assert not H.opening_hours("Tra Di Noi", "2026-11-28").ok
+    assert asked == ["Tra Di Noi"]  # no comma, no second ask
