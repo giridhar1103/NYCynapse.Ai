@@ -2122,6 +2122,13 @@ def trip_plan(
                     sources.append(
                         {"kind": "official", "title": "NYC DOT bike routes", "url": bikelanes.PAGE}
                     )
+                try:
+                    ends = _citibike_ends(a, b)
+                except Exception:  # noqa: BLE001 - the ride stands without it
+                    ends = None
+                if ends:
+                    lines.append(ends)
+                    sources.append(CITIBIKE_SOURCE)
             rides = [o["minutes"][0] for o in data.get("transit") or []]
             if label == "walk" and rides and r["minutes"] <= min(rides):
                 lines.append(
@@ -2514,6 +2521,38 @@ TOOLS = [
 GBFS = "https://gbfs.lyft.com/gbfs/1.1/bkn/en"
 
 
+CITIBIKE_SOURCE = {
+    "kind": "live",
+    "title": "Citi Bike station list",
+    "url": "https://citibikenyc.com/system-data",
+}
+
+
+def _citibike_nearest(p: dict) -> tuple[float, str]:
+    info = get_json(f"{GBFS}/station_information.json", ttl_s=3600)["data"]["stations"]
+    return min((_metres(p, {"lat": st["lat"], "lon": st["lon"]}), st["name"]) for st in info)
+
+
+def _citibike_ends(a: dict, b: dict) -> str | None:
+    """A Citi Bike can only be left at a dock. When one end of a ride is past the service
+    area (Coney Island, the Rockaways, most of Staten Island), say so in the bike line, so a
+    rider is not sent off on a Citi Bike with nowhere to return it."""
+    (da, na), (db, nb) = _citibike_nearest(a), _citibike_nearest(b)
+    if da <= 1200 and db <= 1200:
+        return None
+    if da > 1200 and db > 1200:
+        return (
+            "Citi Bike: no station within 1.2 km of either end, so this ride needs a bike of "
+            "your own."
+        )
+    end, d, name = ("start", da, na) if da > 1200 else ("end", db, nb)
+    return (
+        f"Citi Bike: no station within 1.2 km of the {end}, so a Citi Bike cannot be "
+        f"{'picked up' if end == 'start' else 'docked'} there. The nearest station to it is "
+        f"{name}, {d / 1000:.1f} km away; the bike times above are for a bike of your own."
+    )
+
+
 def citibike_now(near: str, n: int = 5) -> ToolResult:
     """Bikes, e-bikes and open docks at the Citi Bike stations nearest a place, live from
     Citi Bike's own feed."""
@@ -2531,16 +2570,24 @@ def citibike_now(near: str, n: int = 5) -> ToolResult:
         s = live.get(st["station_id"])
         if not s or not s.get("is_installed"):
             continue
-        d = _metres(p, {"lat": st["lat"], "lon": st["lon"]})
-        if d > 1200:
-            continue
-        rows.append((d, st, s))
-    rows.sort(key=lambda r: r[0])
-    rows = rows[: max(1, min(int(n or 5), 8))]
+        rows.append((_metres(p, {"lat": st["lat"], "lon": st["lon"]}), st, s))
     if not rows:
-        return failed(f"no Citi Bike station within 1.2 km of {p['name']}")
+        return failed("Citi Bike's live feed listed no stations")
+    rows.sort(key=lambda r: r[0])
     asof = datetime.fromtimestamp(status.get("last_updated") or time.time(), NY)
-    lines = [f"Citi Bike right now near {p['name']} (live, {asof:%-I:%M %p}):"]
+    if rows[0][0] > 1200:
+        # Past the edge of the service area (Coney Island, the Rockaways) the rider still
+        # needs to know where the last dock is, and how far it leaves them to go.
+        d, st, s = rows[0]
+        rows = rows[:1]
+        lines = [
+            f"No Citi Bike station within 1.2 km of {p['name']}"
+            + ("; it is outside the service area" if d > 3000 else "")
+            + f". The nearest station is {d / 1000:.1f} km away (live, {asof:%-I:%M %p}):"
+        ]
+    else:
+        rows = [r for r in rows if r[0] <= 1200][: max(1, min(int(n or 5), 8))]
+        lines = [f"Citi Bike right now near {p['name']} (live, {asof:%-I:%M %p}):"]
     points = []
     for d, st, s in rows:
         bikes, ebikes = s.get("num_bikes_available", 0), s.get("num_ebikes_available", 0)

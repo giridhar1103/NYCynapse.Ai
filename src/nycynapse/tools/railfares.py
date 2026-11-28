@@ -253,7 +253,7 @@ def _holiday(d: date) -> bool:
 
 
 def off_peak_all_day(ts: float) -> str:
-    """"the weekend" or "this holiday" when off-peak fares hold on every LIRR and Metro-North
+    """ "the weekend" or "this holiday" when off-peak fares hold on every LIRR and Metro-North
     train on the day of `ts`, else empty."""
     d = datetime.fromtimestamp(ts, NY).date()
     if d.weekday() >= 5:

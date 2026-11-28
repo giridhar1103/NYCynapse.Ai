@@ -4775,3 +4775,99 @@ def test_a_weekday_that_does_not_go_with_its_date_is_sent_back():
     assert _wrong_weekday(fine, today) == []
     assert _wrong_weekday("on Tuesday, December 13, 2022", today) == []
     assert _wrong_weekday("Thanksgiving, Thursday, November 26th", today) == []
+
+
+def test_citi_bike_past_the_service_area_names_the_nearest_dock(monkeypatch):
+    from nycynapse.tools import trips
+
+    info = {
+        "data": {
+            "stations": [
+                {
+                    "station_id": "a",
+                    "name": "101 St & Fort Hamilton Pkwy",
+                    "lat": 40.6150,
+                    "lon": -74.0300,
+                },
+                {
+                    "station_id": "b",
+                    "name": "Plaza St West & Flatbush Ave",
+                    "lat": 40.6740,
+                    "lon": -73.9710,
+                },
+            ]
+        }
+    }
+    status = {
+        "last_updated": 1764300000,
+        "data": {
+            "stations": [
+                {
+                    "station_id": "a",
+                    "is_installed": 1,
+                    "is_renting": 1,
+                    "num_bikes_available": 10,
+                    "num_ebikes_available": 3,
+                    "num_docks_available": 0,
+                },
+                {
+                    "station_id": "b",
+                    "is_installed": 1,
+                    "is_renting": 1,
+                    "num_bikes_available": 7,
+                    "num_ebikes_available": 4,
+                    "num_docks_available": 38,
+                },
+            ]
+        },
+    }
+    monkeypatch.setattr(
+        trips, "get_json", lambda url, **k: info if "information" in url else status
+    )
+    places = {
+        "coney": {"name": "Surf Ave and Stillwell Ave", "lat": 40.5755, "lon": -73.9810},
+        "gap": {"name": "Grand Army Plaza", "lat": 40.6735, "lon": -73.9700},
+    }
+    monkeypatch.setattr(trips, "locate", lambda q: places[q])
+
+    far = trips.citibike_now("coney")
+    assert "No Citi Bike station within 1.2 km" in far.summary
+    assert "outside the service area" in far.summary
+    assert "101 St & Fort Hamilton Pkwy" in far.summary and "0 open docks" in far.summary
+    assert "Plaza St" not in far.summary
+
+    near = trips.citibike_now("gap")
+    assert near.summary.startswith("Citi Bike right now near Grand Army Plaza")
+    assert "Plaza St West" in near.summary and "Fort Hamilton" not in near.summary
+
+
+def test_a_bike_ride_ending_past_citi_bike_says_there_is_no_dock(monkeypatch):
+    from nycynapse.tools import trips
+
+    info = {
+        "data": {
+            "stations": [
+                {
+                    "station_id": "a",
+                    "name": "101 St & Fort Hamilton Pkwy",
+                    "lat": 40.6150,
+                    "lon": -74.0300,
+                },
+                {
+                    "station_id": "b",
+                    "name": "Plaza St West & Flatbush Ave",
+                    "lat": 40.6740,
+                    "lon": -73.9710,
+                },
+            ]
+        }
+    }
+    monkeypatch.setattr(trips, "get_json", lambda url, **k: info)
+    gap = {"lat": 40.6735, "lon": -73.9700}
+    coney = {"lat": 40.5755, "lon": -73.9810}
+    line = trips._citibike_ends(gap, coney)
+    assert "no station within 1.2 km of the end" in line and "docked" in line
+    assert "101 St & Fort Hamilton Pkwy" in line
+    assert "picked up" in trips._citibike_ends(coney, gap)
+    assert "either end" in trips._citibike_ends(coney, coney)
+    assert trips._citibike_ends(gap, gap) is None
