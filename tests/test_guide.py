@@ -5056,3 +5056,23 @@ def test_opening_hours_takes_the_list_of_places_sent_as_text(monkeypatch):
     live._opening_hours(places="Via Quadronno; Sant Ambroeus")
     live._opening_hours(places="Cafe Sabarsky")
     assert seen == ["The Met", "Frick", "Via Quadronno", "Sant Ambroeus", "Cafe Sabarsky"]
+
+
+def test_the_tools_server_takes_the_same_arguments_the_model_is_shown():
+    # The model sees the in-process tool schemas but calls go to the MCP server; an argument
+    # missing there fails validation (a three-restaurant hours check lost a step to this).
+    import asyncio
+
+    from nycynapse import mcp_tools
+    from nycynapse.tools import access, alerts, arrivals, citynow, live, nearby, restaurants, web
+    from nycynapse.tools import trips as trip_tools
+
+    mods = (live, trip_tools, nearby, restaurants, alerts, access, citynow, arrivals, web)
+    shown = {t.name: set(t.params.get("properties", {})) for m in mods for t in m.TOOLS}
+    served = {
+        t.name: set(t.input_schema.get("properties", {}))
+        for t in asyncio.run(mcp_tools.server.list_tools())
+    }
+    for name, args in shown.items():
+        assert name in served, name
+        assert args == served[name], (name, args ^ served[name])

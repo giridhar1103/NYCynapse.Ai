@@ -75,11 +75,12 @@ def trip_plan(
     arrive_by: bool = False,
     step_free: bool = False,
     calm_bike: bool = False,
+    by_ferry: bool = False,
 ) -> dict:
     """Transit itineraries (agency schedules, live where published) and typical car trip times
     from recent taxi and app trips between two places in and around NYC."""
     return trips.trip_plan(
-        origin, destination, mode, when, arrive_by, step_free, calm_bike
+        origin, destination, mode, when, arrive_by, step_free, calm_bike, by_ferry
     ).as_dict()
 
 
@@ -96,11 +97,12 @@ def subway_alerts(line: str | None = None, days: int = 0) -> dict:
 
 
 @tool
-def opening_hours(place: str, date_from: str | None = None) -> dict:
-    """Opening hours of a museum, zoo, garden or venue for seven days, from OpenStreetMap."""
-    from .tools import hours
-
-    return hours.opening_hours(place, date_from).as_dict()
+def opening_hours(
+    place: str | None = None, date_from: str | None = None, places: list[str] | None = None
+) -> dict:
+    """Opening hours of a museum, zoo, garden or venue for seven days, from OpenStreetMap, for
+    one place or up to four `places` at once."""
+    return live._opening_hours(place, date_from, places).as_dict()
 
 
 @tool
