@@ -214,12 +214,16 @@ _NJT_PENN = _norm("NEW YORK PENN STATION")
 _NJT_NEWARK_DIV = {_norm(n) for n in _NEWARK_DIVISION.split(",")}
 _NJT_HOB, _NJT_NWK = _norm("HOBOKEN"), _norm("NEWARK PENN STATION")
 _SECAUCUS = {_norm("SECAUCUS UPPER LEVEL"), _norm("SECAUCUS LOWER LEVEL")}
+# njtransit.com/ewr, read 28 November 2026: $12.30 to Newark Penn, with the AirTrain fee in it.
+_NJT_EWR = _norm("NEWARK AIRPORT RAILROAD STATION")
 
 
 def _njt_local(a: str, b: str) -> float | None:
     """A trip with Hoboken or Newark Penn at one end, from those two charts."""
     if {a, b} == {_NJT_HOB, _NJT_NWK}:
         return 4.20
+    if {a, b} == {_NJT_EWR, _NJT_NWK}:
+        return 12.30
     end, other = (a, b) if a in (_NJT_HOB, _NJT_NWK) else (b, a)
     if end not in (_NJT_HOB, _NJT_NWK) or other == _NJT_PENN:
         return None

@@ -685,11 +685,22 @@ def _newark(a: dict, b: dict, when: datetime, arrive_by: bool) -> tuple[list[dic
     )
     options = [
         _itinerary(it, name if to_airport else city["name"], (leg, 7, 20), before=not to_airport)
-        for it in _plan(*pair, t0, arrive_by, n=4)
+        for it in _plan(*pair, t0, arrive_by, n=4 if arrive_by else 8)
         if any(lg.get("mode") in ("REGIONAL_RAIL", "RAIL", "SUBURBAN") for lg in it["legs"])
-    ][:3]
+    ]
     for o in options:
         _add_airtrain(o, "ewr:station", to_airport)
+    # The first few the planner finds can be a train one stop and two buses at midnight, with the
+    # train to Newark Penn and PATH further down. Rank them like any other trip, and keep a
+    # four-change trip only when there is nothing simpler. A deadline keeps the planner's order.
+    if options and not arrive_by:  # eight options can run to the first trains of the morning
+        first = min(_first_ride_ts(o) for o in options)
+        options = [o for o in options if _first_ride_ts(o) <= first + 90 * 60]
+        simple = [o for o in options if o.get("transfers", 0) < 4]
+        options = simple if len(simple) >= 2 else options
+        cheapest = min(_dollars(o) for o in options)
+        options.sort(key=lambda o: o["arrive_ts"] + _effort(o, cheapest))
+    options = options[:3]
     notes = [
         "The AirTrain leg is from the Port Authority. Its $8.75 fee is included in an NJ "
         "Transit or Amtrak ticket to the airport station; riders arriving another way pay it at "

@@ -4159,7 +4159,46 @@ def test_nj_transit_fares_from_hoboken_and_newark_penn():
     assert fare("NEWARK PENN STATION", "HOBOKEN") == "$4.20"
     assert fare("NEWARK PENN STATION", "PRINCETON") == "$16.40"
     assert fare("SUMMIT", "MADISON") is None  # between two stations: not on these charts
-    assert fare("NEWARK PENN STATION", "NEWARK AIRPORT RAILROAD STATION") is None
+    # njtransit.com/ewr, with the AirTrain fee in it.
+    assert fare("NEWARK PENN STATION", "NEWARK AIRPORT RAILROAD STATION") == "$12.30"
+    assert fare("NEWARK AIRPORT RAILROAD STATION", "HOBOKEN") is None
+
+
+def test_trips_from_newark_airport_rank_simple_ones_and_drop_the_morning(monkeypatch):
+    from datetime import datetime
+
+    from nycynapse.tools import trips
+
+    when = datetime(2026, 11, 28, 23, 0, tzinfo=trips.NY)
+    t = when.timestamp()
+    rows = [  # leave in minutes, arrive in minutes, changes, name
+        (17, 102, 4, "bus maze"),
+        (45, 130, 2, "penn and path"),
+        (84, 145, 2, "secaucus"),
+        (406, 500, 2, "first morning train"),
+    ]
+
+    def plan(a, b, at, arrive_by, n=4):
+        assert n == (4 if arrive_by else 8)
+        return [{"legs": [{"mode": "REGIONAL_RAIL"}], "row": r} for r in rows]
+
+    def itinerary(it, end, leg, before=False):
+        go, get, changes, name = it["row"]
+        return {
+            "name": name,
+            "transfers": changes,
+            "leave_ts": t + 60 * go,
+            "arrive_ts": t + 60 * get,
+            "walk_minutes": 5,
+            "lines": [{"mode": "train", "name": "NJ Transit", "depart_ts": t + 60 * go}],
+        }
+
+    monkeypatch.setattr(trips, "_plan", plan)
+    monkeypatch.setattr(trips, "_itinerary", itinerary)
+    monkeypatch.setattr(trips, "_add_airtrain", lambda o, key, to_airport: None)
+    city = {"name": "Hoboken", "lat": 40.7359, "lon": -74.0291}
+    got, _ = trips._newark(dict(trips.EWR, airport="ewr"), city, when, False)
+    assert [o["name"] for o in got] == ["penn and path", "secaucus"]
 
 
 def test_the_answer_carries_the_trip_it_is_about():
