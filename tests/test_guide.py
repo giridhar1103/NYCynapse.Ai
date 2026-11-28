@@ -4239,6 +4239,27 @@ def test_the_62_bus_from_newark_airport_is_offered_at_one_zone(monkeypatch):
     assert trips._newark_bus(city, False, when, False, [{"minutes": (30, 30)}]) == []
 
 
+def test_the_laguardia_link_is_free_and_the_subway_after_it_is_not():
+    from nycynapse.tools import trips
+
+    leg = {
+        "mode": "BUS",
+        "routeShortName": "Q70-SBS",
+        "agencyName": "MTA New York City Transit",
+        "headsign": "LaGuardia Link Fare Free Woodside",
+        "from": {"name": "Laguardia/Terminal B"},
+        "to": {"name": "Woodside Av/61 St"},
+        "duration": 1260,
+    }
+    q70 = trips._line(leg, "Woodside")
+    assert q70["fare_usd"] == 0.0
+    subway = {"mode": "subway", "name": "7", "agency": "MTA New York City Transit"}
+    assert trips._fare({"lines": [q70]}) == "free"
+    assert trips._fare({"lines": [q70, subway]}) == "$3.00"
+    m60 = trips._line({**leg, "routeShortName": "M60-SBS", "headsign": "W 106 St"}, "x")
+    assert "fare_usd" not in m60
+
+
 def test_the_answer_carries_the_trip_it_is_about():
     from types import SimpleNamespace
 

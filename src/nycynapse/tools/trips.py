@@ -472,7 +472,7 @@ def _line(lg: dict, end: str) -> dict:
         name = HBLR if lg.get("routeShortName") == "HBLR" else "NJ Transit light rail"
     to = end if lg["to"].get("name") == "END" else lg["to"].get("name")
     start = lg["from"].get("name")
-    return {
+    out = {
         "mode": mode,
         "name": name or "",
         "agency": lg.get("agencyName") or "",
@@ -496,6 +496,11 @@ def _line(lg: dict, end: str) -> dict:
         "coords": _coords(lg),
         "via": [x.get("name") for x in lg.get("intermediateStops") or [] if x.get("name")],
     }
+    # The MTA's schedule signs the Q70 "LaGuardia Link Fare Free": no fare, and the subway after
+    # it is paid in full.
+    if mode == "bus" and re.search(r"(?i)\bfare free\b", lg.get("headsign") or ""):
+        out["fare_usd"] = 0.0
+    return out
 
 
 def _airtrain_status(at: datetime) -> list[tuple[bool, str]]:
