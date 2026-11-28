@@ -1126,10 +1126,41 @@ def subway_alerts(line: str | None = None, days: int = 0) -> ToolResult:
 # Places ----------------------------------------------------------------------------------------
 
 
-def _opening_hours(place: str, date_from: str | None = None) -> ToolResult:
+def _opening_hours(
+    place: str | None = None, date_from: str | None = None, places: list | None = None
+) -> ToolResult:
+    """One place, or up to four in one call: a lunch answer naming three restaurants needs
+    all three checked, and one call each would use up the turn."""
     from .hours import opening_hours
 
-    return opening_hours(place, date_from)
+    if isinstance(places, str):
+        # Some models send the list as its text: "['Le Botaniste', 'Soom Soom']".
+        import ast
+
+        try:
+            places = ast.literal_eval(places.strip())
+        except (ValueError, SyntaxError):
+            places = places.split(";")
+        if isinstance(places, str):
+            places = [places]
+    names = [str(x).strip() for x in (places or []) if str(x).strip()]
+    if place and place not in names:
+        names.insert(0, place)
+    names = list(dict.fromkeys(names))[:4]
+    if len(names) <= 1:
+        return opening_hours(names[0] if names else "", date_from)
+    parts, data, sources = [], [], []
+    for name in names:
+        r = opening_hours(name, date_from)
+        if r.ok:
+            parts.append(r.summary)
+            data.append(r.data)
+            sources += r.sources
+        else:
+            parts.append(f"{name}: {r.error or r.summary}")
+    if not data:
+        return failed("; ".join(parts))
+    return ToolResult(summary="\n\n".join(parts), data=data, sources=sources)
 
 
 def _words(text: str) -> list[str]:
@@ -1775,9 +1806,16 @@ TOOLS = [
             "type": "object",
             "properties": {
                 "place": {"type": "string", "description": "its name, like Brooklyn Museum"},
+                "places": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "maxItems": 4,
+                    "description": "several names at once, for an answer naming more than "
+                    "one place (three lunch spots): one call checks them all",
+                },
                 "date_from": {"type": "string"},
             },
-            "required": ["place"],
+            "required": [],
         },
         _opening_hours,
     ),

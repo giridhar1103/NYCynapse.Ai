@@ -4961,3 +4961,42 @@ def test_a_reader_who_asks_for_the_ferry_gets_one_from_the_nearest_landing_on_it
     )
     monkeypatch.setattr(trips, "_landing", lambda p, within=2500: None)
     assert trips._ferry_option(a, b, datetime(2026, 11, 28, 12, 0, tzinfo=trips.NY), False) is None
+
+
+def test_opening_hours_checks_several_places_in_one_call(monkeypatch):
+    from nycynapse.tools import ToolResult, failed, hours, live
+
+    def one(place, date_from=None):
+        if place == "Nowhere Cafe":
+            return failed(f"OpenStreetMap had no match for {place!r} now")
+        return ToolResult(
+            summary=f"{place} opening hours: 10 to 5",
+            data={"name": place},
+            sources=[{"title": place, "url": "u"}],
+        )
+
+    monkeypatch.setattr(hours, "opening_hours", one)
+    r = live._opening_hours(places=["The Met", "Nowhere Cafe", "The Met", "Frick"])
+    assert r.ok and [d["name"] for d in r.data] == ["The Met", "Frick"]
+    assert "Nowhere Cafe: OpenStreetMap had no match" in r.summary
+    assert len(r.sources) == 2
+    assert live._opening_hours("The Met").data == {"name": "The Met"}
+    assert not live._opening_hours(places=["Nowhere Cafe", "Nowhere Cafe"]).ok
+
+
+def test_opening_hours_takes_the_list_of_places_sent_as_text(monkeypatch):
+    from nycynapse.tools import ToolResult, hours, live
+
+    seen = []
+    monkeypatch.setattr(
+        hours,
+        "opening_hours",
+        lambda place, date_from=None: seen.append(place) or ToolResult(summary=place, data={}),
+    )
+    live._opening_hours(places="['Le Botaniste, 833 Lexington Avenue', 'Soom Soom']")
+    assert seen == ["Le Botaniste, 833 Lexington Avenue", "Soom Soom"]
+    seen.clear()
+    live._opening_hours(places='["The Met", "Frick"]')
+    live._opening_hours(places="Via Quadronno; Sant Ambroeus")
+    live._opening_hours(places="Cafe Sabarsky")
+    assert seen == ["The Met", "Frick", "Via Quadronno", "Sant Ambroeus", "Cafe Sabarsky"]

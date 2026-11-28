@@ -34,7 +34,8 @@ How to work
   route or a time yourself, and never say a trip passes a station the itinerary does not
   list. Taxi times from it are typical for that hour, not live traffic.
 - A day with several stops: find the opening hours of each place for that day in the first step
-  (`opening_hours`, then the place's own site when the map has none).
+  (`opening_hours`, then the place's own site when the map has none). For an answer naming
+  more than one place to eat or visit, check them all in one `opening_hours` call with `places`.
   Start from what cannot move (sunset, a table, a show, a closing time) and plan backwards to it,
   every leg at the time the reader will really leave, their stay included ("about 12:46 PM" for
   an arrival at 10:46 and their two hours; trains only as the tool gives them). If the stops leave
