@@ -11,10 +11,12 @@ import re
 
 _GATES: dict[str, list[tuple[str, float, float]]] = {
     # The zoo's gate points are on its inside paths, which a walk reaches the long way round:
-    # the street corner outside each gate (50 and 70 m). The Bronx River Gate is for parking.
+    # the street corner outside each gate (50 and 70 m). The Bronx River Gate, by the parking lot,
+    # is also the way in on foot from the 2 and 5 at Pelham Parkway (the zoo's own directions).
     "Bronx Zoo": [
         ("Asia Gate, Boston Rd and Bronx Park South", 40.84400, -73.87734),
         ("Southern Boulevard Gate, at E 183 St", 40.85107, -73.88232),
+        ("Bronx River Gate, off Bronx River Pkwy", 40.85298, -73.87439),
     ],
     "Brooklyn Botanic Garden": [
         ("Eastern Parkway entrance", 40.671937, -73.964966),
@@ -54,9 +56,11 @@ def find(text: str) -> dict | None:
         ]
         if re.fullmatch(_BOROUGH + r"\s*", rest):
             return {**gates[0], "name": title, "ends": gates}
-        said = _key(rest)
+        # "Bronx River Gate, Bronx River Parkway": the gate is named before the street.
+        part = next((x for x in rest.split(",") if x.strip()), "")
+        said = _key(part)
         named = [g for g in gates if said and said <= _key(g["name"])]
-        if re.search(r"\b(gate|entrance)\b", rest) and len(named) == 1:
+        if re.search(r"\b(gate|entrance)\b", part) and len(named) == 1:
             return named[0]
         return None
     return None

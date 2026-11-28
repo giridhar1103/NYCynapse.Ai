@@ -1943,7 +1943,19 @@ def trip_plan(
     a, b = locate(origin), locate(destination)
     notes_placed: list[str] = []
     if a and b:  # a bridge is entered on the side one comes from, and left on the side one goes
+        whole = (a, b)
         a, b = bridges.nearer(a, b, _metres), bridges.nearer(b, a, _metres)
+        for place, got in zip(whole, (a, b), strict=True):
+            others = [e["name"] for e in place.get("ends") or [] if e.get("gate") and e is not got]
+            if others:
+                # Holiday Lights closes the zoo's Asia Gate: the model can only plan around a
+                # closed gate it knows was a pick, with the others it could name instead.
+                notes_placed.append(
+                    f"{got['name']} is the gate nearest the other end, picked from "
+                    f"{len(others) + 1} (the others: {'; '.join(others)}). If a source says it "
+                    "is closed at that "
+                    "time, plan again to an open gate by name before answering."
+                )
     if not a or not b:
         missing = origin if not a else destination
         return failed(f"could not place {missing!r}; name a station, landmark, address or area")

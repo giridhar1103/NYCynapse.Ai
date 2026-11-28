@@ -4105,7 +4105,7 @@ def test_opening_hours_holiday_not_mapped(monkeypatch):
     assert r.data["days"][1]["hours"] is None and r.data["days"][2]["hours"]
 
 
-def test_fenced_places_go_to_a_gate():
+def test_fenced_places_go_to_a_gate(monkeypatch):
     from nycynapse.tools import (
         gates,
         placenames,  # noqa: F401  (after trips)
@@ -4114,7 +4114,7 @@ def test_fenced_places_go_to_a_gate():
     from nycynapse.tools.bridges import nearer
 
     zoo = trips.locate("the Bronx Zoo")
-    assert zoo["name"] == "Bronx Zoo" and len(zoo["ends"]) == 2
+    assert zoo["name"] == "Bronx Zoo" and len(zoo["ends"]) == 3
     astoria = {"lat": 40.7644, "lon": -73.9235}
     assert nearer(zoo, astoria, trips._metres)["name"].startswith("Bronx Zoo, Asia Gate")
     fordham = {"lat": 40.8616, "lon": -73.8905}
@@ -4123,6 +4123,14 @@ def test_fenced_places_go_to_a_gate():
     assert gates.find("Green-Wood Cemetery main entrance")["name"].startswith("Green-Wood")
     assert gates.find("Bronx Zoo Children's Zoo") is None
     assert gates.find("Brooklyn Botanic Garden, Brooklyn")["ends"]
+    pelham = {"lat": 40.8574, "lon": -73.8676}  # the 2 and 5 at Pelham Parkway
+    assert "Bronx River Gate" in nearer(zoo, pelham, trips._metres)["name"]
+    said = "Bronx Zoo Bronx River Gate, Bronx River Parkway"  # the street after the gate
+    assert gates.find(said)["name"].startswith("Bronx Zoo, Bronx River Gate")
+    monkeypatch.setattr(trips, "direct", lambda *x: None)
+    note = trips.trip_plan("Pelham Pkwy station (2 5)", "Bronx Zoo", "walk").summary
+    assert "Bronx River Gate, off Bronx River Pkwy is the gate nearest" in note
+    assert "Asia Gate" in note and "plan again to an open gate by name" in note
 
 
 def test_bus_alert_street_forms():
