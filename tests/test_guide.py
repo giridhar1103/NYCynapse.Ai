@@ -1163,6 +1163,13 @@ def test_trip_ends_are_placed_without_guessing():
     assert trips.locate("48.85,2.35") is None  # Paris is not a trip end
 
 
+def test_a_status_question_does_not_plan_to_a_place_named_running_normally():
+    call = core._trip_prefetch(
+        "is the PATH from world trade center to hoboken running normally this weekend", None
+    )
+    assert json.loads(call["args"])["destination"] == "hoboken"
+
+
 def test_travel_times_in_plain_words(monkeypatch):
     from datetime import datetime
 
@@ -1693,6 +1700,18 @@ def test_path_then_the_subway_counts_every_walk(monkeypatch):
     o = found[0]
     walks = [x["minutes"] for x in o["lines"] if x["mode"] == "walk"]
     assert 6 in walks and 9 in walks and o["walk_minutes"] == sum(walks)
+
+
+def test_a_path_trip_with_a_live_train_leaves_in_time_for_it_not_now(monkeypatch):
+    from nycynapse.tools import trips
+
+    wtc = {"name": "World Trade Center", "lat": 40.7127, "lon": -74.0119}
+    hob = {"name": "Hoboken PATH station", "lat": 40.73586, "lon": -74.02922}
+    when = trips._now()
+    monkeypatch.setattr(path_trains, "_path_live", lambda: {"WTC": [("HOB", "Hoboken", 37 * 60)]})
+    o = path_trains._path_options(wtc, hob, when, False)[0]
+    assert o["leave_ts"] - when.timestamp() > 30 * 60  # not "leave now" for a train in 37 min
+    assert o["minutes"][1] < 20
 
 
 def test_station_named_with_its_line(monkeypatch):

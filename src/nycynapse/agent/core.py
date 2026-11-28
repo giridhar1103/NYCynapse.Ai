@@ -1101,7 +1101,8 @@ _LATER = re.compile(
 _STOP = (
     r"(?=\s+(?:at|by|on|around|before|after|tomorrow|tonight|today|this|next|leaving|"
     r"arriving|for|with|and|so|because|asap|now|right now|if|when|but|is|do|does|can|how|"
-    r"what|which|via|under|without|instead|while|should|would)\b|\s*[?.!,;(]|\s*$)"
+    r"what|which|via|under|without|instead|while|should|would|running|working|normally|"
+    r"delayed|still|ok|okay)\b|\s*[?.!,;(]|\s*$)"
 )
 _FROM_TO = re.compile(
     rf"\bfrom\s+(?P<a>[^?.!,;]{{2,60}}?)\s+to\s+(?P<b>[^?.!,;]{{2,60}}?){_STOP}", re.I

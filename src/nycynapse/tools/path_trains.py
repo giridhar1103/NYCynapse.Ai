@@ -215,9 +215,11 @@ def _path_options(a: dict, b: dict, when: datetime, arrive_by: bool) -> list[dic
                 board = off - timedelta(minutes=ride_min)
                 leave = board - timedelta(minutes=walk1 + spare)
             else:
-                leave = when
                 board = when + timedelta(minutes=walk1, seconds=wait_s or 0)
                 off = board + timedelta(minutes=ride_min)
+                # With a live train time, leave in time for it rather than now and wait half an
+                # hour on the platform; without one, leave now and allow for the wait.
+                leave = board - timedelta(minutes=walk1 + 1) if wait_s else when
             steps = [f"walk {walk1} min to {so['name']}"]
             lines = [
                 {
