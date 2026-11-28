@@ -616,6 +616,48 @@ def _lefferts(
     return []
 
 
+# NJ Transit's Northern Intrastate bus chart (effective 1 July 2026, linked from
+# njtransit.com/adjustedfares): one zone is $1.90, the fare mta.info's Newark airport guide gives
+# for the 62 between the terminals and Newark Penn. The go28 makes the same run.
+EWR_BUS = {"routes": {"62", "GO28"}, "fare_usd": 1.90}
+_EWR_TERMINAL = re.compile(r"^TERMINAL [ABC]\b", re.I)
+_NEWARK_PENN_STOP = re.compile(r"NEWARK PENN STATION|RAYMOND BLVD SIDE", re.I)
+_NOT_CHEAP = {"NJ Transit", "Amtrak", "Newark Airport Express"}
+
+
+def _newark_bus(
+    city: dict, to_airport: bool, when: datetime, arrive_by: bool, rail: list[dict]
+) -> list[dict]:
+    """The cheapest way to or from Newark Airport: the 62 or go28 from the terminals to Newark
+    Penn on one bus zone, no AirTrain, then PATH or a local bus. Offered when it is not much
+    slower than the train."""
+    terminals = {"name": "Newark Airport", "lat": EWR["lat"], "lon": EWR["lon"]}
+    pair = (city, terminals) if to_airport else (terminals, city)
+    fastest = min((o["minutes"][1] for o in rail), default=None)
+    for it in _plan(*pair, when, arrive_by, n=5)[:5]:
+        o = _itinerary(it, "Newark Airport" if to_airport else city["name"])
+        rides = [x for x in o.get("lines") or [] if x.get("mode") != "walk"]
+        if not rides or any(x.get("name") in _NOT_CHEAP for x in rides):
+            continue
+        bus = rides[-1] if to_airport else rides[0]
+        ends = (bus.get("from") or "", bus.get("to") or "")
+        airport, penn = (ends[1], ends[0]) if to_airport else ends
+        if not (
+            bus.get("mode") == "bus"
+            and str(bus.get("name") or "").upper() in EWR_BUS["routes"]
+            and _EWR_TERMINAL.search(airport)
+            and _NEWARK_PENN_STOP.search(penn)
+        ):
+            continue
+        if fastest is not None and o["minutes"][1] > fastest + 30:
+            continue
+        bus["fare_usd"] = EWR_BUS["fare_usd"]
+        if " plus " in _fare(o) or _fare(o).startswith("plus"):
+            continue  # another NJ Transit bus after it: not a price that can be given
+        return [o]
+    return []
+
+
 def _dollars(o: dict) -> float:
     """About what an itinerary costs one adult, for ordering: the lower of two prices, and a
     commuter train's usual city fare when its own is not known."""
@@ -701,6 +743,7 @@ def _newark(a: dict, b: dict, when: datetime, arrive_by: bool) -> tuple[list[dic
         cheapest = min(_dollars(o) for o in options)
         options.sort(key=lambda o: o["arrive_ts"] + _effort(o, cheapest))
     options = options[:3]
+    cheap = _newark_bus(city, to_airport, when, arrive_by, options)
     notes = [
         "The AirTrain leg is from the Port Authority. Its $8.75 fee is included in an NJ "
         "Transit or Amtrak ticket to the airport station; riders arriving another way pay it at "
@@ -708,7 +751,13 @@ def _newark(a: dict, b: dict, when: datetime, arrive_by: bool) -> tuple[list[dic
     ]
     if not options:
         notes.append("No rail itinerary to the airport station was found for that time.")
-    return _for_deadline(options, when, arrive_by), notes
+    if cheap:
+        notes.append(
+            "The option by the 62 or go28 bus runs between the terminals and Newark Penn "
+            "Station for one NJ Transit bus zone, $1.90, with no AirTrain fee: the cheapest way, "
+            "on a local bus with any luggage."
+        )
+    return _for_deadline(options, when, arrive_by) + cheap, notes
 
 
 def _first_ride_ts(o: dict) -> float:
@@ -2235,7 +2284,9 @@ def _fare(o: dict) -> str:
     nj_rail = "NJ Transit" in names
     for x in legs:
         mode, name = x.get("mode"), x.get("name") or ""
-        if name == "AirTrain":
+        if x.get("fare_usd") is not None:  # a ride priced where it was planned
+            total += x["fare_usd"]
+        elif name == "AirTrain":
             # Newark's AirTrain fee is part of the NJ Transit ticket to the airport station.
             total += 0 if nj_rail or x.get("free") else FARES["airtrain"]
         elif name == "PATH":

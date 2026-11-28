@@ -4196,9 +4196,47 @@ def test_trips_from_newark_airport_rank_simple_ones_and_drop_the_morning(monkeyp
     monkeypatch.setattr(trips, "_plan", plan)
     monkeypatch.setattr(trips, "_itinerary", itinerary)
     monkeypatch.setattr(trips, "_add_airtrain", lambda o, key, to_airport: None)
+    monkeypatch.setattr(trips, "_newark_bus", lambda *a: [])
     city = {"name": "Hoboken", "lat": 40.7359, "lon": -74.0291}
     got, _ = trips._newark(dict(trips.EWR, airport="ewr"), city, when, False)
     assert [o["name"] for o in got] == ["penn and path", "secaucus"]
+
+
+def test_the_62_bus_from_newark_airport_is_offered_at_one_zone(monkeypatch):
+    from datetime import datetime
+
+    from nycynapse.tools import trips
+
+    when = datetime(2026, 11, 28, 23, 0, tzinfo=trips.NY)
+    t = when.timestamp()
+    plans = [
+        [("bus", "62", "TERMINAL B", "BUS LANES (RAYMOND BLVD SIDE)"), ("bus", "108", "A", "B")],
+        [
+            ("bus", "62", "TERMINAL B", "NEWARK PENN STATION"),
+            ("train", "PATH", "Newark", "Hoboken"),
+        ],
+    ]
+
+    def plan(a, b, at, arrive_by, n=5):
+        return [{"legs": [{"mode": "BUS"}], "rides": r} for r in plans]
+
+    def itinerary(it, end, extra=None, before=False):
+        lines = [
+            {"mode": m, "name": nm, "agency": "NJ TRANSIT BUS" if m == "bus" else "PATH",
+             "from": f, "to": to}
+            for m, nm, f, to in it["rides"]
+        ]  # fmt: skip
+        return {"minutes": (67, 67), "transfers": 1, "leave_ts": t, "arrive_ts": t + 4000,
+                "lines": lines}  # fmt: skip
+
+    monkeypatch.setattr(trips, "_plan", plan)
+    monkeypatch.setattr(trips, "_itinerary", itinerary)
+    city = {"name": "Hoboken", "lat": 40.7359, "lon": -74.0291}
+    got = trips._newark_bus(city, False, when, False, [{"minutes": (61, 61)}])
+    # The first plan has a second NJ Transit bus with no price: the 62 and PATH are offered.
+    assert len(got) == 1 and got[0]["lines"][1]["name"] == "PATH"
+    assert trips._fare(got[0]) == "$5.15"
+    assert trips._newark_bus(city, False, when, False, [{"minutes": (30, 30)}]) == []
 
 
 def test_the_answer_carries_the_trip_it_is_about():
