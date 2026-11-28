@@ -3946,6 +3946,26 @@ def test_step_free_trip_says_which_elevator_left_the_subway_out(monkeypatch):
     assert "EL513" in res.summary and "at the time of the trip: elevator" in res.summary
 
 
+def test_a_drive_says_the_card_shows_tomtom_when_past_trips_took_longer(monkeypatch):
+    from nycynapse.tools import trips
+
+    a = {"name": "LaGuardia Airport", "lat": 40.7729, "lon": -73.8725}
+    b = {"name": "Grand Central Terminal", "lat": 40.7527, "lon": -73.9772}
+    monkeypatch.setattr(trips, "locate", lambda t: a if "La" in t else b)
+    car = {"minutes": 21, "delay_minutes": 0, "free_minutes": 18, "miles": 8.2}
+    car.update(forecast=True, coords=[])
+    monkeypatch.setattr(trips, "car_route", lambda *x: car)
+    typical = {"from_zone": "LaGuardia Airport", "to_zone": "Midtown East", "day": "weekend"}
+    typical.update(hour=14, trips=504, minutes=(26, 30, 34), taxi_fare_usd=61, app_fare_usd=75)
+    typical.update(since="2026-07", slowest_hour=14, slowest_minutes=30)
+    monkeypatch.setattr(trips, "_typical_drive", lambda *x: typical)
+    res = trips.trip_plan("LaGuardia Airport", "Grand Central", "car", "2:20 PM")
+    assert "The trip card shows TomTom's 21 min for this drive" in res.summary
+    car["minutes"] = 28
+    res = trips.trip_plan("LaGuardia Airport", "Grand Central", "car", "2:20 PM")
+    assert "The trip card shows" not in res.summary
+
+
 def test_step_free_trips_ask_for_more_only_when_nothing_is_sure(monkeypatch):
     from datetime import datetime
 

@@ -2357,6 +2357,12 @@ def trip_plan(
                 f"tip, with tolls and fees: {fares or 'not known'}. The slowest hour is around "
                 f"{_hour(d['slowest_hour'])} at about {d['slowest_minutes']} min. These are past "
                 "trips; use them for fares and for what is normal at that hour."
+                + (
+                    f" The trip card shows TomTom's {car['minutes']} min for this drive, so give "
+                    f"that as the time and the {med} min as what past trips took."
+                    if car and abs(car["minutes"] - med) >= 5
+                    else ""
+                )
             )
             sources.append(
                 {
