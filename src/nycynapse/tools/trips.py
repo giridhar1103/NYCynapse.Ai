@@ -1119,6 +1119,28 @@ def _lake():
     return _lake_con
 
 
+TLC_FARES = "https://www.nyc.gov/site/tlc/passengers/taxi-fare.page"
+
+
+def _taxi_out_of_city(a: dict, b: dict) -> str | None:
+    """How a yellow taxi from the city prices a ride that ends outside it, from the TLC fare page
+    (read 28 November 2026). Nassau and Westchester double the meter past the city line; other
+    places have no meter rate at all. Newark Airport is a taxi zone, priced from past trips."""
+    if not zone_of(a["lat"], a["lon"]) or zone_of(b["lat"], b["lon"]):
+        return None
+    lat, lon = b["lat"], b["lon"]
+    if lon > -73.78 or (lat > 40.88 and lon > -73.93):  # east of Queens, or north of the Bronx
+        return (
+            "Yellow taxi out of the city: the meter runs at double the rate from the city line "
+            "to Nassau or Westchester, plus tolls (TLC). App rides price the trip up front."
+        )
+    return (
+        "Yellow taxi out of the city: there is no metered rate past the city line except to "
+        "Nassau, Westchester and Newark Airport. The fare is a flat price agreed with the driver "
+        "before the trip, and the driver may decline it (TLC). App rides price the trip up front."
+    )
+
+
 def drive(a: dict, b: dict, when: datetime) -> dict | None:
     za, zb = zone_of(a["lat"], a["lon"]), zone_of(b["lat"], b["lon"])
     if not za or not zb or za[0] == zb[0]:
@@ -2192,6 +2214,10 @@ def trip_plan(
                 )
             else:
                 lines.append("No car trip time is available for this pair of places.")
+        rule = _taxi_out_of_city(a, b) if not d else None
+        if rule:
+            lines.append(rule)
+            sources.append({"kind": "official", "title": "Taxi fares (NYC TLC)", "url": TLC_FARES})
     quickest = _by_time(data)
     if quickest:
         lines.append(quickest)

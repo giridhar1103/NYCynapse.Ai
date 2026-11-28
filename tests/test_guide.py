@@ -4269,6 +4269,19 @@ def test_the_laguardia_link_is_free_and_the_subway_after_it_is_not():
     assert "fare_usd" not in m60
 
 
+def test_a_taxi_out_of_the_city_is_priced_by_the_tlc_rule_for_where_it_ends():
+    from nycynapse.tools import trips
+
+    lga = {"lat": 40.7769, "lon": -73.874}
+    assert "flat price agreed" in trips._taxi_out_of_city(lga, {"lat": 40.7359, "lon": -74.0291})
+    assert "double the rate" in trips._taxi_out_of_city(lga, {"lat": 40.9312, "lon": -73.8988})
+    assert "double the rate" in trips._taxi_out_of_city(lga, {"lat": 40.8007, "lon": -73.7285})
+    assert trips._taxi_out_of_city(lga, {"lat": 40.68, "lon": -73.95}) is None  # Brooklyn
+    assert trips._taxi_out_of_city(lga, {"lat": 40.6895, "lon": -74.1745}) is None  # Newark Airport
+    hoboken = {"lat": 40.7359, "lon": -74.0291}
+    assert trips._taxi_out_of_city(hoboken, lga) is None  # not a city taxi's rule
+
+
 def test_the_answer_carries_the_trip_it_is_about():
     from types import SimpleNamespace
 
