@@ -812,11 +812,17 @@ def _gap_before(a: dict, b: dict, options: list[dict], when: datetime) -> str | 
 
 def _sane(options: list[dict]) -> list[dict]:
     """Drop itineraries that take several times as long as the best one (a ride glued to a
-    connection the next morning)."""
+    connection the next morning), and ones that start many hours after the soonest (a direct
+    train to Montauk on Monday afternoon, asked on Saturday morning)."""
     if len(options) < 2:
         return options
     best = min(o["minutes"][0] for o in options)
-    return [o for o in options if o["minutes"][0] <= max(180, 3 * best)]
+    first = min(_first_ride_ts(o) for o in options)
+    return [
+        o
+        for o in options
+        if o["minutes"][0] <= max(180, 3 * best) and _first_ride_ts(o) <= first + 6 * 3600
+    ]
 
 
 def _nearest_station(p: dict) -> dict | None:

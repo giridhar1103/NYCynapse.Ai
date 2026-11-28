@@ -653,6 +653,15 @@ def test_plans_hours_away_or_glued_to_the_next_morning_are_caught():
         "lines": [{"mode": "train", "depart_ts": at + 36100}],
     }
     assert trips._sane([tonight, glued]) == [tonight]
+    # A direct train two days later is not an option for tonight.
+    monday = {
+        "minutes": (202, 202),
+        "arrive_ts": at + 2 * 86400,
+        "leave_ts": at + 2 * 86400 - 12000,
+        "lines": [{"mode": "train", "depart_ts": at + 2 * 86400 - 12000}],
+    }
+    assert trips._sane([tonight, monday]) == [tonight]
+    assert trips._sane([tonight, morning]) == [tonight]  # 10 hours later
     assert not trips._hours_away([tonight], t, False)
     assert trips._hours_away([morning], t, False)
     assert trips._hours_away([morning], t, True)
