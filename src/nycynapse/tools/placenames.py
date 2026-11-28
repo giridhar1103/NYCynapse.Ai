@@ -738,7 +738,7 @@ def locate(text: str) -> dict | None:
     # "Rockaway ferry landing at Beach 108th St", "St. George Ferry Terminal": a ferry stop.
     # "South Ferry" is the station at the tip of Manhattan, not a ferry landing called South.
     if re.fullmatch(
-        r"\s*(?:the\s+)?south\s+ferry(?:\s+(?:station|stop|subway|terminal))?"
+        r"\s*(?:the\s+)?south\s+ferry(?:\s+(?:subway|train))?(?:\s+(?:station|stop|terminal))?"
         r"(?:\s*,?\s*(?:manhattan|nyc|new york(?:,? ny)?))?\s*",
         raw,
         re.I,

@@ -1602,6 +1602,14 @@ def test_well_known_places_land_where_people_mean():
     assert trips.locate("the Met")["name"] == "The Metropolitan Museum of Art"
 
 
+def test_south_ferry_subway_station_is_the_station_not_a_ferry_called_south():
+    from nycynapse.tools import trips
+
+    for text in ("South Ferry subway station", "South Ferry train station, Manhattan"):
+        p = trips.locate(text)
+        assert p["name"] == "South Ferry" and abs(p["lat"] - 40.702) < 0.002
+
+
 def test_read_page_reaches_a_phrase_deep_in_a_page():
     from nycynapse.tools import web
 
