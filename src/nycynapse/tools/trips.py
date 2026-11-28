@@ -108,7 +108,9 @@ NAMED = {
     "downtown brooklyn": ("Downtown Brooklyn", 40.6928, -73.9903),
     "lower manhattan": ("Lower Manhattan", 40.7075, -74.0113),
     "financial district": ("Financial District", 40.7075, -74.0113),
-    "hoboken": ("Hoboken, NJ", 40.7440, -74.0324),
+    # Hoboken said alone is its terminal (PATH, NJ Transit, the ferry), where almost every trip
+    # there arrives; the middle of town is a 15 min walk on, past where the reader gets off.
+    "hoboken": ("Hoboken Terminal", 40.73586, -74.02922),
     "jersey city": ("Jersey City, NJ", 40.7178, -74.0431),
 }
 

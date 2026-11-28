@@ -1161,6 +1161,7 @@ def test_trip_ends_are_placed_without_guessing():
     assert trips.locate("Astoria")["name"] == "Astoria"
     assert trips.zone_of(40.6441, -73.7823)[1] == "JFK Airport"
     assert trips.locate("48.85,2.35") is None  # Paris is not a trip end
+    assert trips.locate("Hoboken")["name"] == "Hoboken Terminal"  # where PATH gets in
 
 
 def test_a_status_question_does_not_plan_to_a_place_named_running_normally():
