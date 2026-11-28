@@ -4871,3 +4871,93 @@ def test_a_bike_ride_ending_past_citi_bike_says_there_is_no_dock(monkeypatch):
     assert "picked up" in trips._citibike_ends(coney, gap)
     assert "either end" in trips._citibike_ends(coney, coney)
     assert trips._citibike_ends(gap, gap) is None
+
+
+def test_a_reader_who_asks_for_the_ferry_gets_one_from_the_nearest_landing_on_its_run(monkeypatch):
+    from datetime import datetime
+
+    from nycynapse.tools import trips
+
+    rock = {"stopId": "F88", "name": "Rockaway", "lat": 40.5842, "lon": -73.8316}
+    e34 = {"stopId": "F17", "name": "East 34th Street", "lat": 40.7439, "lon": -73.9707}
+    pier11 = {"stopId": "F87", "name": "Wall St/Pier 11", "lat": 40.7032, "lon": -74.0061}
+    monkeypatch.setattr(trips, "_landing", lambda p, within=2500: rock)
+    run = {
+        "legs": [
+            {
+                "from": {"stopId": "F112", "name": "Soundview", "lat": 40.80, "lon": -73.85},
+                "intermediateStops": [
+                    {**e34, "arrival": "2026-11-28T17:42:00Z"},
+                    {**pier11, "arrival": "2026-11-28T18:08:00Z"},
+                    {**rock, "arrival": "2026-11-28T19:05:00Z"},
+                ],
+                "to": {"stopId": "F112", "name": "Soundview"},
+            }
+        ]
+    }
+    times = {
+        "stopTimes": [
+            {
+                "mode": "FERRY",
+                "routeId": "RS",
+                "tripId": "t1",
+                "place": {"arrival": "2026-11-28T19:05:00Z"},
+            }
+        ]
+    }
+    monkeypatch.setattr(
+        trips, "get_json", lambda url, params, **k: times if "stoptimes" in url else run
+    )
+
+    def leg(mode, t0, t1, name="x"):
+        return {
+            "mode": mode,
+            "startTime": t0,
+            "endTime": t1,
+            "duration": 60,
+            "from": {"name": name},
+            "to": {"name": name},
+        }
+
+    asked = []
+
+    def one(a, b, t, arrive_by, **extra):
+        asked.append((a.get("name"), b.get("name"), bool(extra)))
+        if extra:  # the boat: from East 34th it is in at 2:05, from Pier 11 at 2:10
+            end = "2026-11-28T19:05:00Z" if b is rock and a is e34 else "2026-11-28T19:10:00Z"
+            return {
+                "startTime": "2026-11-28T17:46:00Z",
+                "endTime": end,
+                "transfers": 0,
+                "legs": [leg("FERRY", "2026-11-28T17:46:00Z", end)],
+            }
+        if b is rock:
+            return {
+                "startTime": "2026-11-28T19:10:00Z",
+                "endTime": "2026-11-28T19:20:00Z",
+                "legs": [leg("BUS", "2026-11-28T19:10:00Z", "2026-11-28T19:18:00Z")],
+            }
+        return {
+            "startTime": "2026-11-28T17:20:00Z",
+            "endTime": "2026-11-28T17:40:00Z",
+            "transfers": 0,
+            "legs": [leg("BUS", "2026-11-28T17:22:00Z", "2026-11-28T17:38:00Z")],
+        }
+
+    monkeypatch.setattr(trips, "_one", one)
+    monkeypatch.setattr(trips, "_itinerary", lambda it, end: {"legs": it["legs"], "end": end})
+    a = {"name": "Midtown", "lat": 40.7549, "lon": -73.9840}
+    b = {"name": "Rockaway Beach", "lat": 40.5862, "lon": -73.8176}
+    o = trips._ferry_option(a, b, datetime(2026, 11, 28, 12, 0, tzinfo=trips.NY), False)
+    assert [lg["mode"] for lg in o["legs"]] == ["BUS", "FERRY", "BUS"]
+    boats = [x for x in asked if x[2]]
+    assert {x[0] for x in boats} == {"East 34th Street", "Wall St/Pier 11"}
+    # The first part is planned again to reach East 34th just before the boat.
+    assert ("Midtown", "East 34th Street", False) in asked[-3:]
+
+    # Next to the landing already, or with none near the end, the planner's own trips stand.
+    assert (
+        trips._ferry_option(rock, b, datetime(2026, 11, 28, 12, 0, tzinfo=trips.NY), False) is None
+    )
+    monkeypatch.setattr(trips, "_landing", lambda p, within=2500: None)
+    assert trips._ferry_option(a, b, datetime(2026, 11, 28, 12, 0, tzinfo=trips.NY), False) is None

@@ -663,6 +663,150 @@ def _newark_bus(
     return []
 
 
+FERRY_AREA = "https://api.transitous.org/api/v1/map/stops"
+FERRY_TIMES = TRANSITOUS.replace("/plan", "/stoptimes")
+FERRY_TRIP = TRANSITOUS.replace("/plan", "/trip")
+
+
+def _when(x: str) -> float:
+    return datetime.fromisoformat(x.replace("Z", "+00:00")).timestamp()
+
+
+def _landing(p: dict, within: float = 2500) -> dict | None:
+    """The ferry landing nearest a place, if one is a short walk or bus ride away."""
+    d = within / 111000
+    box = {
+        "min": f"{p['lat'] - d:.4f},{p['lon'] - d * 1.35:.4f}",
+        "max": f"{p['lat'] + d:.4f},{p['lon'] + d * 1.35:.4f}",
+    }
+    best = None
+    for st in get_json(FERRY_AREA, box, ttl_s=86400) or []:
+        if "FERRY" not in (st.get("modes") or []):
+            continue
+        m = _metres(p, st)
+        if m <= within and (best is None or m < best[0]):
+            best = (m, st)
+    return best[1] if best else None
+
+
+def _one(a: dict, b: dict, t: datetime, arrive_by: bool, **extra) -> dict | None:
+    """The planner's best itinerary between two points: the soonest there, or with a deadline
+    the latest to leave. A walk counts when it is the best way."""
+    params = {
+        "fromPlace": f"{a['lat']:.5f},{a['lon']:.5f}",
+        "toPlace": f"{b['lat']:.5f},{b['lon']:.5f}",
+        "time": t.astimezone(NY).isoformat(timespec="minutes"),
+        "arriveBy": "true" if arrive_by else "false",
+        "numItineraries": 2,
+        **_slack(),
+        **extra,
+    }
+    got = get_json(TRANSITOUS, params, ttl_s=120)
+    its = (got.get("itineraries") or []) + ([] if extra else got.get("direct") or [])
+    its = [it for it in its if not _cancelled(it)]
+    if extra.get("transitModes") == "FERRY":
+        its = [it for it in its if any(lg["mode"] == "FERRY" for lg in it["legs"])]
+    if not its:
+        return None
+    # Each change counts as five minutes, as in the planner's own lists.
+    if arrive_by:
+        return max(its, key=lambda it: _when(it["startTime"]) - 300 * it.get("transfers", 0))
+    return min(its, key=lambda it: _when(it["endTime"]) + 300 * it.get("transfers", 0))
+
+
+def _ferry_option(a: dict, b: dict, t: datetime, arrive_by: bool) -> dict | None:
+    """A trip that rides a ferry, for a reader who asks for one: the planner only offers the
+    boat when it is the fastest way, and the Rockaway ferry rarely is. The landing nearest the
+    end, the runs that call there, and of the landings they call at first, the one that gets
+    there soonest from the start (East 34th Street for Midtown, on the Rockaway run)."""
+    d = _landing(b)
+    if not d or _metres(a, d) < 1500:
+        return None
+    gap = timedelta(minutes=3)
+    times = get_json(
+        FERRY_TIMES,
+        {
+            "stopId": d["stopId"],
+            "time": t.astimezone(NY).isoformat(timespec="minutes"),
+            "n": 8,
+            "arriveBy": "true" if arrive_by else "false",
+        },
+        ttl_s=300,
+    )
+    routes, boards = set(), {}
+    for x in times.get("stopTimes") or []:
+        if x.get("mode") != "FERRY" or x.get("cancelled") or x.get("tripCancelled"):
+            continue
+        if x.get("routeId") in routes or not x["place"].get("arrival"):
+            continue
+        routes.add(x.get("routeId"))
+        trip = get_json(FERRY_TRIP, {"tripId": x["tripId"]}, ttl_s=3600)
+        stops = []
+        for lg in trip.get("legs") or []:
+            stops += [lg["from"], *(lg.get("intermediateStops") or []), lg["to"]]
+        at = next(
+            (
+                i
+                for i, st in enumerate(stops)
+                if st.get("stopId") == d["stopId"] and st.get("arrival") == x["place"]["arrival"]
+            ),
+            None,
+        )
+        if at is None:
+            continue
+        # A run can loop through the landing more than once: only since its last call there.
+        since = max((i for i in range(at) if stops[i].get("stopId") == d["stopId"]), default=-1)
+        for st in stops[since + 1 : at]:
+            if st.get("lat") is not None and st.get("stopId") != d["stopId"]:
+                boards.setdefault(st["stopId"], st)
+        if len(routes) == 2:
+            break
+    near = sorted(boards.values(), key=lambda st: _metres(a, st))[:2]
+    if not near:
+        return None
+    last_leg = None
+    if arrive_by:
+        if _metres(d, b) > 300:
+            last_leg = _one(d, b, t, True)
+            if not last_leg:
+                return None
+        end_by = datetime.fromtimestamp(_when(last_leg["startTime"]), NY) if last_leg else t
+    best = None
+    for st in near:
+        if arrive_by:
+            boat = _one(st, d, end_by - gap, True, transitModes="FERRY", maxTransfers=0)
+            if not boat:
+                continue
+            board = next(lg for lg in boat["legs"] if lg["mode"] == "FERRY")
+            first = _one(a, st, datetime.fromtimestamp(_when(board["startTime"]), NY) - gap, True)
+            score = -_when(first["startTime"]) if first else None
+        else:
+            first = _one(a, st, t, False)
+            if not first:
+                continue
+            ready = datetime.fromtimestamp(_when(first["endTime"]), NY) + gap
+            boat = _one(st, d, ready, False, transitModes="FERRY", maxTransfers=0)
+            score = _when(boat["endTime"]) if boat else None
+        if score is not None and (best is None or score < best[0]):
+            best = (score, st, first, boat)
+    if not best:
+        return None
+    _, st, first, boat = best
+    board = next(lg for lg in boat["legs"] if lg["mode"] == "FERRY")
+    if not arrive_by:
+        # Leave no later than needed: reach the landing a few minutes before the boat.
+        boards_at = datetime.fromtimestamp(_when(board["startTime"]), NY) - gap
+        first = _one(a, st, boards_at, True) or first
+    if _metres(d, b) > 300:
+        # And go on from the landing when the boat gets in, not at the last moment.
+        on = _one(d, b, datetime.fromtimestamp(_when(boat["endTime"]), NY), False)
+        if on and (not arrive_by or _when(on["endTime"]) <= t.timestamp()):
+            last_leg = on
+    legs = first["legs"] + boat["legs"] + (last_leg["legs"] if last_leg else [])
+    end = (last_leg or boat)["endTime"]
+    return _itinerary({"startTime": first["startTime"], "endTime": end, "legs": legs}, b["name"])
+
+
 def _dollars(o: dict) -> float:
     """About what an itinerary costs one adult, for ordering: the lower of two prices, and a
     commuter train's usual city fare when its own is not known."""
@@ -1785,6 +1929,7 @@ def trip_plan(
     arrive_by: bool = False,
     step_free: bool = False,
     calm_bike: bool = False,
+    by_ferry: bool = False,
 ) -> ToolResult:
     """Real routes and times between two places in and around NYC: transit itineraries from
     the agencies' schedules (with live times where published) and typical taxi or car times
@@ -1905,6 +2050,25 @@ def trip_plan(
             options, notes = [], [f"Transit planner unavailable: {str(e)[:80]}"]
         finally:
             _STEP_FREE.reset(token)
+        if by_ferry and not any(
+            lg.get("mode") == "ferry" for o in options for lg in o.get("lines") or []
+        ):
+            try:
+                boat = _ferry_option(a, b, t, arrive_by)
+            except Exception:  # noqa: BLE001 - the other options stand
+                boat = None
+            if boat:
+                options = options[:3] + [boat]
+                notes.append(
+                    "The option marked by ferry is there as asked: the planner left it out because "
+                    "another way is quicker. It is a whole trip, door to door: give it with its "
+                    "times and say how it compares, without planning the ferry again in parts."
+                )
+            else:
+                notes.append(
+                    "No trip by ferry was found for this at that time (no landing within 2.5 km "
+                    "of the end, or no boat then): say so, and give the options above."
+                )
         changes = {id(o): _changes(o, t) for o in options}
         # A ride that boards or ends where its train does not stop cannot be taken.
         unusable = [o for o in options if o.get("skipped")]
@@ -1983,6 +2147,8 @@ def trip_plan(
                 lo, hi = o["minutes"]
                 span = f"{lo} min" if lo == hi else f"{lo} to {hi} min"
                 tag = ", ".join(t for t, x in ((first, quick), ("fewest changes", easy)) if o is x)
+                if by_ferry and any(lg.get("mode") == "ferry" for lg in o.get("lines") or []):
+                    tag = ", ".join(x for x in (tag, "by ferry, as asked") if x)
                 lines.append(
                     f"{i}.{f' [{tag}]' if tag else ''} {span} door to door, leave {o['leave']}, "
                     f"arrive {o.get('arrive', '?')}, {o['transfers']} transfer"
@@ -2507,6 +2673,12 @@ TOOLS = [
                     "description": "the rider wants protected lanes or to keep away from cars "
                     "(safest, calm, with kids, new rider): also tries a route through a "
                     "protected lane or greenway nearby",
+                },
+                "by_ferry": {
+                    "type": "boolean",
+                    "description": "the reader asks to go by ferry or boat (the Rockaway ferry, "
+                    "NYC Ferry, a water taxi): also plans the best trip that rides one, which "
+                    "the planner leaves out when another way is quicker",
                 },
             },
             "required": ["origin", "destination"],
